@@ -1,6 +1,6 @@
 [package]
 name = "march-7th-app"
-version = "0.1.1"
+version = "0.2.0"
 description = "March 7th cross-platform desktop pet"
 authors = ["Steven Song"]
 edition = "2021"

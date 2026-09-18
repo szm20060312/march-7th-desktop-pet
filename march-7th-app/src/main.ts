@@ -5,18 +5,24 @@ import {
   SPRITE_CELL_HEIGHT,
   SPRITE_CELL_WIDTH,
   directionFrame,
+  horizontalDirection,
+  type HorizontalDirection,
+  type Point,
   type SpriteFrame,
 } from "./animation";
 
-type CursorPosition = {
-  x: number;
-  y: number;
+type CursorSample = Point & {
+  windowX: number;
+  windowY: number;
 };
 
 const CURSOR_SAMPLE_INTERVAL_MS = 33;
-const DRAG_SETTLE_INTERVAL_MS = 100;
 const IDLE_FRAME_INTERVAL_MS = 280;
 const LOOK_DEADZONE_PX = 20;
+const MOVEMENT_FRAME_COUNT = 8;
+const MOVEMENT_FRAME_INTERVAL_MS = 90;
+const WINDOW_MOVEMENT_THRESHOLD_PX = 0.5;
+const WINDOW_SETTLE_INTERVAL_MS = 160;
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -28,9 +34,12 @@ const sprite = requiredElement<HTMLElement>("#pet-sprite");
 const stage = requiredElement<HTMLElement>("#pet-stage");
 const appWindow = getCurrentWindow();
 
-let latestCursor: CursorPosition | null = null;
-let isDragging = false;
-let resumeTrackingAt = 0;
+let latestCursor: Point | null = null;
+let previousWindowPosition: Point | null = null;
+let movementDirection: HorizontalDirection = "right";
+let windowMovingUntil = 0;
+let movementFrameIndex = 0;
+let nextMovementFrameAt = 0;
 let idleFrameIndex = 0;
 let nextIdleFrameAt = performance.now() + IDLE_FRAME_INTERVAL_MS;
 let lastRenderedFrame = "";
@@ -48,6 +57,19 @@ function renderFrame(frame: SpriteFrame): void {
 }
 
 function render(now: number): void {
+  if (now < windowMovingUntil) {
+    if (now >= nextMovementFrameAt) {
+      movementFrameIndex = (movementFrameIndex + 1) % MOVEMENT_FRAME_COUNT;
+      nextMovementFrameAt = now + MOVEMENT_FRAME_INTERVAL_MS;
+    }
+    renderFrame({
+      row: movementDirection === "right" ? 1 : 2,
+      column: movementFrameIndex,
+    });
+    requestAnimationFrame(render);
+    return;
+  }
+
   const bounds = sprite.getBoundingClientRect();
   const lookFrame = latestCursor
     ? directionFrame(
@@ -73,22 +95,48 @@ function render(now: number): void {
   requestAnimationFrame(render);
 }
 
-async function sampleCursor(): Promise<void> {
-  if (isDragging || performance.now() < resumeTrackingAt) {
-    latestCursor = null;
-    document.body.dataset.cursorTracking = "paused";
-    window.setTimeout(sampleCursor, CURSOR_SAMPLE_INTERVAL_MS);
-    return;
+function applyCursorSample(sample: CursorSample, now: number): void {
+  const windowPosition = { x: sample.windowX, y: sample.windowY };
+
+  if (previousWindowPosition) {
+    const deltaX = windowPosition.x - previousWindowPosition.x;
+    const deltaY = windowPosition.y - previousWindowPosition.y;
+    const detectedDirection = horizontalDirection(
+      deltaX,
+      WINDOW_MOVEMENT_THRESHOLD_PX,
+    );
+    const windowMoved =
+      detectedDirection !== null ||
+      Math.abs(deltaY) > WINDOW_MOVEMENT_THRESHOLD_PX;
+
+    if (windowMoved) {
+      const movementWasInactive = now >= windowMovingUntil;
+      if (detectedDirection && detectedDirection !== movementDirection) {
+        movementDirection = detectedDirection;
+        movementFrameIndex = 0;
+        nextMovementFrameAt = now + MOVEMENT_FRAME_INTERVAL_MS;
+      } else if (movementWasInactive) {
+        movementFrameIndex = 0;
+        nextMovementFrameAt = now + MOVEMENT_FRAME_INTERVAL_MS;
+      }
+      windowMovingUntil = now + WINDOW_SETTLE_INTERVAL_MS;
+      latestCursor = null;
+    }
   }
 
+  previousWindowPosition = windowPosition;
+
+  if (now >= windowMovingUntil) {
+    latestCursor = { x: sample.x, y: sample.y };
+  }
+}
+
+async function sampleCursor(): Promise<void> {
   try {
-    const sampledCursor = await invoke<CursorPosition>(
-      "cursor_relative_to_window",
-    );
-    if (!isDragging) {
-      latestCursor = sampledCursor;
-      document.body.dataset.cursorTracking = "active";
-    }
+    const sample = await invoke<CursorSample>("cursor_relative_to_window");
+    applyCursorSample(sample, performance.now());
+    document.body.dataset.cursorTracking =
+      performance.now() < windowMovingUntil ? "moving" : "active";
   } catch {
     latestCursor = null;
     document.body.dataset.cursorTracking = "unavailable";
@@ -97,22 +145,17 @@ async function sampleCursor(): Promise<void> {
   }
 }
 
-async function startDragging(event: PointerEvent): Promise<void> {
-  if (event.button !== 0 || isDragging) return;
+function startDragging(event: PointerEvent): void {
+  if (event.button !== 0) return;
 
-  isDragging = true;
   latestCursor = null;
-  document.body.dataset.cursorTracking = "paused";
-
-  try {
-    await appWindow.startDragging();
-  } finally {
-    isDragging = false;
-    resumeTrackingAt = performance.now() + DRAG_SETTLE_INTERVAL_MS;
-  }
+  windowMovingUntil = performance.now() + WINDOW_SETTLE_INTERVAL_MS;
+  movementFrameIndex = 0;
+  nextMovementFrameAt = performance.now() + MOVEMENT_FRAME_INTERVAL_MS;
+  void appWindow.startDragging();
 }
 
-stage.addEventListener("pointerdown", (event) => void startDragging(event));
+stage.addEventListener("pointerdown", startDragging);
 renderFrame({ row: 0, column: 0 });
 requestAnimationFrame(render);
 void sampleCursor();

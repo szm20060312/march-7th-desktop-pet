@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { directionFrame } from "./animation";
+import { directionFrame, horizontalDirection } from "./animation";
 
 const center = { x: 100, y: 100 };
 
@@ -20,3 +20,16 @@ describe("directionFrame", () => {
   });
 });
 
+describe("horizontalDirection", () => {
+  it("detects movement to the right", () => {
+    expect(horizontalDirection(4, 0.5)).toBe("right");
+  });
+
+  it("detects movement to the left", () => {
+    expect(horizontalDirection(-4, 0.5)).toBe("left");
+  });
+
+  it("ignores horizontal noise below the threshold", () => {
+    expect(horizontalDirection(0.25, 0.5)).toBeNull();
+  });
+});

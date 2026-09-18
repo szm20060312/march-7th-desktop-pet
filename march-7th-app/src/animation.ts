@@ -18,6 +18,17 @@ export type SpriteFrame = {
   column: number;
 };
 
+export type HorizontalDirection = "left" | "right";
+
+export function horizontalDirection(
+  deltaX: number,
+  thresholdPx: number,
+): HorizontalDirection | null {
+  if (deltaX > thresholdPx) return "right";
+  if (deltaX < -thresholdPx) return "left";
+  return null;
+}
+
 export function directionFrame(
   target: Point,
   center: Point,
@@ -38,4 +49,3 @@ export function directionFrame(
     column: directionIndex % SPRITE_COLUMNS,
   };
 }
-
