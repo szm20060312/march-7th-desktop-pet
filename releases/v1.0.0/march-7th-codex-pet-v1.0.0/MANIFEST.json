@@ -1,0 +1,25 @@
+{
+  "package": "march-7th-codex-pet",
+  "version": "1.0.0",
+  "frozenAt": "2026-09-18",
+  "petId": "march-7th",
+  "displayName": "三月七",
+  "spriteVersionNumber": 2,
+  "atlas": {
+    "width": 1536,
+    "height": 2288,
+    "columns": 8,
+    "rows": 11,
+    "cellWidth": 192,
+    "cellHeight": 208
+  },
+  "sha256": {
+    "pet.json": "0f61a86adf8051b72600d4b7fad1db70dbf899f5c8e424976df838f2905b6c03",
+    "spritesheet.webp": "1223cabacfef28dbd40a46387ffff28ecf951460d47bec1defeebbadc2da8622"
+  },
+  "validation": {
+    "atlas": "pass",
+    "directionBlindQA": "pass",
+    "finalVisualQA": "pass"
+  }
+}
