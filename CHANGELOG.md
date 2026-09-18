@@ -1,5 +1,24 @@
 # 变更记录
 
+## 2026-09-18 — 独立应用 v0.1.0
+
+### 完成
+
+- 将应用正式命名为 **March 7th**。
+- 在 `march-7th-app/` 创建 Tauri 2 + TypeScript + Rust 项目。
+- 完成 Apple Silicon macOS 的透明、无边框、始终置顶窗口。
+- 复用已封存的 v2 图集，实现六帧待机和真实鼠标 16 方向跟随。
+- 建立 Windows x64 `GetCursorPos` 平台实现和 macOS/Windows CI 矩阵。
+- 前端方向映射 7 项测试、Rust 单元测试、Clippy 和 Apple Silicon Release 构建通过。
+- 明确不支持 macOS Intel。
+
+### 尚未实现
+
+- 点击穿透和交互模式切换
+- 托盘菜单、开机启动、位置持久化
+- Windows 实机验证与安装包
+- macOS 签名及公证
+
 ## 2026-09-17 — v1.0
 
 ### 完成

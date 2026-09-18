@@ -1,8 +1,13 @@
 # 三月七 Codex 宠物
 
-这是“三月七”Codex 动画宠物的维护项目。当前版本是 `spriteVersionNumber: 2`，包含 9 组基础状态动画和 16 个顺时针视线方向。
+这是 March 7th 桌宠的主项目。仓库同时保留原 Codex 内嵌宠物和新的 Tauri 2 独立应用。
 
-## 当前状态
+## 项目结构
+
+- `releases/v1.0.0/`：已经封存的 Codex v2 内嵌宠物，可通过标签 `codex-pet-v1.0.0` 回滚。
+- `march-7th-app/`：独立 Tauri 2 应用，正式显示名称为 **March 7th**。
+
+## Codex 内嵌版状态
 
 - 宠物 ID：`march-7th`
 - 显示名称：`三月七`
@@ -14,6 +19,7 @@
 
 ## 文档导航
 
+- [独立应用开发说明](march-7th-app/README.md)
 - [视觉与动画基线](docs/BASELINE.md)
 - [交互状态映射](docs/INTERACTIONS.md)
 - [优化与验收流程](docs/OPTIMIZATION.md)
