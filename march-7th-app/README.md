@@ -14,11 +14,11 @@ March 7th 是从现有 Codex v2 桌宠迁移而来的独立 Tauri 2 桌面应用
 
 尚未实现：点击穿透、托盘菜单、自动启动、设置界面、位置持久化和安装包签名。
 
-## macOS 原型
+## 形象预览
 
-![March 7th macOS prototype](docs/macos-prototype-0.1.0.png)
+![March 7th](docs/march-7th-front.png)
 
-该截图确认透明窗口、v2 图集裁切和真实鼠标方向跟随均已在 Apple Silicon macOS 上运行。
+透明窗口、v2 图集裁切和真实鼠标方向跟随均已在 Apple Silicon macOS 上验证运行。
 
 ## 开发环境
 
