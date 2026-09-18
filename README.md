@@ -20,9 +20,10 @@
 ## 文档导航
 
 - [独立应用开发说明](march-7th-app/README.md)
-- [视觉与动画基线](docs/BASELINE.md)
-- [交互状态映射](docs/INTERACTIONS.md)
-- [优化与验收流程](docs/OPTIMIZATION.md)
+- [开发文档索引](docs/README.md)
+- [视觉与动画基线](docs/development/codex-pet/BASELINE.md)
+- [交互状态映射](docs/development/codex-pet/INTERACTIONS.md)
+- [优化与验收流程](docs/development/codex-pet/OPTIMIZATION.md)
 - [变更记录](CHANGELOG.md)
 
 ## 维护原则
