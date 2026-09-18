@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   IDLE_FRAME_COUNT,
   SPRITE_CELL_HEIGHT,
@@ -13,6 +14,7 @@ type CursorPosition = {
 };
 
 const CURSOR_SAMPLE_INTERVAL_MS = 33;
+const DRAG_SETTLE_INTERVAL_MS = 100;
 const IDLE_FRAME_INTERVAL_MS = 280;
 const LOOK_DEADZONE_PX = 20;
 
@@ -23,8 +25,12 @@ function requiredElement<T extends Element>(selector: string): T {
 }
 
 const sprite = requiredElement<HTMLElement>("#pet-sprite");
+const stage = requiredElement<HTMLElement>("#pet-stage");
+const appWindow = getCurrentWindow();
 
 let latestCursor: CursorPosition | null = null;
+let isDragging = false;
+let resumeTrackingAt = 0;
 let idleFrameIndex = 0;
 let nextIdleFrameAt = performance.now() + IDLE_FRAME_INTERVAL_MS;
 let lastRenderedFrame = "";
@@ -68,9 +74,21 @@ function render(now: number): void {
 }
 
 async function sampleCursor(): Promise<void> {
+  if (isDragging || performance.now() < resumeTrackingAt) {
+    latestCursor = null;
+    document.body.dataset.cursorTracking = "paused";
+    window.setTimeout(sampleCursor, CURSOR_SAMPLE_INTERVAL_MS);
+    return;
+  }
+
   try {
-    latestCursor = await invoke<CursorPosition>("cursor_relative_to_window");
-    document.body.dataset.cursorTracking = "active";
+    const sampledCursor = await invoke<CursorPosition>(
+      "cursor_relative_to_window",
+    );
+    if (!isDragging) {
+      latestCursor = sampledCursor;
+      document.body.dataset.cursorTracking = "active";
+    }
   } catch {
     latestCursor = null;
     document.body.dataset.cursorTracking = "unavailable";
@@ -79,6 +97,22 @@ async function sampleCursor(): Promise<void> {
   }
 }
 
+async function startDragging(event: PointerEvent): Promise<void> {
+  if (event.button !== 0 || isDragging) return;
+
+  isDragging = true;
+  latestCursor = null;
+  document.body.dataset.cursorTracking = "paused";
+
+  try {
+    await appWindow.startDragging();
+  } finally {
+    isDragging = false;
+    resumeTrackingAt = performance.now() + DRAG_SETTLE_INTERVAL_MS;
+  }
+}
+
+stage.addEventListener("pointerdown", (event) => void startDragging(event));
 renderFrame({ row: 0, column: 0 });
 requestAnimationFrame(render);
 void sampleCursor();
