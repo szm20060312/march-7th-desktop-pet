@@ -8,7 +8,11 @@
 docs/
 ├── README.md
 ├── assets/
-│   └── march-7th-front.png
+│   ├── march-7th-front.png
+│   └── demos/
+│       ├── idle.gif
+│       ├── running-left.gif
+│       └── running-right.gif
 └── development/
     ├── app/
     │   └── STAGE-0.2.0.md

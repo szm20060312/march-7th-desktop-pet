@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Mobile icon outputs are not part of the current desktop targets.
+src-tauri/icons/android/
+src-tauri/icons/ios/
