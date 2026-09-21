@@ -1,3 +1,4 @@
+mod coordinates;
 mod geometry;
 mod state;
 mod store;
@@ -20,8 +21,8 @@ use store::Store;
 use tauri::{
     menu::{CheckMenuItem, MenuBuilder, MenuEvent, MenuItem},
     tray::TrayIconBuilder,
-    App, AppHandle, Builder, Manager, PhysicalPosition, PhysicalSize, RunEvent, Runtime,
-    WebviewWindow, Window, WindowEvent,
+    App, AppHandle, Builder, Manager, PhysicalSize, RunEvent, Runtime, WebviewWindow, Window,
+    WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -164,20 +165,16 @@ fn advance_startup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         position: (position.x, position.y),
     };
     match startup
-        .step(&topology, &observation)
+        .step_with_coordinates(coordinates::NATIVE, &topology, &observation)
         .ok_or("startup geometry unavailable")?
     {
-        StartupAction::Move((x, y)) => window
-            .set_position(PhysicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?,
+        StartupAction::Move(position, scale) => set_position(&window, position, scale)?,
         StartupAction::Resize((width, height)) => window
             .set_size(PhysicalSize::new(width, height))
             .map_err(|e| e.to_string())?,
         StartupAction::Wait => {}
-        StartupAction::Fallback((x, y)) => {
-            window
-                .set_position(PhysicalPosition::new(x, y))
-                .map_err(|e| e.to_string())?;
+        StartupAction::Fallback(position, scale) => {
+            set_position(&window, position, scale)?;
             if let Some(startup) = desktop.shared.session.lock().unwrap().startup.as_mut() {
                 startup.fallback = true;
             }
@@ -213,6 +210,13 @@ fn show_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         }
     }
     revalidate(app)?;
+    {
+        let mut session = desktop.shared.session.lock().unwrap();
+        if let Some(startup) = session.startup.as_mut() {
+            startup.show = true;
+            return Ok(());
+        }
+    }
     show_non_focusable_window(&main_window(app)?)
 }
 
@@ -324,10 +328,17 @@ fn reapply_scale<R: Runtime>(app: &AppHandle<R>, request: ScaleRequest) -> Resul
     let size = window.outer_size().map_err(|e| e.to_string())?;
     let actual = (position.x, position.y);
     let size = (size.width, size.height);
-    let corrected = if geometry::reachable(actual, size, &topology) {
-        actual
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if (scale - current.scale).abs() > 1e-6 {
+        return Err("DPI observation has not settled".into());
+    }
+    let (projected, outer) = coordinates::NATIVE
+        .rect(actual, size, scale, current.scale)
+        .ok_or("invalid current geometry")?;
+    let corrected = if coordinates::NATIVE.reachable(actual, size, scale, &topology) {
+        projected
     } else {
-        geometry::clamp_to_monitor(actual, size, &current).ok_or("invalid current work area")?
+        geometry::clamp_to_monitor(projected, outer, &current).ok_or("invalid current work area")?
     };
     // Validate again immediately before effects. This fulfills the DPI check,
     // never replays a logical position predating native/user movement.
@@ -340,10 +351,8 @@ fn reapply_scale<R: Runtime>(app: &AppHandle<R>, request: ScaleRequest) -> Resul
     {
         return Ok(());
     }
-    if corrected != actual {
-        window
-            .set_position(PhysicalPosition::new(corrected.0, corrected.1))
-            .map_err(|e| e.to_string())?;
+    if corrected != projected {
+        set_position(&window, corrected, current.scale)?;
     }
     schedule_current(app)
 }
@@ -358,10 +367,13 @@ fn monitor_geometry(m: &tauri::Monitor, primary: bool) -> Monitor {
     }
 }
 fn monitors<R: Runtime>(window: &WebviewWindow<R>) -> Result<Vec<Monitor>, String> {
-    let primary = window.primary_monitor().unwrap_or_else(|error| {
+    let mut primary = window.primary_monitor().unwrap_or_else(|error| {
         report_failure("primary-monitor", error);
         None
     });
+    if primary.is_none() {
+        primary = window.current_monitor().map_err(|e| e.to_string())?;
+    }
     let result: Vec<_> = window
         .available_monitors()
         .map_err(|e| e.to_string())?
@@ -377,16 +389,17 @@ fn monitors<R: Runtime>(window: &WebviewWindow<R>) -> Result<Vec<Monitor>, Strin
         .collect();
     Ok(result)
 }
-fn apply_placement<R: Runtime>(
+fn set_position<R: Runtime>(
     window: &WebviewWindow<R>,
-    placement: Option<&Placement>,
-    monitors: &[Monitor],
+    position: (i32, i32),
+    scale: f64,
 ) -> Result<(), String> {
-    let size = window.outer_size().map_err(|e| e.to_string())?;
-    let (x, y) = geometry::restore(placement, monitors, (size.width, size.height))
-        .ok_or("no usable monitor work area")?;
     window
-        .set_position(PhysicalPosition::new(x, y))
+        .set_position(
+            coordinates::NATIVE
+                .position(position, scale)
+                .ok_or("invalid target coordinates")?,
+        )
         .map_err(|e| e.to_string())
 }
 fn capture_current<R: Runtime>(app: &AppHandle<R>) -> Result<Placement, String> {
@@ -396,7 +409,13 @@ fn capture_current<R: Runtime>(app: &AppHandle<R>) -> Result<Placement, String> 
         .map_err(|e| e.to_string())?
         .ok_or("current monitor unavailable")?;
     let position = window.outer_position().map_err(|e| e.to_string())?;
-    geometry::capture((position.x, position.y), &monitor_geometry(&monitor, false))
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    coordinates::NATIVE
+        .capture(
+            (position.x, position.y),
+            scale,
+            &monitor_geometry(&monitor, false),
+        )
         .ok_or("invalid monitor geometry".into())
 }
 fn schedule_current<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -439,9 +458,10 @@ fn revalidate<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let topology = monitors(&window)?;
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    if !geometry::reachable(
+    if !coordinates::NATIVE.reachable(
         (position.x, position.y),
         (size.width, size.height),
+        window.scale_factor().map_err(|e| e.to_string())?,
         &topology,
     ) {
         let placement = app
@@ -452,8 +472,7 @@ fn revalidate<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             .unwrap()
             .latest
             .clone();
-        apply_placement(&window, placement.as_ref(), &topology)?;
-        schedule_current(app)?;
+        relocate(app, placement, false)?;
     }
     Ok(())
 }
@@ -476,16 +495,34 @@ fn reset_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             return Ok(());
         }
     }
+    relocate(app, None, true)
+}
+fn relocate<R: Runtime>(
+    app: &AppHandle<R>,
+    placement: Option<Placement>,
+    show: bool,
+) -> Result<(), String> {
     let window = main_window(app)?;
-    let mut topology = monitors(&window)?;
-    if !topology.iter().any(|m| m.primary) {
-        if let Some(current) = window.current_monitor().map_err(|e| e.to_string())? {
-            topology.insert(0, monitor_geometry(&current, true));
-        }
-    }
-    apply_placement(&window, None, &topology)?;
-    show_non_focusable_window(&window)?;
-    schedule_current(app)
+    let inner = window.inner_size().map_err(|e| e.to_string())?;
+    let startup = StartupRestore {
+        original: placement,
+        source_inner: (inner.width, inner.height),
+        source_scale: window.scale_factor().map_err(|e| e.to_string())?,
+        show,
+        fallback: false,
+    };
+    // Reset and topology/Show recovery use the same observed-DPI settlement as
+    // launch. Never center/save using the old display's physical window size.
+    let desktop = app.state::<Desktop<R>>();
+    desktop
+        .shared
+        .session
+        .lock()
+        .unwrap()
+        .begin_startup(startup, Instant::now());
+    desktop.shared.wake.notify_one();
+    update_status(&desktop);
+    Ok(())
 }
 fn check_topology<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
