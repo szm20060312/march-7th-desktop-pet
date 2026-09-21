@@ -93,6 +93,7 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 - [开发文档索引](docs/README.md)
 - [开发计划](docs/development/app/ROADMAP.md)
+- [双平台 TODO](docs/development/app/TODO.md)
 - [v0.2.0 阶段报告](docs/development/app/STAGE-0.2.0.md)
 - [动画与视觉基线](docs/development/codex-pet/BASELINE.md)
 - [交互状态映射](docs/development/codex-pet/INTERACTIONS.md)
@@ -192,6 +193,7 @@ Prebuilt packages will be published through GitHub Releases.
 
 - [Documentation index](docs/README.md)
 - [Development roadmap](docs/development/app/ROADMAP.md)
+- [Cross-platform TODO](docs/development/app/TODO.md)
 - [v0.2.0 milestone report](docs/development/app/STAGE-0.2.0.md)
 - [Animation and visual baseline](docs/development/codex-pet/BASELINE.md)
 - [Interaction state mapping](docs/development/codex-pet/INTERACTIONS.md)
