@@ -36,6 +36,7 @@ docs/
 - [本次架构验证记录](development/app/ARCHITECTURE-VALIDATION.md)
 - [M0 测试包说明](development/app/regression/README.md)
 - [M0 实际构建与产物校验记录](development/app/M0-BUILD-REPORT.md)
+- [双角色实现与同提交测试包记录](development/app/G4-BUILD-REPORT.md)
 - [双平台回归清单](development/app/regression/CHECKLIST.md)
 - [回归结果模板](development/app/regression/RESULT-TEMPLATE.md)
 - [本次架构整理范围](development/app/IMPLEMENTATION-ARCHITECTURE.md)
