@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn main_window_is_configured_not_to_take_focus() {
-        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let context = crate::app_context();
         let main_window = context
             .config()
             .app
