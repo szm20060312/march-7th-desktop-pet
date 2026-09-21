@@ -79,6 +79,14 @@ pub fn restore(
     monitors: &[Monitor],
     size: (u32, u32),
 ) -> Option<(i32, i32)> {
+    let monitor = select_monitor(placement, monitors)?;
+    restore_on_monitor(placement, monitor, size)
+}
+
+pub fn select_monitor<'a>(
+    placement: Option<&Placement>,
+    monitors: &'a [Monitor],
+) -> Option<&'a Monitor> {
     let valid_monitors: Vec<_> = monitors.iter().filter(|m| valid(m)).collect();
     let unique = placement
         .and_then(|p| p.monitor_name.as_ref())
@@ -90,9 +98,16 @@ pub fn restore(
             let first = matches.next()?;
             matches.next().is_none().then_some(first)
         });
-    let monitor = unique
+    unique
         .or_else(|| valid_monitors.iter().copied().find(|m| m.primary))
-        .or_else(|| valid_monitors.first().copied())?;
+        .or_else(|| valid_monitors.first().copied())
+}
+
+fn restore_on_monitor(
+    placement: Option<&Placement>,
+    monitor: &Monitor,
+    size: (u32, u32),
+) -> Option<(i32, i32)> {
     let offsets = placement.and_then(|p| {
         Some((
             physical_offset(p.x, monitor.scale)?,
@@ -113,6 +128,25 @@ pub fn restore(
             offsets.map(|o| o.1),
         )?,
     ))
+}
+
+pub fn rescaled_size(size: (u32, u32), source_scale: f64, target_scale: f64) -> Option<(u32, u32)> {
+    if !source_scale.is_finite()
+        || source_scale <= 0.0
+        || !target_scale.is_finite()
+        || target_scale <= 0.0
+    {
+        return None;
+    }
+    let axis = |value: u32| {
+        let physical = (f64::from(value) / source_scale * target_scale).round();
+        if physical.is_finite() && physical >= 1.0 && physical <= f64::from(u32::MAX) {
+            Some(physical as u32)
+        } else {
+            None
+        }
+    };
+    Some((axis(size.0)?, axis(size.1)?))
 }
 
 pub fn reachable(position: (i32, i32), size: (u32, u32), monitors: &[Monitor]) -> bool {

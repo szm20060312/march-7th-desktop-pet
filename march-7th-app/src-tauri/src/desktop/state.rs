@@ -3,6 +3,61 @@ use std::time::{Duration, Instant};
 
 pub const SAVE_DELAY: Duration = Duration::from_millis(500);
 
+#[derive(Clone)]
+pub struct StartupRestore {
+    pub original: Option<Placement>,
+    pub source_inner: (u32, u32),
+    pub source_scale: f64,
+    pub show: bool,
+}
+pub struct WindowGeometry {
+    pub monitor: Option<Monitor>,
+    pub scale: f64,
+    pub inner: (u32, u32),
+    pub outer: (u32, u32),
+    pub position: (i32, i32),
+}
+#[derive(Debug, PartialEq)]
+pub enum StartupAction {
+    Move((i32, i32)),
+    Resize((u32, u32)),
+    Wait,
+    Ready,
+}
+impl StartupRestore {
+    pub fn step(&self, monitors: &[Monitor], window: &WindowGeometry) -> Option<StartupAction> {
+        use super::geometry;
+        let target = geometry::select_monitor(self.original.as_ref(), monitors)?;
+        if !window
+            .monitor
+            .as_ref()
+            .is_some_and(|m| m.name == target.name && m.origin == target.origin)
+        {
+            // Stage inside the destination, without clamping or capturing the saved intent.
+            return geometry::restore(None, std::slice::from_ref(target), window.outer)
+                .map(StartupAction::Move);
+        }
+        if !window.scale.is_finite() || (window.scale - target.scale).abs() > 1e-6 {
+            return Some(StartupAction::Wait);
+        }
+        let expected_inner =
+            geometry::rescaled_size(self.source_inner, self.source_scale, target.scale)?;
+        if window.inner != expected_inner {
+            return Some(StartupAction::Resize(expected_inner));
+        }
+        let position = geometry::restore(
+            self.original.as_ref(),
+            std::slice::from_ref(target),
+            window.outer,
+        )?;
+        Some(if position == window.position {
+            StartupAction::Ready
+        } else {
+            StartupAction::Move(position)
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Lifecycle {
     Running,
@@ -29,6 +84,11 @@ pub struct Save {
     pub revision: u64,
     pub placement: Placement,
 }
+#[derive(Clone)]
+pub struct ScaleRequest {
+    pub position_revision: u64,
+    pub placement: Option<Placement>,
+}
 pub struct Session {
     pub mode: Mode,
     pub lifecycle: Lifecycle,
@@ -39,7 +99,10 @@ pub struct Session {
     pub revision: u64,
     pub availability: Availability,
     pub writable: bool,
-    pub scale_pending: Option<Option<Placement>>,
+    pub scale_pending: Option<ScaleRequest>,
+    pub position_revision: u64,
+    pub startup: Option<StartupRestore>,
+    pub startup_due: Option<Instant>,
 }
 impl Session {
     pub fn new(
@@ -59,12 +122,16 @@ impl Session {
             availability,
             writable,
             scale_pending: None,
+            position_revision: 0,
+            startup: None,
+            startup_due: None,
         }
     }
     pub fn schedule(&mut self, now: Instant, placement: Placement) {
-        if self.lifecycle != Lifecycle::Running {
+        if self.lifecycle != Lifecycle::Running || self.startup.is_some() {
             return;
         }
+        self.position_intent();
         self.latest = Some(placement.clone());
         if self.writable {
             self.revision += 1;
@@ -77,6 +144,28 @@ impl Session {
             );
             self.availability = Availability::Pending;
         }
+    }
+    pub fn request_scale(&mut self) {
+        if self.startup.is_some() || self.lifecycle != Lifecycle::Running {
+            return;
+        }
+        self.scale_pending = Some(ScaleRequest {
+            position_revision: self.position_revision,
+            placement: self.latest.clone(),
+        });
+    }
+    pub fn begin_startup(&mut self, startup: StartupRestore, now: Instant) {
+        self.startup = Some(startup);
+        self.startup_due = Some(now);
+    }
+    pub fn scale_is_current(&self, request: &ScaleRequest) -> bool {
+        self.lifecycle == Lifecycle::Running
+            && self.startup.is_none()
+            && self.position_revision == request.position_revision
+    }
+    pub fn position_intent(&mut self) {
+        self.position_revision += 1;
+        self.scale_pending = None;
     }
     pub fn finish_save(&mut self, revision: u64, success: bool, writable: bool) {
         self.writable = writable;
@@ -94,6 +183,7 @@ impl Session {
     }
     pub fn capture_failed(&mut self) {
         if self.lifecycle == Lifecycle::Running {
+            self.position_intent();
             self.revision += 1;
             self.pending.cancel();
             self.availability = Availability::Unavailable;
@@ -105,6 +195,12 @@ impl Session {
         }
         self.lifecycle = Lifecycle::Stopping;
         self.scale_pending = None;
+        self.startup_due = None;
+        if self.startup.take().is_some() {
+            self.pending.stop(None);
+            self.quit = Some((None, code));
+            return;
+        }
         let latest = latest.or_else(|| self.latest.clone());
         let save = latest.filter(|_| self.writable).map(|placement| Save {
             revision: self.revision,
@@ -274,9 +370,159 @@ mod tests {
         session.schedule(Instant::now(), p);
         assert!(session.pending.deadline().is_none());
         assert_eq!(session.availability, Availability::Unavailable);
-        session.scale_pending = Some(None);
+        session.request_scale();
         session.stop(None, 0);
         assert!(session.scale_pending.is_none());
+        assert!(session.quit.as_ref().unwrap().0.is_none());
+    }
+    #[test]
+    fn delayed_dpi_correction_cannot_undo_later_move_or_reset_even_read_only() {
+        let old = Placement {
+            monitor_name: Some("same".into()),
+            x: 10.0,
+            y: 20.0,
+        };
+        for writable in [true, false] {
+            let mut session =
+                Session::new(Some(old.clone()), vec![], Availability::Saved, writable);
+            session.request_scale();
+            let delayed = session.scale_pending.take().unwrap();
+            assert!(session.scale_is_current(&delayed));
+            session.schedule(
+                Instant::now(),
+                Placement {
+                    x: 200.0,
+                    ..old.clone()
+                },
+            );
+            assert!(
+                !session.scale_is_current(&delayed),
+                "movement must invalidate a dequeued callback"
+            );
+            session.request_scale();
+            let delayed = session.scale_pending.take().unwrap();
+            session.position_intent();
+            assert!(
+                !session.scale_is_current(&delayed),
+                "reset intent must invalidate before native movement"
+            );
+        }
+    }
+    fn startup_fixture(
+        source_scale: f64,
+        target_scale: f64,
+    ) -> (StartupRestore, Monitor, WindowGeometry) {
+        let target = Monitor {
+            name: Some("target".into()),
+            origin: (1920, 0),
+            size: (1920, 1080),
+            scale: target_scale,
+            primary: false,
+        };
+        let source_inner = if source_scale == 2.0 {
+            (480, 520)
+        } else {
+            (240, 260)
+        };
+        let startup = StartupRestore {
+            original: Some(Placement {
+                monitor_name: target.name.clone(),
+                x: 1600.0,
+                y: 100.0,
+            }),
+            source_inner,
+            source_scale,
+            show: true,
+        };
+        let window = WindowGeometry {
+            monitor: Some(Monitor {
+                name: Some("source".into()),
+                origin: (0, 0),
+                scale: source_scale,
+                primary: true,
+                ..target.clone()
+            }),
+            scale: source_scale,
+            inner: source_inner,
+            outer: source_inner,
+            position: (0, 0),
+        };
+        (startup, target, window)
+    }
+    #[test]
+    fn startup_high_to_low_preserves_unclamped_target_and_waits_for_real_size() {
+        let (startup, target, mut window) = startup_fixture(2.0, 1.0);
+        let monitors = [target.clone()];
+        assert!(matches!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Move(_))
+        ));
+        window.monitor = Some(target.clone());
+        assert_eq!(startup.step(&monitors, &window), Some(StartupAction::Wait));
+        window.scale = 1.0;
+        assert_eq!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Resize((240, 260)))
+        );
+        window.inner = (240, 260);
+        window.outer = (240, 260);
+        assert_eq!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Move((3520, 100)))
+        );
+        assert_eq!(startup.original.as_ref().unwrap().x, 1600.0);
+        window.position = (3520, 100);
+        assert_eq!(startup.step(&monitors, &window), Some(StartupAction::Ready));
+    }
+    #[test]
+    fn startup_low_to_high_clamps_with_final_actual_outer_before_ready() {
+        let (startup, target, mut window) = startup_fixture(1.0, 2.0);
+        let monitors = [target.clone()];
+        assert!(matches!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Move(_))
+        ));
+        window.monitor = Some(target);
+        window.scale = 2.0;
+        assert_eq!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Resize((480, 520)))
+        );
+        window.inner = (480, 520);
+        window.outer = (480, 520);
+        assert_eq!(
+            startup.step(&monitors, &window),
+            Some(StartupAction::Move((3360, 200)))
+        );
+        window.position = (3360, 200);
+        assert_eq!(startup.step(&monitors, &window), Some(StartupAction::Ready));
+    }
+    #[test]
+    fn startup_intermediate_events_and_quit_cannot_save_over_original_target() {
+        let (startup, _, _) = startup_fixture(2.0, 1.0);
+        let original = startup.original.clone();
+        let mut session = Session::new(original.clone(), vec![], Availability::Saved, true);
+        session.begin_startup(startup, Instant::now());
+        session.schedule(
+            Instant::now(),
+            Placement {
+                monitor_name: None,
+                x: 1440.0,
+                y: 100.0,
+            },
+        );
+        assert_eq!(session.latest, original);
+        assert!(session.pending.deadline().is_none());
+        session.request_scale();
+        assert!(session.scale_pending.is_none());
+        session.stop(
+            Some(Placement {
+                monitor_name: None,
+                x: 1440.0,
+                y: 100.0,
+            }),
+            0,
+        );
         assert!(session.quit.as_ref().unwrap().0.is_none());
     }
 }

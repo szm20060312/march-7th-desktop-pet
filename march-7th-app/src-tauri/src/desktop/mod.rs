@@ -3,7 +3,10 @@ mod state;
 mod store;
 
 use geometry::{Monitor, Placement};
-use state::{Availability, Lifecycle, Mode, Save, Session};
+use state::{
+    Availability, Lifecycle, Mode, Save, ScaleRequest, Session, StartupAction, StartupRestore,
+    WindowGeometry,
+};
 use std::{
     error::Error,
     io::{Error as IoError, ErrorKind},
@@ -17,8 +20,8 @@ use store::Store;
 use tauri::{
     menu::{CheckMenuItem, MenuBuilder, MenuEvent, MenuItem},
     tray::TrayIconBuilder,
-    App, AppHandle, Builder, Manager, PhysicalPosition, RunEvent, Runtime, WebviewWindow, Window,
-    WindowEvent,
+    App, AppHandle, Builder, Manager, PhysicalPosition, PhysicalSize, RunEvent, Runtime,
+    WebviewWindow, Window, WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -67,7 +70,13 @@ fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
         report_failure("load-placement", error);
     }
     let topology = monitors(&window)?;
-    apply_placement(&window, placement.as_ref(), &topology)?;
+    let inner = window.inner_size()?;
+    let startup = StartupRestore {
+        original: placement.clone(),
+        source_inner: (inner.width, inner.height),
+        source_scale: window.scale_factor()?,
+        show: true,
+    };
     let icon = app
         .default_window_icon()
         .cloned()
@@ -99,8 +108,10 @@ fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
         .menu(&menu)
         .on_menu_event(handle_menu_event)
         .build(app)?;
+    let mut session = Session::new(placement, topology, availability, writable);
+    session.begin_startup(startup, Instant::now());
     let shared = Arc::new(Shared {
-        session: Mutex::new(Session::new(placement, topology, availability, writable)),
+        session: Mutex::new(session),
         wake: Condvar::new(),
         monitor_queued: AtomicBool::new(false),
     });
@@ -114,12 +125,85 @@ fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
     std::thread::Builder::new()
         .name("desktop-state".into())
         .spawn(move || worker(handle, shared, store))?;
-    show_non_focusable_window(&window)?;
-    // Store the effective, clamped position, including first launch defaults.
-    if let Err(error) = schedule_current(app.handle()) {
-        report_failure("startup-placement-capture", error);
-    }
+    // Worker queues the hidden restore protocol; only its Ready branch may show
+    // or save, after destination DPI, actual sizes and final position agree.
     Ok(())
+}
+
+fn retry_startup<R: Runtime>(app: &AppHandle<R>, delay: Duration) {
+    let desktop = app.state::<Desktop<R>>();
+    let mut session = desktop.shared.session.lock().unwrap();
+    if session.lifecycle == Lifecycle::Running && session.startup.is_some() {
+        session.startup_due = Some(Instant::now() + delay);
+        desktop.shared.wake.notify_one();
+    }
+}
+
+fn advance_startup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let desktop = app.state::<Desktop<R>>();
+    if !active(&desktop) {
+        return Ok(());
+    }
+    let Some(startup) = desktop.shared.session.lock().unwrap().startup.clone() else {
+        return Ok(());
+    };
+    let window = main_window(app)?;
+    let topology = monitors(&window)?;
+    let inner = window.inner_size().map_err(|e| e.to_string())?;
+    let outer = window.outer_size().map_err(|e| e.to_string())?;
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let observation = WindowGeometry {
+        monitor: window
+            .current_monitor()
+            .map_err(|e| e.to_string())?
+            .map(|m| monitor_geometry(&m, false)),
+        scale: window.scale_factor().map_err(|e| e.to_string())?,
+        inner: (inner.width, inner.height),
+        outer: (outer.width, outer.height),
+        position: (position.x, position.y),
+    };
+    match startup
+        .step(&topology, &observation)
+        .ok_or("startup geometry unavailable")?
+    {
+        StartupAction::Move((x, y)) => window
+            .set_position(PhysicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?,
+        StartupAction::Resize((width, height)) => window
+            .set_size(PhysicalSize::new(width, height))
+            .map_err(|e| e.to_string())?,
+        StartupAction::Wait => {}
+        StartupAction::Ready => {
+            {
+                let mut session = desktop.shared.session.lock().unwrap();
+                session.startup = None;
+                session.startup_due = None;
+                session.position_intent();
+            }
+            if startup.show {
+                show_non_focusable_window(&window)?;
+            }
+            return schedule_current(app);
+        }
+    }
+    // Poll observed native state, not a guessed 'DPI callback must have run' delay.
+    retry_startup(app, Duration::from_millis(25));
+    Ok(())
+}
+
+fn show_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let desktop = app.state::<Desktop<R>>();
+    {
+        let mut session = desktop.shared.session.lock().unwrap();
+        if let Some(startup) = session.startup.as_mut() {
+            startup.show = true;
+            session.startup_due = Some(Instant::now());
+            desktop.shared.wake.notify_one();
+            return Ok(());
+        }
+    }
+    revalidate(app)?;
+    show_non_focusable_window(&main_window(app)?)
 }
 
 fn active<R: Runtime>(desktop: &Desktop<R>) -> bool {
@@ -134,10 +218,13 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     }
     let operation = event.id().as_ref();
     let result = match operation {
-        "show" => revalidate(app)
-            .and_then(|_| main_window(app))
-            .and_then(|w| show_non_focusable_window(&w)),
-        "hide" => main_window(app).and_then(|w| w.hide().map_err(|e| e.to_string())),
+        "show" => show_window(app),
+        "hide" => {
+            if let Some(startup) = desktop.shared.session.lock().unwrap().startup.as_mut() {
+                startup.show = false;
+            }
+            main_window(app).and_then(|w| w.hide().map_err(|e| e.to_string()))
+        }
         "reset-position" => reset_position(app),
         "interaction" => change_mode(app, Mode::Interaction),
         "click-through" => change_mode(app, Mode::ClickThrough),
@@ -192,7 +279,7 @@ fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
             // UI run_on_main_thread is inline; the worker queues after this event.
             {
                 let mut session = desktop.shared.session.lock().unwrap();
-                session.scale_pending = Some(session.latest.clone());
+                session.request_scale();
             }
             desktop.shared.wake.notify_one();
             Ok(())
@@ -203,12 +290,15 @@ fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         report_failure("window-event", error);
     }
 }
-fn reapply_scale<R: Runtime>(
-    app: &AppHandle<R>,
-    previous: Option<Placement>,
-) -> Result<(), String> {
+fn reapply_scale<R: Runtime>(app: &AppHandle<R>, request: ScaleRequest) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
-    if !active(&desktop) {
+    if !desktop
+        .shared
+        .session
+        .lock()
+        .unwrap()
+        .scale_is_current(&request)
+    {
         return Ok(());
     }
 
@@ -221,7 +311,7 @@ fn reapply_scale<R: Runtime>(
     let current = monitor_geometry(&current, true);
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let placement = geometry::after_scale(
-        previous.as_ref(),
+        request.placement.as_ref(),
         &current,
         (position.x, position.y),
         &topology,
@@ -284,7 +374,7 @@ fn capture_current<R: Runtime>(app: &AppHandle<R>) -> Result<Placement, String> 
 }
 fn schedule_current<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
-    if !active(&desktop) {
+    if !active(&desktop) || desktop.shared.session.lock().unwrap().startup.is_some() {
         return Ok(());
     }
     let placement = match capture_current(app) {
@@ -341,6 +431,23 @@ fn revalidate<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 fn reset_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    app.state::<Desktop<R>>()
+        .shared
+        .session
+        .lock()
+        .unwrap()
+        .position_intent();
+    {
+        let desktop = app.state::<Desktop<R>>();
+        let mut session = desktop.shared.session.lock().unwrap();
+        if let Some(startup) = session.startup.as_mut() {
+            startup.original = None;
+            startup.show = true;
+            session.startup_due = Some(Instant::now());
+            desktop.shared.wake.notify_one();
+            return Ok(());
+        }
+    }
     let window = main_window(app)?;
     let mut topology = monitors(&window)?;
     if !topology.iter().any(|m| m.primary) {
@@ -354,7 +461,7 @@ fn reset_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 }
 fn check_topology<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
-    if !active(&desktop) {
+    if !active(&desktop) || desktop.shared.session.lock().unwrap().startup.is_some() {
         return Ok(());
     }
     let topology = monitors(&main_window(app)?)?;
@@ -371,23 +478,28 @@ fn check_topology<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 fn worker<R: Runtime>(app: AppHandle<R>, shared: Arc<Shared>, mut store: Option<Store>) {
     let mut next_monitor = Instant::now() + MONITOR_INTERVAL;
     loop {
-        let (save, quit, poll, scale) = {
+        let (save, quit, poll, scale, startup) = {
             let mut session = shared.session.lock().unwrap();
             loop {
                 if let Some((save, code)) = session.quit.take() {
-                    break (save, Some(code), false, None);
+                    break (save, Some(code), false, None, false);
                 }
                 let now = Instant::now();
                 let save = session.pending.take_due(now);
                 let poll = now >= next_monitor;
                 let scale = std::mem::take(&mut session.scale_pending);
-                if save.is_some() || poll || scale.is_some() {
-                    break (save, None, poll, scale);
+                let startup = session.startup_due.is_some_and(|due| due <= now);
+                if startup {
+                    session.startup_due = None;
+                }
+                if save.is_some() || poll || scale.is_some() || startup {
+                    break (save, None, poll, scale, startup);
                 }
                 let deadline = session
                     .pending
                     .deadline()
                     .map_or(next_monitor, |d| d.min(next_monitor));
+                let deadline = session.startup_due.map_or(deadline, |d| d.min(deadline));
                 session = shared
                     .wake
                     .wait_timeout(session, deadline.saturating_duration_since(now))
@@ -402,6 +514,17 @@ fn worker<R: Runtime>(app: AppHandle<R>, shared: Arc<Shared>, mut store: Option<
             shared.session.lock().unwrap().lifecycle = Lifecycle::ExitReady;
             app.exit(code);
             return;
+        }
+        if startup {
+            let handle = app.clone();
+            if let Err(error) = app.run_on_main_thread(move || {
+                if let Err(error) = advance_startup(&handle) {
+                    report_failure("startup-placement", error);
+                    retry_startup(&handle, MONITOR_INTERVAL);
+                }
+            }) {
+                report_failure("queue-startup-placement", error);
+            }
         }
         if let Some(previous) = scale {
             let handle = app.clone();
