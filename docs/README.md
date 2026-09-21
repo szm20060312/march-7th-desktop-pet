@@ -15,6 +15,10 @@ docs/
 │       └── running-right.gif
 └── development/
     ├── app/
+    │   ├── PRODUCT-PLAN.md
+    │   ├── ARCHITECTURE.md
+    │   ├── ARCHITECTURE-VALIDATION.md
+    │   ├── IMPLEMENTATION-ARCHITECTURE.md
     │   ├── ROADMAP.md
     │   ├── STAGE-0.2.0.md
     │   ├── TODO.md
@@ -27,6 +31,11 @@ docs/
 
 ## 独立 App
 
+- [已确认的长期产品计划](development/app/PRODUCT-PLAN.md)
+- [架构与扩展说明](development/app/ARCHITECTURE.md)
+- [本次架构验证记录](development/app/ARCHITECTURE-VALIDATION.md)
+- [本次架构整理范围](development/app/IMPLEMENTATION-ARCHITECTURE.md)
+- [贡献约定](../CONTRIBUTING.md)
 - [开发计划](development/app/ROADMAP.md)
 - [双平台 TODO](development/app/TODO.md)
 - [Windows 开发交接](development/app/WINDOWS-HANDOFF.md)

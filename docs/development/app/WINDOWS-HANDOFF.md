@@ -1,5 +1,7 @@
 # March 7th Windows 开发交接文档
 
+> 下面保留 v0.2.0 的原始交接与验收参考。`windows/v0.2-baseline@a11d0d1` 已记录单屏 100%/150%/200% DPI 实测。新架构的代码入口见 [ARCHITECTURE.md](ARCHITECTURE.md)，当前阶段见 [TODO.md](TODO.md)。本次重构的实机结果需重新记录，不能由旧清单推定。
+
 更新时间：2026-09-21  
 目标平台：Windows 10/11 x64  
 当前应用版本：`v0.2.0`  
@@ -174,8 +176,10 @@ taskkill /IM march-7th-app.exe /F
 
 | 文件 | 作用 |
 |---|---|
-| `march-7th-app/src/main.ts` | 采样鼠标/窗口位置，选择待机、注视或左右移动动画 |
-| `march-7th-app/src/animation.ts` | 16 方向映射与水平移动方向判断 |
+| `march-7th-app/src/main.ts` | 装配与清理运行实例 |
+| `march-7th-app/src/application/pet-runtime.ts` | 编排采样、渲染与生命周期 |
+| `march-7th-app/src/domain/pet-model.ts` | 待机、注视和移动状态 |
+| `march-7th-app/src/domain/animation.ts` | 方向映射与水平移动方向判断 |
 | `march-7th-app/src/animation.test.ts` | 平台无关动画逻辑测试 |
 | `march-7th-app/src-tauri/src/lib.rs` | Tauri 命令，统一返回鼠标相对位置和窗口坐标 |
 | `march-7th-app/src-tauri/src/platform/windows.rs` | Win32 `GetCursorPos` 与 DPI 坐标换算 |
