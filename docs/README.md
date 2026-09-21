@@ -15,6 +15,7 @@ docs/
 │       └── running-right.gif
 └── development/
     ├── app/
+    │   ├── ROADMAP.md
     │   └── STAGE-0.2.0.md
     └── codex-pet/
         ├── BASELINE.md
@@ -24,6 +25,7 @@ docs/
 
 ## 独立 App
 
+- [开发计划](development/app/ROADMAP.md)
 - [v0.2.0 阶段报告](development/app/STAGE-0.2.0.md)
 - [App 开发入口](../march-7th-app/README.md)
 
