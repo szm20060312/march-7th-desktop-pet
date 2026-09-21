@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, 'codex/**']
     paths:
+      - '.gitattributes'
       - '.github/workflows/desktop-regression.yml'
       - 'march-7th-app/**'
       - 'docs/development/app/regression/**'
