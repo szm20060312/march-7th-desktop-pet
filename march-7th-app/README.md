@@ -11,6 +11,7 @@ March 7th 是从现有 Codex v2 桌宠迁移而来的独立 Tauri 2 桌面应用
 - macOS Apple Silicon 原生光标读取
 - Windows x64 `GetCursorPos` 平台实现
 - macOS 与 Windows CI 编译矩阵
+- Windows 10/11 x64 单显示器实机基线已通过（100%、150%、200% DPI）
 - 拖动期间暂停注视追踪，修复眼神在方向帧之间抖动的问题
 - 根据窗口实际移动方向播放向左或向右奔跑动画
 

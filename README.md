@@ -55,7 +55,7 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
 |---|---|
 | macOS Apple Silicon | 已开发并实机验证 |
 | macOS Intel | 不支持 |
-| Windows 10/11 x64 | 平台代码与 CI 已建立，等待 Windows 实机验证 |
+| Windows 10/11 x64 | 已完成单显示器实机基线验证（100% / 150% / 200% DPI） |
 
 ### 从源码运行
 
@@ -156,7 +156,7 @@ The current stable version is **v0.2.0**.
 |---|---|
 | macOS Apple Silicon | Implemented and tested on real hardware |
 | macOS Intel | Not supported |
-| Windows 10/11 x64 | Platform implementation and CI are ready; real-device validation is pending |
+| Windows 10/11 x64 | Single-display real-device baseline validated at 100% / 150% / 200% DPI |
 
 ### Run from Source
 
