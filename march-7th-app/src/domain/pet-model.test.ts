@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest";
+import { march7th } from "../characters/march-7th";
+import { PetModel } from "./pet-model";
+import { directionFrame } from "./animation";
+
+const center = { x: 0, y: 0 };
+const sample = (windowX: number, windowY = 0) => ({ x: 100, y: 0, windowX, windowY });
+
+describe("PetModel", () => {
+  it("extends the quiet gaze period on each real window movement", () => {
+    const pet = new PetModel(march7th, 0);
+    pet.acceptSample(sample(0), 0);
+    pet.acceptSample(sample(10), 100);
+    pet.acceptSample(sample(20), 200);
+    expect(pet.isMoving(359)).toBe(true);
+    expect(pet.isMoving(360)).toBe(false);
+    pet.acceptSample(sample(20), 360);
+    expect(pet.frameAt(360, center)).toEqual({ row: 9, column: 4 });
+  });
+  it("cycles the movement clip without showing gaze", () => {
+    const pet = new PetModel(march7th, 0);
+    pet.acceptSample(sample(0), 0);
+    for (let i = 0; i < 10; i++) {
+      pet.acceptSample(sample(i + 1), i * 90);
+      expect(pet.frameAt(i * 90, center)).toEqual({ row: 1, column: i % 8 });
+    }
+  });
+  it("isolates state between instances", () => {
+    const first = new PetModel(march7th, 0);
+    const second = new PetModel(march7th, 0);
+    first.beginDrag(0);
+    expect(first.frameAt(0, center).row).toBe(1);
+    expect(second.frameAt(0, center).row).toBe(0);
+  });
+  it("uses character-specific rows, frame count and cadence", () => {
+    const alternate = {
+      ...march7th,
+      atlas: { ...march7th.atlas, columns: 4 },
+      clips: { ...march7th.clips, idle: { row: 3, frameCount: 2, frameIntervalMs: 50 } },
+      look: { firstRow: 6, directionCount: 8 },
+    };
+    const pet = new PetModel(alternate, 0);
+    expect(pet.frameAt(49, center)).toEqual({ row: 3, column: 0 });
+    expect(pet.frameAt(50, center)).toEqual({ row: 3, column: 1 });
+    expect(pet.frameAt(100, center)).toEqual({ row: 3, column: 0 });
+    expect(directionFrame({ x: -100, y: 0 }, center, 20, alternate)).toEqual({ row: 7, column: 2 });
+  });
+  it("maps every configured gaze direction, including wraparound", () => {
+    for (let index = 0; index < 16; index++) {
+      const angle = index * Math.PI / 8;
+      const point = { x: Math.sin(angle) * 100, y: -Math.cos(angle) * 100 };
+      expect(directionFrame(point, center, 20, march7th)).toEqual({ row: 9 + Math.floor(index / 8), column: index % 8 });
+    }
+    expect(directionFrame({ x: -0.01, y: -100 }, center, 20, march7th)).toEqual({ row: 9, column: 0 });
+  });
+});

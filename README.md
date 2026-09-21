@@ -19,6 +19,10 @@
 
 ### 项目简介
 
+长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。双角色、情境短句和提醒仍在计划中，当前运行功能见下文。
+
+开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
+
 March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用了经过完整 QA 的 Codex v2 动画图集，并逐步将待机、注视、移动和其他角色动作迁移到 Tauri 2。
 
 当前稳定版本为 **v0.2.0**。
@@ -119,6 +123,8 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 ## English
 
 ### Overview
+
+The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. Two built-in characters, contextual lines and reminders are planned, not implemented yet. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 

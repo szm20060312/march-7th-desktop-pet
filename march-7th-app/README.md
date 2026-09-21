@@ -2,6 +2,10 @@
 
 March 7th 是从现有 Codex v2 桌宠迁移而来的独立 Tauri 2 桌面应用。
 
+开发说明：[长期计划](../docs/development/app/PRODUCT-PLAN.md) · [架构与扩展](../docs/development/app/ARCHITECTURE.md) · [贡献约定](../CONTRIBUTING.md)。
+
+`src/main.ts` 只负责装配；动画状态在 `domain/`，角色参数在 `characters/`，运行调度在 `application/`，Tauri/DOM/浏览器时钟在 `adapters/`。当前仍只有一个内置角色；本次重构没有提前实现提醒或切换界面。
+
 ## 当前里程碑：0.2.0
 
 - 透明、无边框、始终置顶的宠物窗口
@@ -35,6 +39,7 @@ March 7th 是从现有 Codex v2 桌宠迁移而来的独立 Tauri 2 桌面应用
 ```bash
 pnpm install
 pnpm test
+pnpm check
 pnpm tauri dev
 ```
 

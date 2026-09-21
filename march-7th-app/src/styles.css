@@ -39,11 +39,7 @@ body {
 }
 
 .pet-sprite {
-  width: 192px;
-  height: 208px;
-  background-image: url("/assets/march-7th/spritesheet.webp");
   background-repeat: no-repeat;
-  background-size: 1536px 2288px;
   filter: drop-shadow(0 3px 4px rgb(40 22 45 / 18%));
   pointer-events: none;
   will-change: background-position;
