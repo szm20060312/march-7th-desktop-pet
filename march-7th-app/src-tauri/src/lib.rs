@@ -2,6 +2,7 @@ mod atomic_file;
 mod characters;
 mod desktop;
 mod platform;
+mod reminders;
 
 use serde::Serialize;
 
@@ -39,12 +40,15 @@ pub fn run() {
     desktop::configure(tauri::Builder::default())
         .setup(|app| {
             let characters = characters::setup(app)?;
-            desktop::setup(app, &characters)
+            desktop::setup(app, &characters)?;
+            reminders::setup(app)
         })
         .invoke_handler(tauri::generate_handler![
             cursor_relative_to_window,
             characters::native::get_selected_character,
-            characters::native::select_character
+            characters::native::select_character,
+            reminders::native::get_reminders,
+            reminders::native::reminder_command
         ])
         .build(app_context())
         .expect("error while building March 7th")
@@ -54,6 +58,7 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 characters::stop(app);
+                reminders::stop(app);
             }
             desktop::on_run_event(app, event);
         });
