@@ -25,9 +25,9 @@
 
 March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用了经过完整 QA 的 Codex v2 动画图集，并逐步将待机、注视、移动和其他角色动作迁移到 Tauri 2。
 
-当前稳定版本为 **v0.2.0**。
+当前稳定版本为 **v0.2.0**。下方功能与平台实机记录属于该历史基线；本分支另已实现 G1/G2 托盘控制、点击穿透和位置持久化，仍待当前提交的实机验收，不能沿用历史通过结论。实现与验证边界见 [G2 记录](docs/development/app/G2-PLACEMENT.md)。
 
-### 当前功能
+### v0.2.0 历史基线功能
 
 - 透明、无边框、始终置顶的桌宠窗口
 - 六帧待机动画
@@ -53,7 +53,7 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
   </tr>
 </table>
 
-### 平台支持
+### 平台支持（历史基线实机记录）
 
 | 平台 | 状态 |
 |---|---|
@@ -128,9 +128,9 @@ The long-term goal is a switchable-character desktop companion with gentle daily
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 
-The current stable version is **v0.2.0**.
+The current stable version is **v0.2.0**. The features and real-device platform results below describe that historical baseline. This branch also implements G1/G2 tray controls, click-through and placement persistence; human acceptance for the current commit is still pending. See the [G2 record](docs/development/app/G2-PLACEMENT.md) for implementation and evidence boundaries.
 
-### Features
+### v0.2.0 Baseline Features
 
 - Transparent, frameless, always-on-top pet window
 - Six-frame idle animation
@@ -156,7 +156,7 @@ The current stable version is **v0.2.0**.
   </tr>
 </table>
 
-### Platform Support
+### Platform Support (Historical Baseline)
 
 | Platform | Status |
 |---|---|

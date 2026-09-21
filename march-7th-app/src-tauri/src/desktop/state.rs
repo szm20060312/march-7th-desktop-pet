@@ -20,14 +20,23 @@ pub struct WindowGeometry {
 }
 #[derive(Debug, PartialEq)]
 pub enum StartupAction {
-    Move((i32, i32)),
+    Move((i32, i32), f64),
     Resize((u32, u32)),
-    Fallback((i32, i32)),
+    Fallback((i32, i32), f64),
     Wait,
     Ready,
 }
 impl StartupRestore {
+    #[cfg(test)]
     pub fn step(&self, monitors: &[Monitor], window: &WindowGeometry) -> Option<StartupAction> {
+        self.step_with_coordinates(super::coordinates::Coordinates::Physical, monitors, window)
+    }
+    pub fn step_with_coordinates(
+        &self,
+        coordinates: super::coordinates::Coordinates,
+        monitors: &[Monitor],
+        window: &WindowGeometry,
+    ) -> Option<StartupAction> {
         use super::geometry;
         let requested = geometry::select_monitor(self.original.as_ref(), monitors)?;
         let current =
@@ -38,13 +47,15 @@ impl StartupRestore {
         }
         let at_target_scale = (window.scale - target.scale).abs() <= 1e-6
             && (current.scale - target.scale).abs() <= 1e-6;
+        let (target_position, target_outer) =
+            coordinates.rect(window.position, window.outer, window.scale, target.scale)?;
         if !at_target_scale {
             if self.fallback || (current.name == target.name && current.origin == target.origin) {
                 return Some(StartupAction::Wait);
             }
-            let staging = geometry::restore(None, std::slice::from_ref(target), window.outer)?;
-            let oversized = window.outer.0 > target.size.0 || window.outer.1 > target.size.1;
-            if oversized && window.position == staging {
+            let staging = geometry::restore(None, std::slice::from_ref(target), target_outer)?;
+            let oversized = target_outer.0 > target.size.0 || target_outer.1 > target.size.1;
+            if oversized && target_position == staging {
                 // The commanded anchor is already reached, yet the neighbor owns
                 // the larger intersection. Repeating it cannot acquire target DPI.
                 let fallback = monitors
@@ -52,10 +63,16 @@ impl StartupRestore {
                     .find(|m| m.name == current.name && m.origin == current.origin)
                     .and_then(|m| geometry::select_monitor(None, std::slice::from_ref(m)))
                     .or_else(|| geometry::select_monitor(None, monitors))?;
-                return geometry::restore(None, std::slice::from_ref(fallback), window.outer)
-                    .map(StartupAction::Fallback);
+                let (_, outer) = coordinates.rect(
+                    window.position,
+                    window.outer,
+                    window.scale,
+                    fallback.scale,
+                )?;
+                return geometry::restore(None, std::slice::from_ref(fallback), outer)
+                    .map(|p| StartupAction::Fallback(p, fallback.scale));
             }
-            return Some(StartupAction::Move(staging));
+            return Some(StartupAction::Move(staging, target.scale));
         }
         let expected_inner =
             geometry::rescaled_size(self.source_inner, self.source_scale, target.scale)?;
@@ -66,23 +83,23 @@ impl StartupRestore {
             // After the explicit fallback move, require actual settled DPI/size
             // and a reachable rectangle. Dominant monitor identity can differ for
             // any oversized window; do not oscillate between small displays.
-            if geometry::reachable(window.position, window.outer, monitors) {
+            if coordinates.reachable(window.position, window.outer, window.scale, monitors) {
                 return Some(StartupAction::Ready);
             }
-            return geometry::restore(None, std::slice::from_ref(target), window.outer)
-                .map(StartupAction::Move);
+            return geometry::restore(None, std::slice::from_ref(target), target_outer)
+                .map(|p| StartupAction::Move(p, target.scale));
         }
         // Matching actual DPI/size makes monitor ownership irrelevant: the
         // whole rectangle (or oversized-axis anchor) is checked against target.
         let position = geometry::restore(
             self.original.as_ref(),
             std::slice::from_ref(target),
-            window.outer,
+            target_outer,
         )?;
-        Some(if position == window.position {
+        Some(if position == target_position {
             StartupAction::Ready
         } else {
-            StartupAction::Move(position)
+            StartupAction::Move(position, target.scale)
         })
     }
 }
@@ -203,6 +220,15 @@ impl Session {
     pub fn begin_startup(&mut self, startup: StartupRestore, now: Instant) {
         if self.lifecycle != Lifecycle::Running {
             return;
+        }
+        self.position_revision += 1;
+        self.revision += 1;
+        self.pending.cancel();
+        self.scale_needed = false;
+        self.scale_pending = None;
+        self.scale_due = None;
+        if self.writable {
+            self.availability = Availability::Pending;
         }
         self.startup = Some(startup);
         self.startup_due = Some(now);
@@ -594,7 +620,7 @@ mod tests {
         let monitors = [target.clone()];
         assert!(matches!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Move(_))
+            Some(StartupAction::Move(_, _))
         ));
         window.monitor = Some(target.clone());
         assert_eq!(startup.step(&monitors, &window), Some(StartupAction::Wait));
@@ -607,7 +633,7 @@ mod tests {
         window.outer = (240, 260);
         assert_eq!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Move((3520, 100)))
+            Some(StartupAction::Move((3520, 100), 1.0))
         );
         assert_eq!(startup.original.as_ref().unwrap().x, 1600.0);
         window.position = (3520, 100);
@@ -619,7 +645,7 @@ mod tests {
         let monitors = [target.clone()];
         assert!(matches!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Move(_))
+            Some(StartupAction::Move(_, _))
         ));
         window.monitor = Some(target);
         window.scale = 2.0;
@@ -631,7 +657,7 @@ mod tests {
         window.outer = (480, 520);
         assert_eq!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Move((3360, 200)))
+            Some(StartupAction::Move((3360, 200), 2.0))
         );
         window.position = (3360, 200);
         assert_eq!(startup.step(&monitors, &window), Some(StartupAction::Ready));
@@ -713,14 +739,14 @@ mod tests {
         window.position = (-200, 410);
         assert_eq!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Fallback((720, 410)))
+            Some(StartupAction::Fallback((720, 410), 1.0))
         );
         // A stale window scale equal to the requested target is not evidence
         // of settlement when the actual dominant display has another DPI.
         window.scale = 2.0;
         assert_eq!(
             startup.step(&monitors, &window),
-            Some(StartupAction::Fallback((720, 410)))
+            Some(StartupAction::Fallback((720, 410), 1.0))
         );
         window.scale = 1.0;
         startup.fallback = true;
@@ -751,5 +777,40 @@ mod tests {
         assert!(session.scale_pending.is_none());
         assert!(session.quit.as_ref().unwrap().0.is_none());
         assert_eq!(session.quit.as_ref().unwrap().1, 7);
+    }
+    #[test]
+    fn mac_adapter_startup_and_reset_stage_in_destination_units() {
+        use super::super::coordinates::Coordinates;
+        for (source_scale, target_scale, origin, expected) in [
+            (2.0, 1.0, (1440, 40), (2280, 450)),
+            (1.0, 2.0, (-3840, -200), (-3120, 80)),
+        ] {
+            let (mut startup, mut target, mut window) = startup_fixture(source_scale, target_scale);
+            target.origin = origin;
+            startup.original.as_mut().unwrap().x = 100.0;
+            for reset in [false, true] {
+                if reset {
+                    startup.original = None;
+                    target.primary = true;
+                }
+                assert_eq!(
+                    startup.step_with_coordinates(Coordinates::Mac, &[target.clone()], &window),
+                    Some(StartupAction::Move(expected, target.scale))
+                );
+                window.position = (0, 0);
+            }
+        }
+    }
+    #[test]
+    fn relocation_cancels_pending_save_and_old_dpi_before_settlement() {
+        let (startup, _, _) = startup_fixture(2.0, 1.0);
+        let mut session = Session::new(None, vec![], Availability::Saved, true);
+        session.schedule(Instant::now(), startup.original.clone().unwrap());
+        let revision = session.revision;
+        session.request_scale(Instant::now());
+        session.begin_startup(startup, Instant::now());
+        assert!(session.pending.deadline().is_none());
+        assert!(session.scale_pending.is_none());
+        assert!(session.revision > revision);
     }
 }
