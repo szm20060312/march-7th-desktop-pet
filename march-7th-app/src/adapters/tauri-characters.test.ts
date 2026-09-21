@@ -3,6 +3,33 @@ import { connectCharacterSelection, parseCharacterSnapshot } from "./tauri-chara
 const snapshot = (revision: number, id = "a") => ({ selectedCharacterId: id, revision, persistence: "saved" });
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 describe("native character selection boundary", () => {
+  it("reports listener failure as requiring restart and never begins the initial read", async () => {
+    const error = Error("listen denied"); const reportError = vi.fn(); const get = vi.fn();
+    connectCharacterSelection({ ids: ["a"], select: vi.fn(), reportError, get, listen: async () => { throw error; } });
+    await flush();
+    expect(reportError).toHaveBeenCalledWith({ stage: "listen", recovery: "restart", cause: error });
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("keeps an established subscription recoverable after get or event failure", async () => {
+    let listener!: (value: unknown) => void; const reportError = vi.fn(); const select = vi.fn();
+    const error = Error("get failed");
+    connectCharacterSelection({ ids: ["a"], select, reportError, listen: async callback => { listener = callback; return () => {}; }, get: async () => { throw error; } });
+    await flush();
+    expect(reportError).toHaveBeenLastCalledWith({ stage: "snapshot", recovery: "tray", cause: error });
+    listener(snapshot(1, "unknown"));
+    expect(reportError).toHaveBeenLastCalledWith({ stage: "event", recovery: "tray", cause: expect.any(Error) });
+    listener(snapshot(2)); expect(select).toHaveBeenCalledWith({ characterId: "a", revision: 2, persistence: "saved" });
+  });
+  it.each(["listen", "get"])("ignores a late %s rejection after disposal", async phase => {
+    let reject!: (error: Error) => void; const pending = new Promise<unknown>((_, r) => { reject = r; });
+    const reportError = vi.fn(); const stop = vi.fn();
+    const dispose = connectCharacterSelection({ ids: ["a"], select: vi.fn(), reportError,
+      listen: phase === "listen" ? () => pending.then(() => stop) : async () => stop,
+      get: () => pending });
+    await flush(); dispose(); reject(Error("late failure")); await flush();
+    expect(reportError).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(phase === "get" ? 1 : 0);
+  });
   it("validates IPC fields and known identities", () => {
     expect(parseCharacterSnapshot(snapshot(1), ["a"])).toEqual({ characterId: "a", revision: 1, persistence: "saved" });
     for (const raw of [null, {}, snapshot(-1), snapshot(1.5), snapshot(1, "unknown"), { ...snapshot(1), persistence: "secret" }]) expect(() => parseCharacterSnapshot(raw, ["a"])).toThrow();

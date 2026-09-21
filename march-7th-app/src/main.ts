@@ -19,10 +19,10 @@ const gestures = createDomPetGestures(stage, document, window, browserScheduler)
 const host = createTauriHost();
 let errorTimer: number | undefined;
 const status = {
-  setPresentationError(error: string | null) {
+  setPresentationError(error: string | null, autoClear = true) {
     if (errorTimer !== undefined) window.clearTimeout(errorTimer);
     view.setPresentationError(error);
-    errorTimer = error ? window.setTimeout(() => { view.setPresentationError(null); errorTimer = undefined; }, 4000) : undefined;
+    errorTimer = error && autoClear ? window.setTimeout(() => { view.setPresentationError(null); errorTimer = undefined; }, 4000) : undefined;
   },
 };
 let presentation: ReturnType<typeof createCharacterPresentationController> | undefined;
@@ -30,7 +30,11 @@ const disconnect = connectCharacterSelection({
   ids: characterCatalog.characters.map(character => character.id),
   reportError(error) {
     console.error("Character selection connection failed", error);
-    status.setPresentationError("无法读取角色选择，请从托盘重试。");
+    if (error.recovery === "restart") {
+      status.setPresentationError("角色连接失败，请重启。", false);
+    } else {
+      status.setPresentationError("无法读取角色选择，请从托盘重试。");
+    }
   },
   select(snapshot) {
     if (presentation) { void presentation.select(snapshot); return; }
