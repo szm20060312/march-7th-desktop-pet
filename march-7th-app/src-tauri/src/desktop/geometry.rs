@@ -55,23 +55,28 @@ fn physical_offset(value: f64, scale: f64) -> Option<i64> {
     }
 }
 
-pub fn after_scale(
-    previous: Option<&Placement>,
-    current: &Monitor,
+pub fn clamp_to_monitor(
     position: (i32, i32),
-    monitors: &[Monitor],
-) -> Option<Placement> {
-    // Preserve logical offset for a DPI change on the same identified display.
-    // Crossing to another/ambiguous display must not snap back to the old screen.
-    if let Some(previous) = previous {
-        if current.name.is_some()
-            && previous.monitor_name == current.name
-            && monitors.iter().filter(|m| m.name == current.name).count() == 1
-        {
-            return Some(previous.clone());
-        }
+    size: (u32, u32),
+    monitor: &Monitor,
+) -> Option<(i32, i32)> {
+    if !valid(monitor) {
+        return None;
     }
-    capture(position, current)
+    Some((
+        axis(
+            monitor.origin.0,
+            monitor.size.0,
+            size.0,
+            Some(i64::from(position.0) - i64::from(monitor.origin.0)),
+        )?,
+        axis(
+            monitor.origin.1,
+            monitor.size.1,
+            size.1,
+            Some(i64::from(position.1) - i64::from(monitor.origin.1)),
+        )?,
+    ))
 }
 
 pub fn restore(
@@ -185,31 +190,22 @@ mod tests {
     }
 
     #[test]
-    fn dpi_change_preserves_offsets_but_cross_screen_move_uses_destination() {
-        let left = screen("left", (-1920, 0), 1.0, false);
-        let main = screen("main", (0, 40), 2.0, true);
-        let saved = capture((-1820, 100), &left).unwrap();
-        let current = after_scale(
-            Some(&saved),
-            &main,
-            (200, 240),
-            &[left.clone(), main.clone()],
-        )
-        .unwrap();
-        assert_eq!(current.monitor_name, main.name);
-        assert_eq!((current.x, current.y), (100.0, 100.0));
-        let scaled = Monitor { scale: 2.0, ..left };
+    fn live_dpi_clamp_uses_settled_physical_position_and_actual_size() {
+        let main = screen("main", (0, 0), 2.0, true);
         assert_eq!(
-            after_scale(
-                Some(&saved),
-                &scaled,
-                (-1800, 200),
-                std::slice::from_ref(&scaled)
-            ),
-            Some(saved)
+            clamp_to_monitor((1900, 20), (480, 520), &main),
+            Some((1440, 20))
+        );
+        assert_eq!(
+            clamp_to_monitor((1000, 20), (480, 520), &main),
+            Some((1000, 20))
+        );
+        let left = screen("left", (-1920, -100), 1.0, false);
+        assert_eq!(
+            clamp_to_monitor((-10, -150), (240, 260), &left),
+            Some((-240, -100))
         );
     }
-
     #[test]
     fn identity_requires_unique_match_otherwise_primary_then_first() {
         let saved = Placement {

@@ -76,6 +76,7 @@ fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
         source_inner: (inner.width, inner.height),
         source_scale: window.scale_factor()?,
         show: true,
+        fallback: false,
     };
     let icon = app
         .default_window_icon()
@@ -173,6 +174,15 @@ fn advance_startup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             .set_size(PhysicalSize::new(width, height))
             .map_err(|e| e.to_string())?,
         StartupAction::Wait => {}
+        StartupAction::Fallback((x, y)) => {
+            window
+                .set_position(PhysicalPosition::new(x, y))
+                .map_err(|e| e.to_string())?;
+            if let Some(startup) = desktop.shared.session.lock().unwrap().startup.as_mut() {
+                startup.fallback = true;
+            }
+            eprintln!("March 7th desktop startup uses a reachable display because the oversized target cannot acquire its requested DPI");
+        }
         StartupAction::Ready => {
             {
                 let mut session = desktop.shared.session.lock().unwrap();
@@ -276,10 +286,11 @@ fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         }
         WindowEvent::Moved(_) => schedule_current(app),
         WindowEvent::ScaleFactorChanged { .. } => {
-            // UI run_on_main_thread is inline; the worker queues after this event.
+            // Keep a native geometry check due after movement becomes quiet;
+            // subsequent native Moved events must not discard that obligation.
             {
                 let mut session = desktop.shared.session.lock().unwrap();
-                session.request_scale();
+                session.request_scale(Instant::now());
             }
             desktop.shared.wake.notify_one();
             Ok(())
@@ -310,14 +321,30 @@ fn reapply_scale<R: Runtime>(app: &AppHandle<R>, request: ScaleRequest) -> Resul
         .ok_or("current monitor unavailable")?;
     let current = monitor_geometry(&current, true);
     let position = window.outer_position().map_err(|e| e.to_string())?;
-    let placement = geometry::after_scale(
-        request.placement.as_ref(),
-        &current,
-        (position.x, position.y),
-        &topology,
-    );
-    // Limit correction to the current display, including ambiguous names.
-    apply_placement(&window, placement.as_ref(), &[current])?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let actual = (position.x, position.y);
+    let size = (size.width, size.height);
+    let corrected = if geometry::reachable(actual, size, &topology) {
+        actual
+    } else {
+        geometry::clamp_to_monitor(actual, size, &current).ok_or("invalid current work area")?
+    };
+    // Validate again immediately before effects. This fulfills the DPI check,
+    // never replays a logical position predating native/user movement.
+    if !desktop
+        .shared
+        .session
+        .lock()
+        .unwrap()
+        .complete_scale(&request)
+    {
+        return Ok(());
+    }
+    if corrected != actual {
+        window
+            .set_position(PhysicalPosition::new(corrected.0, corrected.1))
+            .map_err(|e| e.to_string())?;
+    }
     schedule_current(app)
 }
 fn monitor_geometry(m: &tauri::Monitor, primary: bool) -> Monitor {
@@ -442,6 +469,7 @@ fn reset_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         let mut session = desktop.shared.session.lock().unwrap();
         if let Some(startup) = session.startup.as_mut() {
             startup.original = None;
+            startup.fallback = false;
             startup.show = true;
             session.startup_due = Some(Instant::now());
             desktop.shared.wake.notify_one();
@@ -487,7 +515,7 @@ fn worker<R: Runtime>(app: AppHandle<R>, shared: Arc<Shared>, mut store: Option<
                 let now = Instant::now();
                 let save = session.pending.take_due(now);
                 let poll = now >= next_monitor;
-                let scale = std::mem::take(&mut session.scale_pending);
+                let scale = session.take_scale_due(now);
                 let startup = session.startup_due.is_some_and(|due| due <= now);
                 if startup {
                     session.startup_due = None;
@@ -500,6 +528,7 @@ fn worker<R: Runtime>(app: AppHandle<R>, shared: Arc<Shared>, mut store: Option<
                     .deadline()
                     .map_or(next_monitor, |d| d.min(next_monitor));
                 let deadline = session.startup_due.map_or(deadline, |d| d.min(deadline));
+                let deadline = session.scale_due.map_or(deadline, |d| d.min(deadline));
                 session = shared
                     .wake
                     .wait_timeout(session, deadline.saturating_duration_since(now))
@@ -531,6 +560,14 @@ fn worker<R: Runtime>(app: AppHandle<R>, shared: Arc<Shared>, mut store: Option<
             if let Err(error) = app.run_on_main_thread(move || {
                 if let Err(error) = reapply_scale(&handle, previous) {
                     report_failure("scale-placement", error);
+                    let desktop = handle.state::<Desktop<R>>();
+                    desktop
+                        .shared
+                        .session
+                        .lock()
+                        .unwrap()
+                        .request_scale(Instant::now());
+                    desktop.shared.wake.notify_one();
                 }
             }) {
                 report_failure("queue-scale-placement", error);
