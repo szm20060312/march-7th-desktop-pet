@@ -17,7 +17,8 @@ docs/
     ├── app/
     │   ├── ROADMAP.md
     │   ├── STAGE-0.2.0.md
-    │   └── TODO.md
+    │   ├── TODO.md
+    │   └── WINDOWS-HANDOFF.md
     └── codex-pet/
         ├── BASELINE.md
         ├── INTERACTIONS.md
@@ -28,6 +29,7 @@ docs/
 
 - [开发计划](development/app/ROADMAP.md)
 - [双平台 TODO](development/app/TODO.md)
+- [Windows 开发交接](development/app/WINDOWS-HANDOFF.md)
 - [v0.2.0 阶段报告](development/app/STAGE-0.2.0.md)
 - [App 开发入口](../march-7th-app/README.md)
 
