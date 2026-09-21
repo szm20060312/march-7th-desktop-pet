@@ -37,6 +37,7 @@ docs/
 - [M0 测试包说明](development/app/regression/README.md)
 - [M0 实际构建与产物校验记录](development/app/M0-BUILD-REPORT.md)
 - [公开分发准备与维护边界（未批准发布）](development/app/DISTRIBUTION-READINESS.md)
+- [朋友试用记录与共同复盘模板（尚未开始试用）](development/app/TRIAL-FEEDBACK.md)
 - [双平台回归清单](development/app/regression/CHECKLIST.md)
 - [回归结果模板](development/app/regression/RESULT-TEMPLATE.md)
 - [本次架构整理范围](development/app/IMPLEMENTATION-ARCHITECTURE.md)
