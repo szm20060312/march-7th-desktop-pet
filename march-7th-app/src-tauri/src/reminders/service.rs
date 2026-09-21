@@ -245,6 +245,17 @@ fn run_worker<S: Storage>(
     notify: impl Fn(Change),
 ) {
     let mut core = Core::load(store); // Startup file reads also stay off the UI thread.
+                                      // Loading can be in flight during exit. Its completion must not start a new
+                                      // clock sample, rule transition or save after the stop boundary.
+    if shared
+        .state
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .snapshot
+        .stopped
+    {
+        return;
+    }
     let initial = core
         .pump(None, clock())
         .ok()

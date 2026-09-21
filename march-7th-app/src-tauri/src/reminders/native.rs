@@ -123,6 +123,18 @@ pub async fn reminder_command<R: Runtime>(
 mod tests {
     use super::*;
     #[test]
+    fn fixround1_nested_all_day_command_rejects_extra_fields() {
+        let mut settings =
+            serde_json::to_value(crate::reminders::model::Settings::default()).unwrap();
+        settings["activeHours"] =
+            serde_json::json!({"kind":"allDay","start":540,"unexpected":"retain-me"});
+        let input: CommandInput = serde_json::from_value(
+            serde_json::json!({"type":"updateSettings","settings":settings}),
+        )
+        .unwrap();
+        assert_eq!(input.0.unwrap_err().code, "invalidCommand");
+    }
+    #[test]
     fn malformed_wire_commands_return_structured_errors() {
         for raw in [
             "null",

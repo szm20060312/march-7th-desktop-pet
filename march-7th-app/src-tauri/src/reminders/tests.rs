@@ -8,7 +8,7 @@ fn time(ms: i64) -> Time {
 }
 fn enabled() -> Settings {
     let mut s = Settings {
-        active_hours: ActiveHours::AllDay,
+        active_hours: ActiveHours::AllDay {},
         ..Settings::default()
     };
     for i in &mut s.items {
@@ -567,4 +567,109 @@ fn interval_and_snooze_upper_bounds_valid_hour_and_set_cross_state_invalid() {
     let mut invalid = Data::default();
     invalid.progress[0].auto_handled = true;
     assert!(invalid.validate().is_err());
+}
+
+fn manual_snooze() -> Engine {
+    let mut e = engine();
+    e.step(Some(Command::SnoozeAll {}), time(0)).unwrap();
+    e.step(Some(Command::ShowPending {}), time(MINUTE)).unwrap();
+    e
+}
+#[test]
+fn fixround1_manual_consumes_due_snooze_without_changing_view_or_close_bounce() {
+    let mut e = manual_snooze();
+    let view = e.presentation.clone().unwrap();
+    assert!(e.data.snooze_pending);
+    e.step(None, time(10 * MINUTE)).unwrap();
+    assert!(!e.data.snooze_pending);
+    assert!(e.data.quiet.is_none());
+    assert_eq!(e.presentation, Some(view.clone()));
+    e.step(
+        Some(Command::Dismiss {
+            presentation_id: view.id,
+        }),
+        time(10 * MINUTE + 1),
+    )
+    .unwrap();
+    assert!(e.presentation.is_none());
+    assert!(e.data.progress.iter().all(|p| p.pending));
+}
+#[test]
+fn fixround1_dismiss_as_first_expired_step_consumes_using_previous_manual_view() {
+    let mut e = manual_snooze();
+    let id = e.presentation.as_ref().unwrap().id;
+    e.step(
+        Some(Command::Dismiss {
+            presentation_id: id,
+        }),
+        time(10 * MINUTE),
+    )
+    .unwrap();
+    assert!(e.presentation.is_none());
+    assert!(!e.data.snooze_pending);
+    assert!(e.data.progress.iter().all(|p| p.auto_handled));
+}
+#[test]
+fn fixround1_expired_manual_snooze_waits_for_pause_and_hours_then_consumes_in_place() {
+    let mut e = manual_snooze();
+    let view = e.presentation.clone().unwrap();
+    e.step(Some(Command::SetPaused { paused: true }), time(2 * MINUTE))
+        .unwrap();
+    e.step(None, time(10 * MINUTE)).unwrap();
+    assert!(e.data.snooze_pending);
+    assert_eq!(e.presentation, Some(view.clone()));
+    let mut settings = e.data.settings.clone();
+    settings.active_hours = ActiveHours::Daily {
+        start: 1000,
+        end: 1200,
+    };
+    e.step(
+        Some(Command::UpdateSettings { settings }),
+        time(10 * MINUTE),
+    )
+    .unwrap();
+    e.step(
+        Some(Command::SetPaused { paused: false }),
+        time(11 * MINUTE),
+    )
+    .unwrap();
+    assert!(e.data.snooze_pending);
+    e.step(
+        None,
+        Time {
+            local_minute: 1000,
+            ..time(12 * MINUTE)
+        },
+    )
+    .unwrap();
+    assert!(!e.data.snooze_pending);
+    assert_eq!(e.presentation, Some(view));
+}
+#[test]
+fn fixround1_new_snooze_at_previous_expiry_keeps_new_future_request() {
+    let mut e = manual_snooze();
+    e.step(Some(Command::SnoozeAll {}), time(10 * MINUTE))
+        .unwrap();
+    assert!(e.presentation.is_none());
+    assert!(e.data.snooze_pending);
+    assert_eq!(e.data.quiet.as_ref().unwrap().until, 20 * MINUTE);
+    e.step(None, time(20 * MINUTE)).unwrap();
+    assert_eq!(e.presentation.as_ref().unwrap().mode, Mode::Automatic);
+    assert!(!e.data.snooze_pending);
+}
+#[test]
+fn fixround1_manual_dismiss_before_expiry_does_not_cancel_future_snooze() {
+    let mut e = manual_snooze();
+    let id = e.presentation.as_ref().unwrap().id;
+    e.step(
+        Some(Command::Dismiss {
+            presentation_id: id,
+        }),
+        time(2 * MINUTE),
+    )
+    .unwrap();
+    assert!(e.data.snooze_pending);
+    assert!(e.data.quiet.is_some());
+    e.step(None, time(10 * MINUTE)).unwrap();
+    assert_eq!(e.presentation.as_ref().unwrap().mode, Mode::Automatic);
 }

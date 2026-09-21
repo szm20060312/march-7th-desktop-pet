@@ -117,6 +117,29 @@ impl Storage for Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fixround1_all_day_unknown_fields_protect_real_file_on_load_and_save() {
+        let temp = Temp::new();
+        let path = temp.0.join("reminders.json");
+        let mut value = serde_json::to_value(Data::default()).unwrap();
+        value["settings"]["activeHours"] =
+            serde_json::json!({"kind":"allDay","start":540,"end":1320,"unexpected":"retain-me"});
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let mut store = Store::new(Some(path.clone()));
+        let (data, persistence) = store.load();
+        assert_eq!(persistence.status, SaveStatus::ReadOnly);
+        assert_eq!(persistence.code, Some("invalidFile"));
+        assert!(data.settings.items.iter().all(|s| !s.enabled));
+        assert_eq!(store.save(&Data::default()).status, SaveStatus::ReadOnly);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        fs::write(&path, serde_json::to_vec(&Data::default()).unwrap()).unwrap();
+        let mut store = Store::new(Some(path.clone()));
+        assert_eq!(store.load().1.status, SaveStatus::Saved);
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(store.save(&Data::default()).status, SaveStatus::ReadOnly);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
     use std::sync::atomic::{AtomicU64, Ordering};
     pub struct Temp(pub PathBuf);
     impl Temp {

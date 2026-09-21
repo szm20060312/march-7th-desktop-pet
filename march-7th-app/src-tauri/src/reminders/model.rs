@@ -21,7 +21,7 @@ pub struct ItemSettings {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ActiveHours {
-    AllDay,
+    AllDay {},
     Daily { start: u16, end: u16 },
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +191,24 @@ impl Engine {
             .map(|p| p.id)
             .collect()
     }
+    fn update_manual(&mut self) -> bool {
+        let pending = self.pending();
+        if let Some(p) = self
+            .presentation
+            .as_mut()
+            .filter(|p| p.mode == Mode::Manual)
+        {
+            p.items = pending;
+            for progress in &mut self.data.progress {
+                if progress.pending {
+                    progress.auto_handled = true;
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
     fn present(&mut self, mode: Mode, items: Vec<Id>, time: Time) -> Result<(), Error> {
         self.next_id = self
             .next_id
@@ -260,6 +278,9 @@ impl Engine {
         }) {
             self.presentation = None;
         }
+        // Reconcile arrivals in an already-open manual view before a command can
+        // close it, including when dismiss is the first step after quiet expires.
+        let was_manual = self.update_manual();
         let mut response = None;
         match command {
             Some(Command::UpdateSettings { settings }) => {
@@ -323,20 +344,16 @@ impl Engine {
             }
             Some(Command::Dismiss { .. }) | None => {}
         }
+        let is_manual = self.update_manual();
         let pending = self.pending();
-        if let Some(p) = self.presentation.as_mut() {
-            if p.mode == Mode::Manual {
-                p.items = pending.clone();
-                for progress in &mut self.data.progress {
-                    if progress.pending {
-                        progress.auto_handled = true;
-                    }
-                }
-            } else {
-                p.items.retain(|id| pending.contains(id));
-                if p.items.is_empty() {
-                    self.presentation = None;
-                }
+        if let Some(p) = self
+            .presentation
+            .as_mut()
+            .filter(|p| p.mode == Mode::Automatic)
+        {
+            p.items.retain(|id| pending.contains(id));
+            if p.items.is_empty() {
+                self.presentation = None;
             }
         }
         let allowed = !self.protected
@@ -353,13 +370,13 @@ impl Engine {
             }
             return Ok(response);
         }
-        // A user-opened view handles ordinary auto intent for everything it shows,
-        // but never consumes the explicit global snooze request.
-        if self
-            .presentation
-            .as_ref()
-            .is_some_and(|p| p.mode == Mode::Manual)
-        {
+        // Once due and permitted, the manual view fulfills this snooze request
+        // in place; dismiss must not bounce into a new automatic presentation.
+        // A new SnoozeAll has a future quiet and returned above, so is preserved.
+        if was_manual || is_manual {
+            self.data.snooze_pending = false;
+        }
+        if is_manual {
             return Ok(response);
         }
         let items: Vec<_> = self
@@ -409,7 +426,7 @@ impl Time {
 impl ActiveHours {
     fn contains(&self, minute: i32) -> bool {
         match *self {
-            Self::AllDay => true,
+            Self::AllDay {} => true,
             Self::Daily { start, end } => {
                 if start < end {
                     minute >= i32::from(start) && minute < i32::from(end)

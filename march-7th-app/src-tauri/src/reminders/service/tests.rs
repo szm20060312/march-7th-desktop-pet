@@ -10,7 +10,7 @@ fn time(ms: i64) -> Time {
 }
 fn enabled() -> Settings {
     let mut s = Settings {
-        active_hours: ActiveHours::AllDay,
+        active_hours: ActiveHours::AllDay {},
         ..Settings::default()
     };
     for item in &mut s.items {
@@ -310,4 +310,83 @@ fn arithmetic_limit_is_visible_without_mutating_due_state() {
         .unwrap();
     assert_eq!(change.snapshot.runtime_error, Some("invalidTime"));
     assert_eq!(c.engine.data, before);
+}
+
+struct StartupBarrierStore {
+    data: Data,
+    entered: mpsc::Sender<()>,
+    release: mpsc::Receiver<()>,
+    dropped: mpsc::Sender<()>,
+    saves: Arc<AtomicUsize>,
+}
+impl Storage for StartupBarrierStore {
+    fn load(&mut self) -> (Data, Persistence) {
+        self.entered.send(()).unwrap();
+        self.release.recv().unwrap();
+        (self.data.clone(), Persistence::new(SaveStatus::Saved, None))
+    }
+    fn save(&mut self, _: &Data) -> Persistence {
+        self.saves.fetch_add(1, Ordering::SeqCst);
+        Persistence::new(SaveStatus::Saved, None)
+    }
+}
+impl Drop for StartupBarrierStore {
+    fn drop(&mut self) {
+        let _ = self.dropped.send(());
+    }
+}
+#[test]
+fn fixround1_stop_during_startup_load_does_not_pump_save_or_notify() {
+    let mut engine = Engine::new(Data::default(), false).unwrap();
+    engine
+        .step(
+            Some(Command::UpdateSettings {
+                settings: enabled(),
+            }),
+            time(0),
+        )
+        .unwrap();
+    let (entered, loading) = mpsc::channel();
+    let (release, hold) = mpsc::channel();
+    let (dropped, done) = mpsc::channel();
+    let saves = Arc::new(AtomicUsize::new(0));
+    let samples = Arc::new(AtomicUsize::new(0));
+    let clock_samples = samples.clone();
+    let (notify, events) = mpsc::channel();
+    let service = Service::start(
+        StartupBarrierStore {
+            data: engine.data,
+            entered,
+            release: hold,
+            dropped,
+            saves: saves.clone(),
+        },
+        move || {
+            clock_samples.fetch_add(1, Ordering::SeqCst);
+            Ok(time(2 * MINUTE))
+        },
+        move |c| {
+            let _ = notify.send(c.snapshot);
+        },
+    )
+    .unwrap();
+    loading.recv_timeout(Duration::from_secs(5)).unwrap();
+    let queued = service.command(Command::ShowPending {}).unwrap();
+    assert_eq!(service.snapshot().persistence.status, SaveStatus::Loading);
+    service.stop();
+    assert!(service.snapshot().stopped);
+    assert_eq!(queued.recv().unwrap().unwrap_err().code, "stopped");
+    release.send(()).unwrap();
+    done.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(
+        saves.load(Ordering::SeqCst),
+        0,
+        "must not start a save after stopped startup read"
+    );
+    assert_eq!(
+        samples.load(Ordering::SeqCst),
+        0,
+        "must not start initial clock/pump after stop"
+    );
+    assert!(events.try_recv().is_err());
 }
