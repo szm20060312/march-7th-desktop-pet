@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const native = vi.hoisted(() => ({ invoke: vi.fn(), startDragging: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+const native = vi.hoisted(() => ({ invoke: vi.fn(), startDragging: vi.fn(), listen: vi.fn(), getSelection: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string) => command === "get_selected_character" ? native.getSelection() : native.invoke(command) }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: native.startDragging }),
 }));
+
+vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
 
 // A minimal host double: assertions observe rendered frames and tracking state,
 // not private animation variables. The same tests run before and after extraction.
@@ -16,8 +18,9 @@ let stageTarget: ReturnType<typeof eventTarget>;
 let documentTarget: ReturnType<typeof eventTarget>;
 let sprite: { style: Record<string, unknown>; dataset: Record<string, string> };
 let body: { dataset: Record<string, string> };
+let message: { textContent: string; hidden: boolean; dataset: Record<string, string> };
 const sample = (x = 200, y = 100, windowX = 0, windowY = 0) => ({ x, y, windowX, windowY });
-const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 type Listener = (event: any) => void;
 function eventTarget() {
   const listeners = new Map<string, Set<Listener>>();
@@ -35,6 +38,8 @@ function eventTarget() {
 
 beforeEach(() => {
   vi.resetModules();
+  native.listen.mockReset().mockResolvedValue(vi.fn());
+  native.getSelection.mockReset().mockResolvedValue({ selectedCharacterId: "march-7th", revision: 0, persistence: "default" });
   native.invoke.mockReset().mockResolvedValue(sample());
   native.startDragging.mockReset().mockResolvedValue(undefined);
   now = 0;
@@ -47,7 +52,7 @@ beforeEach(() => {
     getBoundingClientRect: () => ({ left: 4, top: -4, width: 192, height: 208 }),
     setAttribute: vi.fn(),
   };
-  const message = { textContent: "", hidden: true, dataset: {} };
+  message = { textContent: "", hidden: true, dataset: {} };
   stageTarget = eventTarget();
   const capture = new Set<number>();
   const stage = Object.assign(stageTarget, {
@@ -91,6 +96,30 @@ async function poll(value: ReturnType<typeof sample>, at: number) {
 function paint(at: number) { now = at; frame(at); return sprite.dataset.frame; }
 
 describe("desktop pet behavior at the entry point", () => {
+  it("starts from the real native choice without first configuring the default", async () => {
+    native.getSelection.mockResolvedValue({ selectedCharacterId: "raiden-shogun", revision: 7, persistence: "saved" });
+    await boot();
+    expect(sprite.style.backgroundImage).toContain("raiden-shogun");
+  });
+  it("keeps the old runtime on atlas failure, clears the short error and retries the same selection", async () => {
+    await boot();
+    let fail = true;
+    vi.stubGlobal("Image", class {
+      src = ""; naturalWidth = 1536; naturalHeight = 2288;
+      decode = async () => { if (fail) throw Error("simulated atlas failure"); };
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const event = native.listen.mock.calls[0][1];
+    const payload = { selectedCharacterId: "raiden-shogun", revision: 1, persistence: "saved" };
+    event({ payload }); await flush();
+    expect(sprite.style.backgroundImage).toContain("march-7th");
+    expect(message.textContent).toContain("无法显示雷电将军");
+    const timeout = [...timers].find(([, timer]) => timer.ms === 4000)!;
+    timeout[1].callback(); expect(message.hidden).toBe(true);
+    fail = false; event({ payload }); await flush();
+    expect(sprite.style.backgroundImage).toContain("raiden-shogun");
+    expect(log).toHaveBeenCalledOnce(); log.mockRestore();
+  });
   it("shows a static look frame outside the deadzone", async () => {
     await boot();
     expect(paint(0)).toBe("9:4");

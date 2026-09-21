@@ -1,11 +1,6 @@
 use super::geometry::Placement;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io::{self, Write},
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{fs, io, path::PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Config {
@@ -51,11 +46,6 @@ impl Store {
         }
         let bytes = serde_json::to_vec_pretty(&Config::new(placement.clone()))
             .map_err(|_| "serialize configuration failed")?;
-        let parent = self
-            .path
-            .parent()
-            .ok_or("configuration has no parent directory")?;
-        fs::create_dir_all(parent).map_err(|e| format!("create configuration directory: {e}"))?;
         let previous = match fs::read(&self.path) {
             Ok(bytes) => {
                 if let Err(error) = parse(&bytes) {
@@ -67,18 +57,7 @@ impl Store {
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(format!("read previous configuration: {error}")),
         };
-        let pending = TempFile::write(parent, &bytes)
-            .map_err(|e| format!("write temporary configuration: {e}"))?;
-        if let Some(previous) = previous {
-            let backup =
-                TempFile::write(parent, &previous).map_err(|e| format!("write backup: {e}"))?;
-            fs::rename(&backup.0, self.path.with_extension("json.bak"))
-                .map_err(|e| format!("replace backup: {e}"))?;
-        }
-        // On Windows std::fs::rename uses MoveFileExW(REPLACE_EXISTING); on Unix
-        // rename replaces atomically. Never remove the destination first.
-        fs::rename(&pending.0, &self.path).map_err(|e| format!("replace configuration: {e}"))?;
-        Ok(())
+        crate::atomic_file::replace(&self.path, &bytes, previous.as_deref())
     }
 }
 
@@ -103,40 +82,6 @@ fn parse(bytes: &[u8]) -> Result<Config, String> {
         ));
     }
     serde_json::from_slice(bytes).map_err(json_error)
-}
-
-struct TempFile(PathBuf);
-impl TempFile {
-    fn write(directory: &Path, bytes: &[u8]) -> io::Result<Self> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        loop {
-            let path = directory.join(format!(
-                ".desktop-state-{}-{}.tmp",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(mut file) => {
-                    let temp = Self(path);
-                    let result = file.write_all(bytes).and_then(|_| file.sync_all());
-                    drop(file);
-                    result?;
-                    return Ok(temp);
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        }
-    }
-}
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
 }
 
 #[cfg(test)]
