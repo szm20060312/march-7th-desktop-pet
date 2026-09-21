@@ -36,6 +36,7 @@ fn app_context() -> tauri::Context<tauri::Wry> {
 pub fn run() {
     desktop::configure(tauri::Builder::default())
         .invoke_handler(tauri::generate_handler![cursor_relative_to_window])
-        .run(app_context())
-        .expect("error while running March 7th");
+        .build(app_context())
+        .expect("error while building March 7th")
+        .run(desktop::on_run_event);
 }

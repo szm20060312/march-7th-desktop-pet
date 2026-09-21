@@ -21,6 +21,7 @@
         "resizable": false,
         "fullscreen": false,
         "focus": false,
+        "visible": false,
         "focusable": false,
         "decorations": false,
         "transparent": true,
