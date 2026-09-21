@@ -1,5 +1,5 @@
 import { directionFrame, horizontalDirection, type CursorSample, type HorizontalDirection, type Point, type SpriteFrame } from "./animation";
-import type { CharacterDefinition } from "./character";
+import type { CharacterDefinition, OneShotAction } from "./character";
 
 export const DEFAULT_PET_BEHAVIOR = Object.freeze({
   lookDeadzonePx: 20,
@@ -18,6 +18,7 @@ export class PetModel {
   private nextMovementFrameAt = 0;
   private idleFrame = 0;
   private nextIdleFrameAt: number;
+  private oneShot: Readonly<{ action: OneShotAction; startedAt: number }> | null = null;
 
   constructor(
     private readonly character: CharacterDefinition,
@@ -36,6 +37,7 @@ export class PetModel {
       const dy = position.y - this.previousWindow.y;
       const direction = horizontalDirection(dx, this.behavior.movementThresholdPx);
       if (direction !== null || Math.abs(dy) > this.behavior.movementThresholdPx) {
+        this.oneShot = null;
         if (direction && direction !== this.direction) {
           this.direction = direction;
           this.resetMovementClip(now);
@@ -53,6 +55,7 @@ export class PetModel {
   sampleUnavailable(): void { this.cursor = null; }
 
   beginDrag(now: number): void {
+    this.oneShot = null;
     this.cursor = null;
     this.movingUntil = now + this.behavior.settleIntervalMs;
     this.resetMovementClip(now);
@@ -67,6 +70,14 @@ export class PetModel {
       }
       return { row: clip.row, column: this.movementFrame };
     }
+    if (this.oneShot) {
+      const clip = this.character.clips[this.oneShot.action];
+      if (clip) {
+        const column = Math.floor(Math.max(0, now - this.oneShot.startedAt) / clip.frameIntervalMs);
+        if (column < clip.frameCount) return { row: clip.row, column };
+      }
+      this.oneShot = null;
+    }
     const look = this.cursor && directionFrame(this.cursor, center, this.behavior.lookDeadzonePx, this.character);
     if (look) return look;
 
@@ -76,6 +87,12 @@ export class PetModel {
       this.nextIdleFrameAt = now + clip.frameIntervalMs;
     }
     return { row: clip.row, column: this.idleFrame };
+  }
+
+  respond(action: OneShotAction, now: number): boolean {
+    if (this.isMoving(now)) return false;
+    this.oneShot = this.character.clips[action] ? { action, startedAt: now } : null;
+    return true;
   }
 
   private movementClip() {

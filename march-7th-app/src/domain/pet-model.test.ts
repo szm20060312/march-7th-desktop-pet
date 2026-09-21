@@ -53,4 +53,30 @@ describe("PetModel", () => {
     }
     expect(directionFrame({ x: -0.01, y: -100 }, center, 20, march7th)).toEqual({ row: 9, column: 0 });
   });
+  it("plays a one-shot from its first frame and catches up after a delayed frame", () => {
+    const pet = new PetModel(march7th, 0);
+    expect(pet.respond("wave", 100)).toBe(true);
+    expect(pet.frameAt(100, center)).toEqual({ row: 3, column: 0 });
+    expect(pet.frameAt(459, center)).toEqual({ row: 3, column: 1 });
+    expect(pet.frameAt(640, center)).toEqual({ row: 3, column: 3 });
+    expect(pet.frameAt(820, center).row).toBe(0);
+  });
+  it("prioritizes real movement and aborts rather than queues interaction", () => {
+    const pet = new PetModel(march7th, 0);
+    pet.acceptSample(sample(0), 0);
+    expect(pet.respond("jump", 0)).toBe(true);
+    pet.acceptSample(sample(8), 10);
+    expect(pet.frameAt(10, center)).toEqual({ row: 1, column: 0 });
+    expect(pet.respond("wave", 20)).toBe(false);
+    expect(pet.frameAt(170, center).row).not.toBe(3);
+  });
+  it("aborts interaction on drag and falls back to idle when an action is unavailable", () => {
+    const withoutWave = { ...march7th, clips: { ...march7th.clips, wave: undefined } };
+    const pet = new PetModel(withoutWave, 0);
+    expect(pet.respond("wave", 0)).toBe(true);
+    expect(pet.frameAt(0, center)).toEqual({ row: 0, column: 0 });
+    expect(pet.respond("jump", 20)).toBe(true);
+    pet.beginDrag(30);
+    expect(pet.frameAt(30, center).row).toBe(1);
+  });
 });

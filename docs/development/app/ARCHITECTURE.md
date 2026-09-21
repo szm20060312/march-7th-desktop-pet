@@ -14,8 +14,10 @@
 
 ```mermaid
 flowchart TD
-  Main[main.ts 装配与销毁] --> Runtime[application/pet-runtime 运行调度]
-  Main --> Character[characters/march-7th 角色配置]
+  Main[main.ts 装配与销毁] --> Presentation[application/character-presentation 角色呈现切换]
+  Presentation --> Runtime[application/pet-runtime 运行调度]
+  Main --> Character[characters/catalog 双角色目录]
+  Main --> Gesture[adapters/dom-pet-gestures 手势输入]
   Main --> Host[adapters/tauri-host 系统调用]
   Main --> View[adapters/dom-pet-view DOM 渲染]
   Main --> Scheduler[adapters/browser-scheduler 浏览器时钟]
@@ -34,11 +36,13 @@ flowchart TD
 | `domain/animation.ts` | 纯坐标和图集帧计算、公共值类型 | DOM、Tauri、计时器、文件读写 |
 | `domain/character.ts` | 当前动画所需的角色契约 | 依赖某个角色 ID 或 UI |
 | `domain/pet-model.ts` | 接收采样和时间，输出动画帧 | 自行获取时间、异步 IO、调用原生窗口 |
-| `characters/march-7th.ts` | 图集尺寸、动作行/帧数/间隔 | 提醒规则、系统调用 |
+| `characters/catalog.json`、`catalog.ts` | 双角色编译期数据与完整校验 | 外部角色导入、提醒规则、系统调用 |
 | `application/ports.ts` | 窄接口：系统采样、视图、调度器 | 具体 Tauri/DOM 实现 |
-| `application/pet-runtime.ts` | 采样、渲染、输入连接、资源释放 | 直接访问 DOM/Tauri，全局共享业务状态 |
+| `application/pet-runtime.ts` | 采样、渲染、情境回应、输入连接、资源释放 | 直接访问 DOM/Tauri，全局共享业务状态 |
+| `application/character-presentation.ts` | revision 快照、图集预载、失败保旧和运行实例切换 | 持久化选择、伪造原生成功状态 |
 | `adapters/tauri-host.ts` | `invoke` 与原生拖动、IPC 数据校验 | 动画优先级和提醒节奏 |
-| `adapters/dom-pet-view.ts` | 配置驱动的 CSS 图集、输入监听、去重绘制 | 判断提醒是否完成、读取系统坐标 |
+| `adapters/dom-pet-view.ts` | 配置驱动的 CSS 图集、短句/错误呈现、去重绘制 | 判断提醒是否完成、读取系统坐标 |
+| `adapters/dom-pet-gestures.ts` | pointer capture、单双击和拖动手势翻译 | 动画优先级、角色选择持久化 |
 | `adapters/browser-scheduler.ts` | 单调时钟、RAF、定时器 | 业务决策 |
 
 `scripts/check-architecture.mjs` 使用 TypeScript AST 检查 import/export/dynamic import、循环依赖和内层禁止的宿主全局访问；`pnpm check:architecture` 在 CI 执行。它是结构护栏，不替代代码审查。
@@ -48,13 +52,13 @@ flowchart TD
 - **坐标**：Rust 返回窗口内逻辑坐标 `x/y` 和窗口全局逻辑坐标 `windowX/windowY`。Windows/macOS 的换算差异只留在 Rust `platform/` 中，前端不按 OS 分支。
 - **时间**：动画使用注入的单调时间（生产环境 `performance.now()`），不依赖系统日期。测试能精确检查 90/160/280 ms 边界。
 - **状态**：每个 `PetModel` 实例独占帧、方向、上次窗口位置和移动截止时间，没有模块级可变单例。
-- **优先级**：移动 > 注视 > 待机。移动超过 0.5 逻辑像素即延长屏蔽至 160 ms 后；纯竖直移动沿用上次水平方向；角色中心 20 px 内待机。
+- **优先级**：移动 > 单次动作 > 注视 > 待机。移动超过 0.5 逻辑像素即中止互动并延长屏蔽至 160 ms 后；纯竖直移动沿用上次水平方向；角色中心 20 px 内待机。
 - **轮询**：等待上一次采样完成，再等 33 ms；不会累计重叠 IPC。故障时本轮标为 unavailable、清空注视，后续继续采样。
 - **失败**：拖动 Promise 的拒绝会被捕获并输出可诊断错误；它的结束不是“拖动结束”的权威信号。移动结束继续以窗口位移判断。
-- **生命周期**：一次启动返回 `stop()`；调用幂等，移除输入监听并取消 RAF/定时器。停止后才返回的 IPC 结果不得更新 UI 或创建新轮询。页面退出与 Vite HMR 都调用清理。
+- **生命周期**：一次启动返回含 `stop()` 与 `respond()` 的窄控制器；停止幂等，移除输入监听并取消 RAF/定时器。停止后才返回的 IPC 结果不得更新 UI 或创建新轮询。页面退出与 Vite HMR 都调用清理。
 - **渲染**：只有图集帧变化才修改位置。图集、单元格尺寸、帧数由同一个角色定义提供，不再分散在 CSS 和主程序。
 
-本次仍只有三月七一个真实角色。角色定义是应用内部编译期数据；不是外部导入协议，也不是 Codex 的 `pet.json` 格式。封存包及其图集不修改。
+当前已有三月七与雷电将军两个内置角色，角色定义来自同一个编译期 JSON 目录；不是外部导入协议，也不是 Codex 的 `pet.json` 格式。封存包及其图集不修改。前端已具备安全切换控制器，但原生选择与持久化仍待 Task 2 接入，应用入口暂时使用默认角色快照。
 
 ## 原生桌面状态（G2 已实现，实机待验收）
 
@@ -62,13 +66,13 @@ Rust `desktop/` 负责托盘、交互/穿透模式和位置；`coordinates.rs` �
 
 配置损坏或未来版本当次运行只读；保存通过同目录临时文件、有效旧配置备份与原子替换，失败不报告成功。前端不读取或写入配置，也不承担桌面恢复定时器。详见 [G2-PLACEMENT.md](G2-PLACEMENT.md)。G1 已有双平台自动证据；本轮 G2 的本地 Windows 自动检查不能替代当前提交的双平台 CI、独立审查和 GUI 验收。
 
-## 后续模块设计（尚未实现）
+## 后续模块设计与待接入边界
 
-### 角色切换与互动
+### 角色切换与互动（前端已实现，待原生接入）
 
-M2 在 `characters/` 增加第二份资源定义和内置目录；新增动作/台词契约时同步更新模型和验证。视图重设图集时必须清空帧缓存。应用层负责停止旧宠物运行实例、建立新实例；提醒服务不随宠物实例销毁。
+`characters/` 已包含两份资源定义和内置目录；新增动作/台词契约时仍需同步更新模型和验证。视图重设图集时清空帧缓存。应用层先解码并核对图集尺寸，成功后停止旧宠物运行实例并建立新实例；提醒服务不随宠物实例销毁。Rust 选择服务接入前，前端默认快照不代表选择已持久化。
 
-单击/双击识别放在输入/应用层，动画状态机只接收明确动作事件。拖动优先于点击互动，互动结束回到注视或待机。用户意图和动画状态分开，不能靠 CSS 动画结束来认定提醒完成。
+单击/双击识别放在独立 DOM 输入适配器，动画状态机只接收明确动作事件。拖动优先于点击互动，互动结束回到注视或待机。用户意图和动画状态分开，不能靠 CSS 动画结束来认定提醒完成。提醒完成/稍后的短句入口只是有类型的呈现能力，没有创建提醒或更改提醒状态。
 
 ### 提醒状态归属
 
@@ -99,9 +103,9 @@ Rust 是持久化的唯一写入者。托盘、设置和前端都向同一应用
 
 ### 角色与扩展边界
 
-M2 与 M3 在 M1 之后并行。可用三月七原型验证提醒，正式首个日用版本仍需两角色。角色由所有者选定参考，AI 辅助制作，样例与最终外观、动作、短句由所有者验收。记录来源、版本、使用范围及能力；只制作应用使用的动作，不为新角色强制补齐旧 Codex 的全部动画行。第二角色尚未选定，不能由执行者自行决定。
+M2 与 M3 在 M1 之后并行。三月七与雷电将军已作为两个内置角色接入前端目录；角色样例与最终外观、动作、短句仍由所有者验收。记录来源、版本、使用范围及能力；只制作应用使用的动作，不为新角色强制补齐旧 Codex 的全部动画行。
 
-未来角色定义只增加动作能力和情境短句映射；不引入外部脚本、插件市场或公共 SDK。当前角色类型仍只声明已用到的待机和左右移动，增加契约应与实际功能及测试同时交付。
+角色定义包含已使用的待机、左右移动、wave/jump 单次动作和四类情境短句；不引入外部脚本、插件市场或公共 SDK。后续增加契约仍应与实际功能及测试同时交付。
 
 ## 如何增加功能而不破坏边界
 

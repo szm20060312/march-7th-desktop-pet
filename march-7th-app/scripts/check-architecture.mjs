@@ -39,6 +39,12 @@ for (const file of walk(root).filter(name => name.endsWith(".ts") && !name.endsW
     const resolved = ts.resolveModuleName(specifier, file, { moduleResolution: ts.ModuleResolutionKind.Bundler }, ts.sys).resolvedModule?.resolvedFileName;
     if (!resolved) { fail(`unresolved dependency ${specifier}`); return; }
     const target = path.resolve(resolved);
+    if (target.endsWith(".json")) {
+      if (current !== "characters" || layer(target) !== "characters") {
+        fail(`${current} may only consume JSON through the characters catalog`);
+      }
+      return;
+    }
     if (target.endsWith(".test.ts") || !allowed[current].includes(layer(target))) {
       fail(`${current} may not import ${specifier}`);
     }

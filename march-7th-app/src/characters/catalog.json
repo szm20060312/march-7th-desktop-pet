@@ -1,0 +1,55 @@
+{
+  "defaultId": "march-7th",
+  "characters": [
+    {
+      "id": "march-7th",
+      "displayName": "三月七",
+      "atlas": {
+        "src": "/assets/march-7th/spritesheet.webp",
+        "cellWidth": 192,
+        "cellHeight": 208,
+        "columns": 8,
+        "rows": 11
+      },
+      "clips": {
+        "idle": { "row": 0, "frameCount": 6, "frameIntervalMs": 280 },
+        "movingRight": { "row": 1, "frameCount": 8, "frameIntervalMs": 90 },
+        "movingLeft": { "row": 2, "frameCount": 8, "frameIntervalMs": 90 },
+        "wave": { "row": 3, "frameCount": 4, "frameIntervalMs": 180 },
+        "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
+      },
+      "look": { "firstRow": 9, "directionCount": 16 },
+      "phrases": {
+        "click": ["咱在呢！", "今天也一起加油吧。"],
+        "doubleClick": ["嘿，精神满满！", "准备好出发啦！"],
+        "reminderCompleted": ["好啦，继续慢慢来。", "照顾好自己呀。"],
+        "reminderSnoozed": ["好，等你方便的时候。", "那咱先安静一会儿。"]
+      }
+    },
+    {
+      "id": "raiden-shogun",
+      "displayName": "雷电将军",
+      "atlas": {
+        "src": "/assets/raiden-shogun/spritesheet.webp",
+        "cellWidth": 192,
+        "cellHeight": 208,
+        "columns": 8,
+        "rows": 11
+      },
+      "clips": {
+        "idle": { "row": 0, "frameCount": 6, "frameIntervalMs": 280 },
+        "movingRight": { "row": 1, "frameCount": 8, "frameIntervalMs": 90 },
+        "movingLeft": { "row": 2, "frameCount": 8, "frameIntervalMs": 90 },
+        "wave": { "row": 3, "frameCount": 4, "frameIntervalMs": 180 },
+        "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
+      },
+      "look": { "firstRow": 9, "directionCount": 16 },
+      "phrases": {
+        "click": ["我在。", "此刻，与你同在。"],
+        "doubleClick": ["精神尚可。", "稍作舒展，也好。"],
+        "reminderCompleted": ["做得好，继续吧。", "片刻休整，亦有益处。"],
+        "reminderSnoozed": ["不急，依你的节奏。", "待你方便，再作提醒。"]
+      }
+    }
+  ]
+}

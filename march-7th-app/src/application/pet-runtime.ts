@@ -1,22 +1,33 @@
-import type { CharacterDefinition } from "../domain/character";
+import type { CharacterDefinition, OneShotAction, ResponseContext } from "../domain/character";
 import { PetModel } from "../domain/pet-model";
-import type { PetHost, PetView, Scheduler } from "./ports";
+import type { PetGestureInput, PetHost, PetView, Scheduler } from "./ports";
 
 const SAMPLE_INTERVAL_MS = 33;
+const PHRASE_DURATION_MS = 3_000;
+const actions: Readonly<Record<ResponseContext, OneShotAction>> = {
+  click: "wave",
+  doubleClick: "jump",
+  reminderCompleted: "jump",
+  reminderSnoozed: "wave",
+};
 
 /** One lifecycle per call. stop() is idempotent and fences late native results. */
 export function startPetRuntime(options: {
   character: CharacterDefinition;
   host: PetHost;
   view: PetView;
+  gestures: PetGestureInput;
   scheduler: Scheduler;
   reportError: (operation: "drag", error: unknown) => void;
-}): () => void {
-  const { character, host, view, scheduler, reportError } = options;
+}) {
+  const { character, host, view, gestures, scheduler, reportError } = options;
   const model = new PetModel(character, scheduler.now());
   let stopped = false;
   let frameId: number | undefined;
   let timerId: number | undefined;
+  let phraseTimerId: number | undefined;
+  let phraseVisible = false;
+  const phraseIndexes: Partial<Record<ResponseContext, number>> = {};
 
   view.configure(character);
   view.render({ row: character.clips.idle.row, column: 0 });
@@ -44,21 +55,57 @@ export function startPetRuntime(options: {
     }
   };
 
-  const unsubscribe = view.onDragStart(() => {
-    if (stopped) return;
-    model.beginDrag(scheduler.now());
-    // Native drag completion is not a reliable end-of-movement signal.
-    void host.startDragging().catch(error => { if (!stopped) reportError("drag", error); });
+  const clearPhrase = () => {
+    if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
+    phraseTimerId = undefined;
+    if (!phraseVisible) return;
+    phraseVisible = false;
+    view.clearPhrase();
+  };
+
+  const respond = (context: ResponseContext): boolean => {
+    if (stopped) return false;
+    const now = scheduler.now();
+    if (!model.respond(actions[context], now)) return false;
+    const phrases = character.phrases[context];
+    if (!phrases?.length) return true;
+    const index = phraseIndexes[context] ?? 0;
+    phraseIndexes[context] = (index + 1) % phrases.length;
+    if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
+    phraseVisible = true;
+    view.showPhrase(phrases[index]);
+    phraseTimerId = scheduler.setDelay(() => {
+      phraseTimerId = undefined;
+      if (stopped || !phraseVisible) return;
+      phraseVisible = false;
+      view.clearPhrase();
+    }, PHRASE_DURATION_MS);
+    return true;
+  };
+
+  const unsubscribe = gestures.subscribe({
+    click: () => { respond("click"); },
+    doubleClick: () => { respond("doubleClick"); },
+    drag: () => {
+      if (stopped) return;
+      clearPhrase();
+      model.beginDrag(scheduler.now());
+      // Native drag completion is not a reliable end-of-movement signal.
+      void host.startDragging().catch(error => { if (!stopped) reportError("drag", error); });
+    },
   });
 
   frameId = scheduler.requestFrame(render);
   void sample();
 
-  return () => {
+  const stop = () => {
     if (stopped) return;
     stopped = true;
     unsubscribe();
     if (frameId !== undefined) scheduler.cancelFrame(frameId);
     if (timerId !== undefined) scheduler.cancelDelay(timerId);
+    clearPhrase();
   };
+
+  return { stop, respond };
 }
