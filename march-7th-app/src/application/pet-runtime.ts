@@ -68,7 +68,10 @@ export function startPetRuntime(options: {
     const now = scheduler.now();
     if (!model.respond(actions[context], now)) return false;
     const phrases = character.phrases[context];
-    if (!phrases?.length) return true;
+    if (!phrases?.length) {
+      clearPhrase();
+      return true;
+    }
     const index = phraseIndexes[context] ?? 0;
     phraseIndexes[context] = (index + 1) % phrases.length;
     if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);

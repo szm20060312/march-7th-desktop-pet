@@ -79,4 +79,14 @@ describe("PetModel", () => {
     pet.beginDrag(30);
     expect(pet.frameAt(30, center).row).toBe(1);
   });
+  it("plays one idle cycle for a missing action before restoring gaze", () => {
+    const withoutWave = { ...march7th, clips: { ...march7th.clips, wave: undefined } };
+    const pet = new PetModel(withoutWave, 0);
+    pet.acceptSample(sample(0), 0);
+    expect(pet.frameAt(0, center)).toEqual({ row: 9, column: 4 });
+    expect(pet.respond("wave", 100)).toBe(true);
+    expect(pet.frameAt(100, center)).toEqual({ row: 0, column: 0 });
+    expect(pet.frameAt(1_779, center)).toEqual({ row: 0, column: 5 });
+    expect(pet.frameAt(1_780, center)).toEqual({ row: 9, column: 4 });
+  });
 });

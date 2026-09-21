@@ -83,7 +83,7 @@ describe("character presentation controller", () => {
     h.loads.get("/assets/raiden-shogun/spritesheet.webp")!.resolve({ width: 1, height: 1 });
     await failed;
     expect(h.runtimes[h.runtimes.length - 1].character.id).toBe("march-7th");
-    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请稍后重试。");
+    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请重试。");
     expect(h.reportError).toHaveBeenLastCalledWith(expect.objectContaining({ id: "raiden-shogun" }), expect.objectContaining({ message: expect.stringMatching(/尺寸/) }));
 
     void h.controller.select({ characterId: "raiden-shogun", revision: 3 });
@@ -95,7 +95,7 @@ describe("character presentation controller", () => {
     const h = harness();
     h.loads.get("/assets/march-7th/spritesheet.webp")!.reject(new Error("decode failed"));
     await flush();
-    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示三月七，请稍后重试。");
+    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示三月七，请重试。");
     expect(h.reportError).toHaveBeenLastCalledWith(expect.objectContaining({ id: "march-7th" }), expect.objectContaining({ message: "decode failed" }));
     const beforeDestroyWrites = h.status.setPresentationError.mock.calls.length;
     void h.controller.select({ characterId: "raiden-shogun", revision: 2 });
@@ -113,7 +113,7 @@ describe("character presentation controller", () => {
     await h.finish("raiden-shogun");
     expect(old.stop).toHaveBeenCalledOnce();
     expect(h.runtimes[h.runtimes.length - 1].character.id).toBe("march-7th");
-    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请稍后重试。");
+    expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请重试。");
     const callsBeforeSameId = h.createRuntime.mock.calls.length;
     await h.controller.select({ characterId: "march-7th", revision: 3 });
     expect(h.createRuntime).toHaveBeenCalledTimes(callsBeforeSameId);

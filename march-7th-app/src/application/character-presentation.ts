@@ -71,7 +71,7 @@ export function createCharacterPresentationController(options: {
     } catch (error) {
       if (destroyed || token !== request || snapshot.revision !== latestRevision) return false;
       reportError(character, error);
-      status.setPresentationError(`无法显示${character.displayName}，请稍后重试。`);
+      status.setPresentationError(`无法显示${character.displayName}，请重试。`);
       return false;
     }
   };

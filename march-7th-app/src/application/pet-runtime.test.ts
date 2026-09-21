@@ -155,4 +155,16 @@ describe("pet runtime lifecycle", () => {
     expect(h.view.showPhrase).not.toHaveBeenCalled();
     runtime.stop();
   });
+  it("clears existing text and its timer when the next accepted context has no phrase", () => {
+    const h = harness();
+    const character = { ...march7th, phrases: { ...march7th.phrases, doubleClick: undefined } };
+    const runtime = startPetRuntime({ character, view: h.view, gestures: h.gestures, host: h.host, scheduler: h.scheduler, reportError: h.reportError });
+    expect(runtime.respond("click")).toBe(true);
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("咱在呢！");
+    expect([...h.delays.values()].filter(delay => delay.ms === 3_000)).toHaveLength(1);
+    expect(runtime.respond("doubleClick")).toBe(true);
+    expect(h.view.clearPhrase).toHaveBeenCalledOnce();
+    expect([...h.delays.values()].filter(delay => delay.ms === 3_000)).toHaveLength(0);
+    runtime.stop();
+  });
 });

@@ -4,7 +4,7 @@
 
 - `src/characters/catalog.json` 是两角色唯一的编译期数据源，信封结构为 `{ defaultId, characters }`。三月七使用稳定 ID `march-7th`，雷电将军使用稳定 ID `raiden-shogun`；`march-7th.ts` 只保留兼容导出，不复制配置。
 - 两份内置图集都按 192×208 单元格、8 列、11 行校验。待机、左右移动、挥手、跳跃和 16 向注视只使用 row 0–4 与 row 9–10，不请求透明的 row 5–8。
-- 角色模型的优先级为 `movement > one-shot > look > idle`。wave/jump 从首帧播放一次，以注入的单调时钟直接计算当前帧；实际窗口位移或拖动会中止互动，移动中输入不会排队。
+- 角色模型的优先级为 `movement > one-shot > look > idle`。wave/jump 从首帧播放一次，以注入的单调时钟直接计算当前帧；缺少动作资源时复用现有 idle clip 播放一个完整周期，再恢复注视。实际窗口位移或拖动会中止互动，移动中输入不会排队。
 - 主按钮释放后等待 300 ms 区分单双击；第二次释放需同时满足 300 ms 和 6 逻辑像素边界。移动达到 6 逻辑像素才释放 pointer capture 并发起一次原生拖动。cancel、lost capture、blur 和销毁都会清理未完成输入。
 - click、doubleClick、reminderCompleted、reminderSnoozed 是明确的情境回应入口。每个角色每个情境有两句短句，按角色内顺序轮换；短句显示 3 秒，连续回应替换旧文本，拖动、停止或换角立即清除。提醒两种情境目前只提供类型化响应能力，没有新增提醒入口或提醒时钟。
 - 主窗口仍为原生配置的 240×260。顶部预留 36 px 短句区，角色图集靠下并保留 12 px；文字通过 `textContent` 写入、`aria-live="polite"` 播报且不接收指针。

@@ -1,5 +1,5 @@
 import { directionFrame, horizontalDirection, type CursorSample, type HorizontalDirection, type Point, type SpriteFrame } from "./animation";
-import type { CharacterDefinition, OneShotAction } from "./character";
+import type { AnimationClip, CharacterDefinition, OneShotAction } from "./character";
 
 export const DEFAULT_PET_BEHAVIOR = Object.freeze({
   lookDeadzonePx: 20,
@@ -18,7 +18,7 @@ export class PetModel {
   private nextMovementFrameAt = 0;
   private idleFrame = 0;
   private nextIdleFrameAt: number;
-  private oneShot: Readonly<{ action: OneShotAction; startedAt: number }> | null = null;
+  private oneShot: Readonly<{ clip: AnimationClip; startedAt: number }> | null = null;
 
   constructor(
     private readonly character: CharacterDefinition,
@@ -71,11 +71,9 @@ export class PetModel {
       return { row: clip.row, column: this.movementFrame };
     }
     if (this.oneShot) {
-      const clip = this.character.clips[this.oneShot.action];
-      if (clip) {
-        const column = Math.floor(Math.max(0, now - this.oneShot.startedAt) / clip.frameIntervalMs);
-        if (column < clip.frameCount) return { row: clip.row, column };
-      }
+      const { clip } = this.oneShot;
+      const column = Math.floor(Math.max(0, now - this.oneShot.startedAt) / clip.frameIntervalMs);
+      if (column < clip.frameCount) return { row: clip.row, column };
       this.oneShot = null;
     }
     const look = this.cursor && directionFrame(this.cursor, center, this.behavior.lookDeadzonePx, this.character);
@@ -91,7 +89,7 @@ export class PetModel {
 
   respond(action: OneShotAction, now: number): boolean {
     if (this.isMoving(now)) return false;
-    this.oneShot = this.character.clips[action] ? { action, startedAt: now } : null;
+    this.oneShot = { clip: this.character.clips[action] ?? this.character.clips.idle, startedAt: now };
     return true;
   }
 
