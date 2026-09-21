@@ -20,6 +20,8 @@
         "center": true,
         "resizable": false,
         "fullscreen": false,
+        "focus": false,
+        "focusable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

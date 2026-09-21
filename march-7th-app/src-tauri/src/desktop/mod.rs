@@ -94,7 +94,8 @@ fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 }
 
 fn show_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    main_window(app)?.show().map_err(|error| error.to_string())
+    let window = main_window(app)?;
+    show_non_focusable_window(&window)
 }
 
 fn hide_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -133,6 +134,13 @@ fn reset_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     window
         .set_position(position)
         .map_err(|error| error.to_string())?;
+    show_non_focusable_window(&window)
+}
+
+fn show_non_focusable_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
+    window
+        .set_focusable(false)
+        .map_err(|error| format!("could not keep the main window non-focusable: {error}"))?;
     window.show().map_err(|error| error.to_string())
 }
 
@@ -182,5 +190,23 @@ mod tests {
     fn extreme_inputs_saturate_instead_of_overflowing() {
         assert_eq!(centered_axis(i32::MIN, 0, u32::MAX), i32::MIN);
         assert_eq!(centered_axis(i32::MAX, u32::MAX, 0), i32::MAX);
+    }
+
+    #[test]
+    fn main_window_is_configured_not_to_take_focus() {
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let main_window = context
+            .config()
+            .app
+            .windows
+            .iter()
+            .find(|window| window.label == MAIN_WINDOW_LABEL)
+            .expect("main window config should exist");
+
+        assert!(!main_window.focus, "main window must not start focused");
+        assert!(
+            !main_window.focusable,
+            "main window must remain non-focusable when shown from the tray"
+        );
     }
 }
