@@ -59,7 +59,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
     const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     const git = args => execFileSync("git", args, { cwd: appRoot, encoding: "utf8" }).trim();
-    if (git(["status", "--porcelain", "--untracked-files=no"])) throw new Error("Refusing to label a build from a modified tracked worktree");
+    const changed = git(["status", "--porcelain", "--untracked-files=no"]);
+    if (changed) {
+      console.error(git(["diff", "--stat"]));
+      throw new Error(`Refusing to label a build from a modified tracked worktree:\n${changed}`);
+    }
     const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8"));
     const config = JSON.parse(readFileSync(path.join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
     if (pkg.version !== config.version) throw new Error("Frontend and Tauri versions differ");
