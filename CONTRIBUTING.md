@@ -24,6 +24,13 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
-共享行为变化需要 Windows 与 Mac 两份人工验收记录。Windows 由所有者测试，Mac 由朋友/协作者测试；同一份清单、同一提交，缺失项明确保留。任何本地工具缺失或 CI 未完成都要如实说明。
+共享行为变化必须同时保留 Windows 与 macOS 两份人工验收记录，并使用同一份验收清单、同一个提交 SHA。
+
+- macOS 由 [Zheming_Song](https://github.com/szm20060312) 完成人工验收。
+- Windows 由 [zthagyamin](https://github.com/szm20060312) 完成人工验收。
+- 两个平台的验收记录必须明确写出测试平台、提交 SHA、测试结果、未覆盖项目和阻塞原因。
+- 任一平台记录缺失，不能默认视为通过；缺失项必须明确保留。
+- 任何本地工具缺失、实机不可用、CI 未完成或仅完成静态检查，都必须如实说明。
+- 共享行为只能在两份记录都对应同一提交并完成必要测试后合并到默认分支。
 
 不要在工作区提交 node_modules、target、dist、环境文件或机器配置。新功能通过独立分支/PR交付；不要强推默认分支或重建已有发布标签。
