@@ -50,8 +50,6 @@ pnpm tauri dev
 - macOS Apple Silicon：`aarch64-apple-darwin`
 - Windows 10/11 x64：`x86_64-pc-windows-msvc`
 
-不支持 macOS Intel。
-
 ## 项目边界
 
 旧版 Codex 内嵌宠物已在仓库标签 `codex-pet-v1.0.0` 中封存。独立应用开发只发生在本目录，不修改旧版资源包。
