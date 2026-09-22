@@ -38,14 +38,16 @@ button:disabled, input:disabled, select:disabled { opacity: .5; cursor: default;
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover:not(:disabled) { background: #405849; }
 [hidden] { display: none !important; }
-.reminder-page main { padding: 16px 18px 0; }
-.reminder-page header { margin-bottom: 10px; }
+.reminder-page { height: 100vh; height: 100dvh; overflow: hidden; }
+.reminder-page main { height: 100%; padding: 16px 18px 0; display: flex; flex-direction: column; }
+.reminder-page header { flex: none; margin-bottom: 10px; }
+.reminder-content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .reminder-page h1 { font-size: 18px; margin-bottom: 0; }
 .reminder-rows { display: flex; flex-direction: column; }
 .reminder-row { display: flex; align-items: center; justify-content: space-between; min-height: 45px; border-top: 1px solid var(--line); gap: 12px; }
 .reminder-row button { min-width: 66px; padding: 4px 9px; min-height: 30px; font-size: 12px; }
 .reminder-row[data-done=true] span { color: var(--muted); }
-.reminder-page footer { margin-top: 10px; padding: 10px 0 13px; }
+.reminder-page footer { flex: none; margin-top: 10px; padding: 10px 0 13px; }
 .reminder-page #reminder-empty { padding: 12px 0; }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }

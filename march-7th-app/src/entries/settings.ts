@@ -8,7 +8,12 @@ const controller = createReminderSettingsController({ render: view.render, comma
 const connection = connectReminders({
   select: controller.receive,
   opened() { controller.reopen(); void connection.refresh(); },
-  reportError(error) { console.error("Reminder settings connection failed", error); controller.error(error.recovery === "restart" ? "提醒连接未建立，请重启应用。" : "读取或操作失败，请重试；也可从托盘重新打开设置。"); },
+  reportError(error) {
+    console.error("Reminder settings connection failed", error);
+    // Command feedback belongs to the controller's submitting session. The
+    // connection may outlive that session when the native window is hidden.
+    if (error.stage !== "command") controller.error(error.recovery === "restart" ? "提醒连接未建立，请重启应用。" : "读取或操作失败，请重试；也可从托盘重新打开设置。");
+  },
 });
 const unbind = view.bind(controller);
 function dispose() { connection.dispose(); controller.dispose(); unbind(); window.removeEventListener("pagehide", dispose); }
