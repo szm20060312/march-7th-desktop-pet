@@ -47,6 +47,30 @@ function verifyMacArchiveExecutable(payloadPath, executablePath) {
   if (!archived.equals(executable)) throw new Error("macOS archive executable differs from the probed executable");
 }
 
+const identityFields = ["schemaVersion", "appVersion", "target", "sourceCommit", "sourceState"];
+function publicIdentity(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return Object.fromEntries(identityFields.map(field => [field, value === undefined ? "<missing>" : "<invalid>"]));
+  }
+  const safe = (field, valid) => field === undefined ? "<missing>" : valid ? field : "<invalid>";
+  return {
+    schemaVersion: safe(value.schemaVersion, Number.isInteger(value.schemaVersion) && value.schemaVersion >= 0 && value.schemaVersion <= 65535),
+    appVersion: safe(value.appVersion, typeof value.appVersion === "string" && value.appVersion.length <= 64 && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(value.appVersion)),
+    target: safe(value.target, typeof value.target === "string" && value.target.length <= 128 && /^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(value.target)),
+    sourceCommit: safe(value.sourceCommit, value.sourceCommit === null || typeof value.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(value.sourceCommit)),
+    sourceState: safe(value.sourceState, ["clean", "modified", "unknown"].includes(value.sourceState)),
+  };
+}
+
+function identityDiagnostic(expected, actual) {
+  // Never stringify the raw program response: only five bounded public fields.
+  return JSON.stringify({
+    expected: publicIdentity(expected),
+    actual: publicIdentity(actual),
+    mismatchedFields: identityFields.filter(field => actual?.[field] !== expected[field]),
+  });
+}
+
 export function prepareRegression({ target, payloadPath, docsDirectory, outputDirectory, commit, version, runUrl, buildInfo, executablePath }) {
   const payloadName = payloadNames[target];
   if (!Object.hasOwn(payloadNames, target)) throw new Error(`Unsupported target: ${target}`);
@@ -55,7 +79,8 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
   if (path.basename(payloadPath) !== payloadName) throw new Error(`Expected platform payload ${payloadName}`);
   if (!buildInfo || buildInfo.schemaVersion !== 1 || buildInfo.appVersion !== version
     || buildInfo.target !== target || buildInfo.sourceCommit !== commit || buildInfo.sourceState !== "clean") {
-    throw new Error("Binary identity must match version, target and commit with clean application inputs");
+    const expected = { schemaVersion: 1, appVersion: version, target, sourceCommit: commit, sourceState: "clean" };
+    throw new Error(`Binary identity must match version, target and commit with clean application inputs; diagnostic=${identityDiagnostic(expected, buildInfo)}`);
   }
 
   // Validate all inputs before creating a fresh output directory. Never overwrite.

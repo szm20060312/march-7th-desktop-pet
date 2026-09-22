@@ -93,6 +93,76 @@ test("refuses missing, modified, unknown, malformed or mismatched binary identit
   assert.equal(existsSync(options.outputDirectory), false);
 });
 
+function rejectionDiagnostic(options) {
+  let message;
+  assert.throws(() => prepareRegression(options), error => {
+    assert.match(error.message, /^Binary identity must match version, target and commit with clean application inputs/);
+    message = error.message;
+    return true;
+  });
+  assert.equal(existsSync(options.outputDirectory), false);
+  assert.ok(message.length <= 1200, "diagnostic must remain bounded");
+  assert.equal(message.split("\n").length, 1);
+  assert.ok(message.includes("; diagnostic="), "identity rejection must include bounded whitelisted diagnostics");
+  return { message, diagnostic: JSON.parse(message.split("; diagnostic=")[1]) };
+}
+
+test("identity rejection diagnostic identifies only the mismatching public fields", t => {
+  const options = fixture(t);
+  for (const patch of [
+    { sourceCommit: "b".repeat(40) }, { target: "aarch64-apple-darwin" },
+    { appVersion: "0.3.0" }, { schemaVersion: 2 }, { sourceState: "modified" },
+    { sourceCommit: null, sourceState: "unknown" },
+  ]) {
+    const actual = { ...options.buildInfo, ...patch };
+    const { diagnostic } = rejectionDiagnostic({ ...options, buildInfo: actual });
+    assert.deepEqual(diagnostic.expected, options.buildInfo);
+    assert.deepEqual(diagnostic.actual, actual);
+    assert.deepEqual(diagnostic.mismatchedFields, Object.keys(options.buildInfo).filter(key => Object.hasOwn(patch, key)));
+    assert.deepEqual(Object.keys(diagnostic), ["expected", "actual", "mismatchedFields"]);
+  }
+});
+
+test("identity rejection diagnostic strips private extras and replaces invalid values without stringifying them", t => {
+  const options = fixture(t);
+  const secret = "DO_NOT_LOG_PRIVATE_FIXTURE";
+  const actual = {
+    schemaVersion: { config: secret }, appVersion: `0.2.0\n${secret}`,
+    target: `C:/Users/${secret}`, sourceCommit: { token: secret }, sourceState: secret,
+    environment: { token: secret }, privatePath: `/private/${secret}`,
+    toJSON() { throw Error("raw object must never be stringified"); },
+  };
+  const { message, diagnostic } = rejectionDiagnostic({ ...options, buildInfo: actual });
+  assert.equal(message.includes(secret), false);
+  assert.equal(message.includes("privatePath"), false);
+  assert.equal(message.includes("environment"), false);
+  assert.deepEqual(diagnostic.actual, Object.fromEntries(Object.keys(options.buildInfo).map(key => [key, "<invalid>"])));
+  assert.deepEqual(diagnostic.mismatchedFields, Object.keys(options.buildInfo));
+});
+
+test("identity rejection diagnostic bounds expected and actual values and labels missing or non-object payloads", t => {
+  const options = fixture(t);
+  const keys = Object.keys(options.buildInfo);
+  const oversizedVersion = `0.2.0-${"x".repeat(2000)}`;
+  const { diagnostic, message } = rejectionDiagnostic({ ...options, version: oversizedVersion, buildInfo: { ...options.buildInfo, target: "x-".repeat(100), appVersion: oversizedVersion, sourceState: "modified" } });
+  assert.equal(diagnostic.expected.appVersion, "<invalid>");
+  assert.equal(diagnostic.actual.appVersion, "<invalid>");
+  assert.equal(diagnostic.actual.target, "<invalid>");
+  assert.equal(message.includes(oversizedVersion), false);
+  assert.deepEqual(diagnostic.mismatchedFields, ["target", "sourceState"]);
+  for (const value of [undefined, {}, null, ["PRIVATE_ARRAY"], "PRIVATE_STRING", 42]) {
+    const result = rejectionDiagnostic({ ...options, buildInfo: value });
+    const marker = value === undefined || value?.constructor === Object ? "<missing>" : "<invalid>";
+    assert.deepEqual(result.diagnostic.actual, Object.fromEntries(keys.map(key => [key, marker])));
+    assert.deepEqual(result.diagnostic.mismatchedFields, keys);
+    assert.equal(result.message.includes("PRIVATE_"), false);
+  }
+  const trailing = rejectionDiagnostic({ ...options, buildInfo: {
+    ...options.buildInfo, appVersion: "0.2.0\n", target: `${options.target}\u2028`, sourceCommit: `${options.commit}\r`,
+  } });
+  for (const field of ["appVersion", "target", "sourceCommit"]) assert.equal(trailing.diagnostic.actual[field], "<invalid>");
+});
+
 for (const target of ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]) {
   test(`packages ${target} with a verifiable manifest and complete checklist`, t => {
     const options = fixture(t, target);
