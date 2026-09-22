@@ -2,6 +2,13 @@
 // status and Cargo watches; never watch the app root (it contains build caches).
 use std::{env, path::Path, process::Command};
 
+// Project convention: keep both automatic desktop overrides present, even if
+// empty. Missing optional paths cannot be watched without perpetual rebuilds.
+const PLATFORM_CONFIGS: &[&str] = &[
+    "src-tauri/tauri.windows.conf.json",
+    "src-tauri/tauri.macos.conf.json",
+];
+
 const INPUTS: &[&str] = &[
     "src",
     "public",
@@ -61,7 +68,13 @@ pub fn embed() {
     let root = Path::new(&manifest)
         .parent()
         .expect("application directory");
-    for input in INPUTS {
+    for config in PLATFORM_CONFIGS {
+        assert!(
+            root.join(config).is_file(),
+            "Missing required project build file: {config}; restore the tracked platform config (an empty object is valid)"
+        );
+    }
+    for input in INPUTS.iter().chain(PLATFORM_CONFIGS) {
         watch(&root.join(input));
     }
     println!("cargo:rerun-if-env-changed=PATH");
@@ -103,6 +116,7 @@ pub fn embed() {
     }
     let mut scope = INPUTS
         .iter()
+        .chain(PLATFORM_CONFIGS)
         .map(|input| (*input).to_owned())
         .collect::<Vec<_>>();
     if let Some(repo) = git(root, &["rev-parse", "--show-toplevel"]) {

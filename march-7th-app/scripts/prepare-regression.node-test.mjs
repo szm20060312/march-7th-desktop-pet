@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { prepareRegression } from "./prepare-regression.mjs";
 
 function fixture(t, target = "x86_64-pc-windows-msvc") {
@@ -13,10 +14,34 @@ function fixture(t, target = "x86_64-pc-windows-msvc") {
   mkdirSync(docsDirectory);
   for (const name of ["README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md"]) writeFileSync(path.join(docsDirectory, name), `Fixture ${name}\n`);
   const payloadPath = path.join(root, target.startsWith("x86") ? "march-7th-app.exe" : "March 7th.app.zip");
-  writeFileSync(payloadPath, "test payload");
+  let executablePath = payloadPath;
+  if (target === "aarch64-apple-darwin") {
+    executablePath = path.join(root, "March 7th.app/Contents/MacOS/march-7th-app");
+    mkdirSync(path.dirname(executablePath), { recursive: true });
+    writeFileSync(executablePath, "test payload");
+    // Both supported native hosts ship bsdtar; generate a real ZIP, not a mock.
+    const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32/tar.exe") : "/usr/bin/tar";
+    execFileSync(tar, ["-a", "-cf", payloadPath, "-C", root, "March 7th.app"], { timeout: 10_000 });
+  } else writeFileSync(payloadPath, "test payload");
   const buildInfo = { schemaVersion: 1, appVersion: "0.2.0", target, sourceCommit: "a".repeat(40), sourceState: "clean" };
-  return { target, payloadPath, docsDirectory, outputDirectory: path.join(root, "output"), commit: "a".repeat(40), version: "0.2.0", runUrl: null, buildInfo };
+  return { target, payloadPath, docsDirectory, outputDirectory: path.join(root, "output"), commit: "a".repeat(40), version: "0.2.0", runUrl: null, buildInfo, executablePath };
 }
+
+test("rejects a stale real Mac ZIP even when its rebuilt sibling executable has matching identity", t => {
+  const options = fixture(t, "aarch64-apple-darwin");
+  // Keep the old archive; replace the executable exactly as a rebuild would.
+  writeFileSync(options.executablePath, "new! payload");
+  assert.throws(() => prepareRegression(options), /archive.*executable/i);
+  assert.equal(existsSync(options.outputDirectory), false);
+});
+
+test("rejects a Mac ZIP missing the probed member before creating a packet", t => {
+  const options = fixture(t, "aarch64-apple-darwin");
+  const executablePath = path.join(path.dirname(options.executablePath), "another-executable");
+  writeFileSync(executablePath, "test payload");
+  assert.throws(() => prepareRegression({ ...options, executablePath }), /archive.*executable/i);
+  assert.equal(existsSync(options.outputDirectory), false);
+});
 
 test("refuses missing, modified, unknown, malformed or mismatched binary identities before writing", t => {
   const options = fixture(t);

@@ -1,7 +1,7 @@
 // A real, dependency-free Cargo application exercises build-script invalidation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,7 @@ function app(root) {
   writeFileSync(path.join(directory, "src/example.ts"), "// original\n");
   writeFileSync(path.join(directory, "index.html"), "original\n");
   writeFileSync(path.join(directory, "src-tauri/Cargo.toml"), '[package]\nname="identity-fixture"\nversion="0.2.0"\nedition="2021"\n');
+  for (const platform of ["windows", "macos"]) writeFileSync(path.join(directory, `src-tauri/tauri.${platform}.conf.json`), "{}\n");
   copyFileSync(support, path.join(directory, "src-tauri/build_identity_support.rs"));
   writeFileSync(path.join(directory, "src-tauri/build.rs"), 'mod build_identity_support; fn main() { build_identity_support::embed(); }');
   writeFileSync(path.join(directory, "src-tauri/src/main.rs"), 'fn main() { println!("{}|{}|{}|{}", env!("CARGO_PKG_VERSION"), env!("MARCH_BUILD_TARGET"), env!("MARCH_SOURCE_COMMIT"), env!("MARCH_SOURCE_STATE")); }');
@@ -104,4 +105,37 @@ test("exports, unrelated parent repositories and unavailable Git never invent pr
   const output = exec(probe, [], directory, { ...process.env, PATH: "", CARGO_MANIFEST_DIR: path.join(directory, "src-tauri"), TARGET: "x86_64-pc-windows-msvc" });
   assert.match(output, /MARCH_SOURCE_STATE=unknown/);
   assert.match(output, /MARCH_SOURCE_COMMIT=\r?\n/);
+});
+
+test("automatic Tauri platform overrides cannot leave a cached clean identity", t => {
+  const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
+  mkdirSync(path.join(directory, "scripts"));
+  const packetScript = path.join(directory, "scripts/prepare-regression.mjs");
+  copyFileSync(fileURLToPath(new URL("./prepare-regression.mjs", import.meta.url)), packetScript);
+  exec("cargo", ["generate-lockfile", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory); initialize(root);
+  assert.equal(build(directory, target).state, "clean");
+  for (const platform of ["windows", "macos"]) {
+    const config = path.join(directory, `src-tauri/tauri.${platform}.conf.json`);
+    writeFileSync(config, '{"productName":"Local override"}\n');
+    assert.equal(build(directory, target).state, "modified");
+    rmSync(config);
+    assert.throws(() => build(directory, target), error => {
+      assert.match(error.stderr.toString(), /Missing required project build file/);
+      return true;
+    });
+    const packet = path.join(root, `missing-${platform}-packet`);
+    const staleBinary = path.join(target, "march-7th-app.exe");
+    assert.throws(() => exec(process.execPath, [packetScript, "x86_64-pc-windows-msvc", staleBinary, packet, staleBinary], directory), error => {
+      assert.match(error.stderr.toString(), /Refusing to label a build from a modified tracked worktree/);
+      assert.ok(error.stderr.toString().includes(`tauri.${platform}.conf.json`));
+      return true;
+    });
+    assert.equal(existsSync(packet), false);
+    writeFileSync(config, "{}\n");
+    assert.equal(build(directory, target).state, "clean");
+  }
+  const executable = path.join(target, "debug", `identity-fixture${process.platform === "win32" ? ".exe" : ""}`);
+  const builtAt = statSync(executable).mtimeMs;
+  build(directory, target);
+  assert.equal(statSync(executable).mtimeMs, builtAt);
 });

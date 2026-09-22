@@ -22,7 +22,32 @@ export function readBinaryBuildInfo(executablePath) {
   try { return JSON.parse(output); } catch { throw new Error("Invalid binary identity JSON"); }
 }
 
-export function prepareRegression({ target, payloadPath, docsDirectory, outputDirectory, commit, version, runUrl, buildInfo }) {
+function verifyMacArchiveExecutable(payloadPath, executablePath) {
+  if (!executablePath || path.dirname(path.resolve(executablePath)) !== path.resolve(payloadPath.replace(/\.zip$/, ""), "Contents/MacOS")) {
+    throw new Error("macOS archive identity requires this payload's app bundle executable");
+  }
+  const executable = readFileSync(executablePath);
+  const executableName = path.basename(executablePath);
+  // Restrict the known native binary name to literal archive path characters;
+  // bsdtar's member selector must never become a wildcard pattern.
+  if (!/^[A-Za-z0-9._-]+$/.test(executableName)) throw new Error("Invalid macOS archive executable name");
+  const member = `March 7th.app/Contents/MacOS/${executableName}`;
+  const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32/tar.exe") : "/usr/bin/tar";
+  let archived;
+  try {
+    // Stock bsdtar reads exactly this member into a bounded pipe. No extraction
+    // to disk, archive code execution, or third-party ZIP parser is involved.
+    archived = execFileSync(tar, ["-xOf", path.resolve(payloadPath), member], {
+      timeout: 10_000, maxBuffer: executable.length + 1, windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error("macOS archive executable could not be verified");
+  }
+  if (!archived.equals(executable)) throw new Error("macOS archive executable differs from the probed executable");
+}
+
+export function prepareRegression({ target, payloadPath, docsDirectory, outputDirectory, commit, version, runUrl, buildInfo, executablePath }) {
   const payloadName = payloadNames[target];
   if (!Object.hasOwn(payloadNames, target)) throw new Error(`Unsupported target: ${target}`);
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("A full source commit is required");
@@ -41,6 +66,7 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
   for (const input of inputs) {
     if (!statSync(input.source).isFile() || statSync(input.source).size === 0) throw new Error(`Missing or empty file: ${input.name}`);
   }
+  if (target === "aarch64-apple-darwin") verifyMacArchiveExecutable(payloadPath, executablePath);
   mkdirSync(outputDirectory);
   const files = inputs.map(input => {
     const destination = path.join(outputDirectory, input.name);
@@ -90,7 +116,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : null;
     const manifest = prepareRegression({
-      target, payloadPath, outputDirectory,
+      target, payloadPath, outputDirectory, executablePath,
       docsDirectory: path.resolve(appRoot, "../docs/development/app/regression"),
       commit: git(["rev-parse", "HEAD"]), version: pkg.version, runUrl,
       buildInfo: readBinaryBuildInfo(executablePath),

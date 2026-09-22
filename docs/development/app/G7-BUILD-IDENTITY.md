@@ -19,6 +19,7 @@ G7 的一个技术切片，版本仍为 0.2.0；不关闭 M0、M4/G7 或 M5。�
 - 前端 `src/`、`public/`、`index.html`、`settings.html`、`reminder.html`。
 - `package.json`、`pnpm-lock.yaml`、`tsconfig.json`、`vite.config.ts`。
 - Rust `src-tauri/src/`、`icons/`、`capabilities/`、`Cargo.toml`、`Cargo.lock`、`tauri.conf.json`、`build.rs`、`build_identity_support.rs`。
+- 本项目将自动合并的 `src-tauri/tauri.windows.conf.json` 与 `tauri.macos.conf.json` 作为必需构建文件跟踪，初始内容都是 `{}`。修改会标记 modified，删除任一文件会明确构建失败，恢复后可继续。这是本项目的约定，并非 Tauri 通用要求；避免为可缺省配置扫描整个含缓存的目录，或依赖缺失文件强制反复重建。
 - 应用与 Rust 的 `.gitignore`，以及仓库根的 `.gitignore`、`.gitattributes`（影响来源比较）。
 
 源码目录递归观察，可发现新文件；在此范围内被 Git 忽略的本地文件也视为修改。已存在的明确配置文件逐个观察；不递归观察应用根目录。`node_modules/`、`target/`、`dist/` 等生成物和缓存不在范围内；外部工具链、依赖缓存、构建参数和系统 SDK 不由此 SHA 证明。仓库文档、设计资料、测试辅助文件和打包脚本不作为编译应用输入；`src/` 内的测试仍属于该目录范围。新增构建输入位置时必须同步修改列表与此说明。
@@ -31,7 +32,9 @@ Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没�
 
 `prepare-regression.mjs` 新增必填的本次构建可执行文件参数。Windows 必须与 exe payload 是同一路径；Mac 必须来自 zip 对应 `.app/Contents/MacOS/`。CI 用 Info.plist 的 CFBundleExecutable 确认实际文件，并保留 `ditto` 权限打包流程。探针有 10 秒超时和 16 KiB 输出上限，失败不生成测试包，不自动寻找程序或运行任意导入包。
 
-打包器要求实际程序身份的 schema/version/target/commit 与欲写 manifest 完全一致，且 sourceState=clean。仍检查整个仓库的已跟踪修改并计算包内文件 SHA-256；manifest 新增 `binaryBuildInfo` 保存核对过的字段。Mac zip 与其可执行文件必须在同一次受控构建中生成。
+Mac 分发前还使用宿主系统的 bsdtar（macOS `/usr/bin/tar`、Windows 系统 `tar.exe`）将 ZIP 中的确切可执行文件成员只读输出到有界管道，与刚刚探针过的程序逐字节比较；10 秒超时，输出上限为程序大小加 1。内容不同、成员缺失或读取失败都会在创建输出目录前拒绝打包，不执行归档内容，也不解压到磁盘。可执行文件名限定为字母、数字、点、下划线和连字符，防止成员选择变成通配模式。
+
+打包器要求实际程序身份的 schema/version/target/commit 与欲写 manifest 完全一致，且 sourceState=clean。仍检查整个仓库的已跟踪修改并计算包内文件 SHA-256；manifest 新增 `binaryBuildInfo` 保存核对过的字段。Mac zip 与其可执行文件必须在同一次受控构建中生成；忘记更新 ZIP 的旧包会因字节不同被拒绝。
 
 ## 验证边界
 
