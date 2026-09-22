@@ -1,3 +1,5 @@
+mod atomic_file;
+mod characters;
 mod desktop;
 mod platform;
 
@@ -35,8 +37,24 @@ fn app_context() -> tauri::Context<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     desktop::configure(tauri::Builder::default())
-        .invoke_handler(tauri::generate_handler![cursor_relative_to_window])
+        .setup(|app| {
+            let characters = characters::setup(app)?;
+            desktop::setup(app, &characters)
+        })
+        .invoke_handler(tauri::generate_handler![
+            cursor_relative_to_window,
+            characters::native::get_selected_character,
+            characters::native::select_character
+        ])
         .build(app_context())
         .expect("error while building March 7th")
-        .run(desktop::on_run_event);
+        .run(|app, event| {
+            if matches!(
+                &event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                characters::stop(app);
+            }
+            desktop::on_run_event(app, event);
+        });
 }

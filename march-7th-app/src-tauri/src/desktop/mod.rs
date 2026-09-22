@@ -19,7 +19,7 @@ use std::{
 };
 use store::Store;
 use tauri::{
-    menu::{CheckMenuItem, MenuBuilder, MenuEvent, MenuItem},
+    menu::{CheckMenuItem, MenuBuilder, MenuEvent, MenuItem, Submenu},
     tray::TrayIconBuilder,
     App, AppHandle, Builder, Manager, PhysicalSize, RunEvent, Runtime, WebviewWindow, Window,
     WindowEvent,
@@ -41,10 +41,10 @@ struct Desktop<R: Runtime> {
 }
 
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
-    builder.setup(setup).on_window_event(handle_window_event)
+    builder.on_window_event(handle_window_event)
 }
 
-fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
+pub fn setup<R: Runtime>(app: &mut App<R>, characters: &Submenu<R>) -> Result<(), Box<dyn Error>> {
     let window = main_window(app.handle())?;
     // Config starts hidden: no default-position flash before restoration.
     window.set_ignore_cursor_events(false)?;
@@ -102,6 +102,7 @@ fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn Error>> {
         .item(&interaction)
         .item(&click_through)
         .item(&status)
+        .item(characters)
         .separator()
         .text("quit", "退出")
         .build()?;
@@ -224,6 +225,9 @@ fn active<R: Runtime>(desktop: &Desktop<R>) -> bool {
     desktop.shared.session.lock().unwrap().lifecycle == Lifecycle::Running
 }
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    if crate::characters::handle_menu_event(app, &event) {
+        return;
+    }
     let Some(desktop) = app.try_state::<Desktop<R>>() else {
         return;
     };
