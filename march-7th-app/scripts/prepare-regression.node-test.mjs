@@ -1,11 +1,48 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, copyFileSync, symlinkSync, linkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { prepareRegression } from "./prepare-regression.mjs";
+
+function cliAliases(t) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "march7-cli-alias-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const realDirectory = path.join(root, "real scripts");
+  const aliasDirectory = path.join(root, "alias scripts");
+  mkdirSync(realDirectory);
+  const script = path.join(realDirectory, "prepare-regression.mjs");
+  copyFileSync(fileURLToPath(new URL("./prepare-regression.mjs", import.meta.url)), script);
+  symlinkSync(realDirectory, aliasDirectory, process.platform === "win32" ? "junction" : "dir");
+  const fileAlias = path.join(root, "file-alias.mjs");
+  if (process.platform === "win32") linkSync(script, fileAlias); // No administrator-only symlink privilege needed.
+  else symlinkSync(script, fileAlias, "file");
+  return { root, scripts: [script, path.join(aliasDirectory, "prepare-regression.mjs"), fileAlias] };
+}
+
+test("CLI validates arguments through real paths, directory aliases and file aliases", t => {
+  const { scripts } = cliAliases(t);
+  for (const script of scripts) {
+    const result = spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(result.status, 1, `CLI must run rather than silently skip: ${script}`);
+    assert.match(result.stderr, /Usage: node scripts\/prepare-regression.mjs/);
+    assert.equal(result.stdout, "");
+  }
+});
+
+test("module imports through aliases never enter the CLI, including arbitrary eval argv", t => {
+  const { root, scripts } = cliAliases(t);
+  for (const script of scripts) {
+    const source = `const module = await import(${JSON.stringify(pathToFileURL(script).href)}); if (typeof module.prepareRegression !== "function") throw Error("missing export"); console.log("import only");`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", source, path.join(root, "nonexistent-argument")], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), "import only");
+    assert.equal(result.stderr, "");
+  }
+});
 
 function fixture(t, target = "x86_64-pc-windows-msvc") {
   const root = mkdtempSync(path.join(os.tmpdir(), "march7-regression-"));

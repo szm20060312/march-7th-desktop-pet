@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -93,7 +93,18 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
   return manifest;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isCliEntry() {
+  if (!process.argv[1]) return false;
+  try {
+    // Node resolves module aliases; argv can still contain a symlink/junction.
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    // Imported modules may run under eval with an arbitrary, nonexistent argv.
+    return false;
+  }
+}
+
+if (isCliEntry()) {
   try {
     const [target, payloadPath, outputDirectory, executablePath] = process.argv.slice(2);
     if (!target || !payloadPath || !outputDirectory || !executablePath || process.argv.length !== 6) {
