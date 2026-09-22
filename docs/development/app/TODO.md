@@ -32,6 +32,7 @@
 - [x] 拖动抖动修复实机验证
 - [x] App 图标和 ARM64 Release 构建
 - [x] 状态栏图标及显示／隐藏／退出菜单（`macos/v0.3-desktop-controls`）
+- [x] macOS 状态栏一键切换到当前桌面（隐藏后重新显示）
 
 ### Windows x64
 

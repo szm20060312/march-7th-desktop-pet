@@ -1,6 +1,7 @@
 mod platform;
 
 use serde::Serialize;
+use std::{thread, time::Duration};
 use tauri::{
     menu::{MenuBuilder, MenuEvent, MenuItem},
     tray::TrayIconBuilder,
@@ -35,9 +36,16 @@ fn cursor_relative_to_window(window: tauri::WebviewWindow) -> Result<CursorSampl
 fn setup_status_bar<R: Runtime>(app: &mut App<R>) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示三月七", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏三月七", true, None::<&str>)?;
+    let move_to_current_space = MenuItem::with_id(
+        app,
+        "move-to-current-space",
+        "切换到当前桌面",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "退出 March 7th", true, None::<&str>)?;
     let menu = MenuBuilder::new(app)
-        .items(&[&show, &hide, &quit])
+        .items(&[&show, &hide, &move_to_current_space, &quit])
         .build()?;
     let icon = app
         .default_window_icon()
@@ -62,6 +70,15 @@ fn handle_status_bar_menu<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         "hide" => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
+            }
+        }
+        "move-to-current-space" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(80));
+                    let _ = window.show();
+                });
             }
         }
         "quit" => app.exit(0),
