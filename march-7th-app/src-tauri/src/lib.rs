@@ -1,3 +1,4 @@
+mod desktop;
 mod platform;
 
 use serde::Serialize;
@@ -27,10 +28,15 @@ fn cursor_relative_to_window(window: tauri::WebviewWindow) -> Result<CursorSampl
     })
 }
 
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    desktop::configure(tauri::Builder::default())
         .invoke_handler(tauri::generate_handler![cursor_relative_to_window])
-        .run(tauri::generate_context!())
-        .expect("error while running March 7th");
+        .build(app_context())
+        .expect("error while building March 7th")
+        .run(desktop::on_run_event);
 }
