@@ -1,0 +1,107 @@
+// A real, dependency-free Cargo application exercises build-script invalidation.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const support = fileURLToPath(new URL("../src-tauri/build_identity_support.rs", import.meta.url));
+const exec = (file, args, cwd, env = process.env) => execFileSync(file, args, { cwd, env, encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+const git = (cwd, ...args) => exec("git", args, cwd);
+function fixture(t) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "march7 identity spaces "));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+function app(root) {
+  const directory = path.join(root, "app");
+  mkdirSync(path.join(directory, "src-tauri/src"), { recursive: true });
+  mkdirSync(path.join(directory, "src"));
+  writeFileSync(path.join(directory, "src/example.ts"), "// original\n");
+  writeFileSync(path.join(directory, "index.html"), "original\n");
+  writeFileSync(path.join(directory, "src-tauri/Cargo.toml"), '[package]\nname="identity-fixture"\nversion="0.2.0"\nedition="2021"\n');
+  copyFileSync(support, path.join(directory, "src-tauri/build_identity_support.rs"));
+  writeFileSync(path.join(directory, "src-tauri/build.rs"), 'mod build_identity_support; fn main() { build_identity_support::embed(); }');
+  writeFileSync(path.join(directory, "src-tauri/src/main.rs"), 'fn main() { println!("{}|{}|{}|{}", env!("CARGO_PKG_VERSION"), env!("MARCH_BUILD_TARGET"), env!("MARCH_SOURCE_COMMIT"), env!("MARCH_SOURCE_STATE")); }');
+  writeFileSync(path.join(root, ".gitignore"), "target/\napp/src/ignored.ts\n");
+  return directory;
+}
+function initialize(root) {
+  git(root, "init", "-b", "main");
+  git(root, "config", "user.name", "Identity Fixture");
+  git(root, "config", "user.email", "fixture@local.invalid");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "fixture");
+}
+function build(directory, target, overrides = {}) {
+  const env = { ...process.env, CARGO_TARGET_DIR: target, ...overrides };
+  exec("cargo", ["build", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory, env);
+  const [version, platform, commit, state] = exec(path.join(target, "debug", `identity-fixture${process.platform === "win32" ? ".exe" : ""}`), [], directory).split("|");
+  return { version, platform, commit, state };
+}
+
+test("real Cargo cache follows source changes, new files, Git index, HEAD and worktree refs", t => {
+  const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
+  // Materialize Cargo.lock before committing the baseline.
+  exec("cargo", ["generate-lockfile", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory); initialize(root);
+  let result = build(directory, target);
+  assert.equal(result.state, "clean"); assert.equal(result.commit, git(root, "rev-parse", "HEAD"));
+  assert.equal(result.version, "0.2.0"); assert.match(result.platform, /-/);
+  const executable = path.join(target, "debug", `identity-fixture${process.platform === "win32" ? ".exe" : ""}`);
+  const builtAt = statSync(executable).mtimeMs;
+  build(directory, target);
+  assert.equal(statSync(executable).mtimeMs, builtAt, "unchanged input should reuse the compiled binary");
+  writeFileSync(path.join(directory, "src/example.ts"), "// changed\n");
+  assert.equal(build(directory, target).state, "modified");
+  git(root, "checkout", "--", "app/src/example.ts");
+  assert.equal(build(directory, target).state, "clean");
+  writeFileSync(path.join(directory, "index.html"), "changed entry\n");
+  git(root, "add", "app/index.html");
+  assert.equal(build(directory, target).state, "modified");
+  git(root, "restore", "--staged", "--worktree", "app/index.html");
+  writeFileSync(path.join(directory, "src/new.ts"), "// new input\n");
+  assert.equal(build(directory, target).state, "modified");
+  rmSync(path.join(directory, "src/new.ts"));
+  writeFileSync(path.join(directory, "src/ignored.ts"), "// ignored but compiled input\n");
+  assert.equal(build(directory, target).state, "modified");
+  rmSync(path.join(directory, "src/ignored.ts"));
+  git(root, "commit", "--allow-empty", "-qm", "head only");
+  result = build(directory, target);
+  assert.equal(result.state, "clean"); assert.equal(result.commit, git(root, "rev-parse", "HEAD"));
+  git(root, "checkout", "--detach", "HEAD~1");
+  assert.equal(build(directory, target).commit, git(root, "rev-parse", "HEAD"));
+  git(root, "checkout", "main");
+  writeFileSync(path.join(root, "notes.md"), "outside compiled inputs\n");
+  assert.equal(build(directory, target).state, "clean");
+  const worktree = path.join(root, "linked worktree");
+  git(root, "worktree", "add", "-b", "linked", worktree);
+  const linkedApp = path.join(worktree, "app"); const linkedTarget = path.join(root, "target-linked");
+  assert.equal(build(linkedApp, linkedTarget).state, "clean");
+  git(worktree, "commit", "--allow-empty", "-qm", "linked head only");
+  assert.equal(build(linkedApp, linkedTarget).commit, git(worktree, "rev-parse", "HEAD"));
+  git(root, "pack-refs", "--all", "--prune");
+  assert.equal(build(linkedApp, linkedTarget).commit, git(worktree, "rev-parse", "HEAD"));
+  git(root, "update-ref", "refs/heads/linked", git(root, "rev-parse", "main"));
+  assert.equal(build(linkedApp, linkedTarget).commit, git(worktree, "rev-parse", "HEAD"), "new loose ref after packing must invalidate Cargo");
+});
+
+test("exports, unrelated parent repositories and unavailable Git never invent provenance", t => {
+  const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
+  let result = build(directory, target);
+  assert.equal(result.state, "unknown"); assert.equal(result.commit, "");
+  git(root, "init", "-b", "main"); git(root, "config", "user.name", "Fixture"); git(root, "config", "user.email", "fixture@local.invalid");
+  writeFileSync(path.join(root, "unrelated.txt"), "parent\n"); git(root, "add", "unrelated.txt"); git(root, "commit", "-qm", "unrelated");
+  result = build(directory, path.join(root, "target-unrelated"));
+  assert.equal(result.state, "unknown"); assert.equal(result.commit, "");
+  git(root, "add", "app", ".gitignore"); git(root, "commit", "-qm", "track actual app");
+  assert.equal(build(directory, path.join(root, "target-tracked")).state, "clean");
+  const driver = path.join(root, "probe.rs");
+  writeFileSync(driver, `#[path = ${JSON.stringify(path.join(directory, "src-tauri/build_identity_support.rs"))}] mod support; fn main() { support::embed(); }`);
+  const probe = path.join(root, `probe${process.platform === "win32" ? ".exe" : ""}`);
+  exec("rustc", ["--edition=2021", driver, "-o", probe], root);
+  const output = exec(probe, [], directory, { ...process.env, PATH: "", CARGO_MANIFEST_DIR: path.join(directory, "src-tauri"), TARGET: "x86_64-pc-windows-msvc" });
+  assert.match(output, /MARCH_SOURCE_STATE=unknown/);
+  assert.match(output, /MARCH_SOURCE_COMMIT=\r?\n/);
+});

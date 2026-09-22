@@ -1,4 +1,5 @@
 mod atomic_file;
+pub mod build_info;
 mod characters;
 mod desktop;
 mod platform;
@@ -44,6 +45,7 @@ pub fn run() {
             desktop::setup(app, &characters, &reminders)
         })
         .invoke_handler(tauri::generate_handler![
+            build_info::get_build_info,
             cursor_relative_to_window,
             characters::native::get_selected_character,
             characters::native::select_character,

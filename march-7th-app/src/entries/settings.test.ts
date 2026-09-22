@@ -20,6 +20,33 @@ afterEach(() => { windowHost.dispatch("pagehide"); vi.restoreAllMocks(); vi.unst
 const edit = (minutes: number) => { dom.get("snooze-minutes").value = String(minutes); dom.get("settings-form").dispatch("input"); };
 const save = () => dom.get("settings-form").dispatch("submit");
 
+describe("real settings build identity entry", () => {
+  const info = { schemaVersion: 1, appVersion: "0.2.0", target: "x86_64-pc-windows-msvc", sourceCommit: "a".repeat(40), sourceState: "modified" };
+  it("reads and displays the complete identity without changing reminder drafts", async () => {
+    native.invoke.mockImplementation(async name => name === "get_build_info" ? info : fresh());
+    await import("./settings"); await flush(); edit(35);
+    expect(native.invoke).toHaveBeenCalledWith("get_build_info");
+    expect(dom.get("build-commit").textContent).toBe(info.sourceCommit);
+    expect(dom.get("build-state").textContent).toContain("本地修改");
+    expect(dom.get("snooze-minutes").value).toBe("35");
+  });
+  it("keeps build identity failures in their own region", async () => {
+    native.invoke.mockImplementation(async name => { if (name === "get_build_info") throw Error("identity unavailable"); return fresh(); });
+    await import("./settings"); await flush(); edit(35);
+    expect(dom.get("build-status").textContent).toContain("版本信息读取失败");
+    expect(dom.get("settings-notice").textContent).not.toContain("版本信息");
+    expect(dom.get("save-settings").disabled).toBe(false);
+  });
+  it.each([false, true])("ignores late identity completion after dispose (reject=%s)", async reject => {
+    let resolve!: (value: unknown) => void; let fail!: (reason: Error) => void;
+    native.invoke.mockImplementation(name => name === "get_build_info" ? new Promise((yes, no) => { resolve = yes; fail = no; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); windowHost.dispatch("pagehide");
+    const prior = dom.get("build-status").textContent;
+    if (reject) fail(Error("late")); else resolve(info);
+    await flush(); expect(dom.get("build-status").textContent).toBe(prior); expect(dom.get("build-commit").textContent).toBe("");
+  });
+});
+
 describe("real settings entry / adapter / controller error ownership", () => {
   it.each(["draft", "saved"])("does not let an old rejected save overwrite the reopened %s session", async nextState => {
     await import("./settings"); await flush();
@@ -40,6 +67,6 @@ describe("real settings entry / adapter / controller error ownership", () => {
     expect(console.error).toHaveBeenCalledWith("Reminder settings connection failed", expect.objectContaining({ stage: "command" }));
   });
   it("still displays connection read errors outside command sessions", async () => {
-    native.invoke.mockRejectedValueOnce(Error("read")); await import("./settings"); await flush(); expect(dom.get("settings-notice").textContent).toContain("读取或操作失败");
+    native.invoke.mockImplementation(async name => { if (name === "get_reminders") throw Error("read"); return fresh(); }); await import("./settings"); await flush(); expect(dom.get("settings-notice").textContent).toContain("读取或操作失败");
   });
 });

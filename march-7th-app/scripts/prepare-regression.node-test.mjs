@@ -14,8 +14,22 @@ function fixture(t, target = "x86_64-pc-windows-msvc") {
   for (const name of ["README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md"]) writeFileSync(path.join(docsDirectory, name), `Fixture ${name}\n`);
   const payloadPath = path.join(root, target.startsWith("x86") ? "march-7th-app.exe" : "March 7th.app.zip");
   writeFileSync(payloadPath, "test payload");
-  return { target, payloadPath, docsDirectory, outputDirectory: path.join(root, "output"), commit: "a".repeat(40), version: "0.2.0", runUrl: null };
+  const buildInfo = { schemaVersion: 1, appVersion: "0.2.0", target, sourceCommit: "a".repeat(40), sourceState: "clean" };
+  return { target, payloadPath, docsDirectory, outputDirectory: path.join(root, "output"), commit: "a".repeat(40), version: "0.2.0", runUrl: null, buildInfo };
 }
+
+test("refuses missing, modified, unknown, malformed or mismatched binary identities before writing", t => {
+  const options = fixture(t);
+  for (const buildInfo of [undefined, null, {},
+    { ...options.buildInfo, schemaVersion: 2 },
+    { ...options.buildInfo, sourceState: "modified" },
+    { ...options.buildInfo, sourceState: "unknown", sourceCommit: null },
+    { ...options.buildInfo, sourceCommit: "b".repeat(40) },
+    { ...options.buildInfo, appVersion: "0.3.0" },
+    { ...options.buildInfo, target: "aarch64-apple-darwin" },
+  ]) assert.throws(() => prepareRegression({ ...options, buildInfo }), /identity/);
+  assert.equal(existsSync(options.outputDirectory), false);
+});
 
 for (const target of ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]) {
   test(`packages ${target} with a verifiable manifest and complete checklist`, t => {

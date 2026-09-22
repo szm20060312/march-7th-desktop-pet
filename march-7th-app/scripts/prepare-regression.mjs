@@ -11,12 +11,27 @@ const payloadNames = {
 const documentNames = ["README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md"];
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 
-export function prepareRegression({ target, payloadPath, docsDirectory, outputDirectory, commit, version, runUrl }) {
+export function readBinaryBuildInfo(executablePath) {
+  // Only the caller's explicit current build is executed. Never discover or run
+  // an imported packet. GUI-subsystem Windows binaries receive a stdout pipe.
+  const output = execFileSync(path.resolve(executablePath), ["--build-info"], {
+    encoding: "utf8", timeout: 10_000, maxBuffer: 16_384, windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  if (output.split(/\r?\n/).length !== 1) throw new Error("Invalid binary identity output");
+  try { return JSON.parse(output); } catch { throw new Error("Invalid binary identity JSON"); }
+}
+
+export function prepareRegression({ target, payloadPath, docsDirectory, outputDirectory, commit, version, runUrl, buildInfo }) {
   const payloadName = payloadNames[target];
   if (!Object.hasOwn(payloadNames, target)) throw new Error(`Unsupported target: ${target}`);
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("A full source commit is required");
   if (!/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) throw new Error("Invalid application version");
   if (path.basename(payloadPath) !== payloadName) throw new Error(`Expected platform payload ${payloadName}`);
+  if (!buildInfo || buildInfo.schemaVersion !== 1 || buildInfo.appVersion !== version
+    || buildInfo.target !== target || buildInfo.sourceCommit !== commit || buildInfo.sourceState !== "clean") {
+    throw new Error("Binary identity must match version, target and commit with clean application inputs");
+  }
 
   // Validate all inputs before creating a fresh output directory. Never overwrite.
   const inputs = [
@@ -38,6 +53,7 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
     applicationVersion: version,
     sourceCommit: commit,
     target,
+    binaryBuildInfo: { schemaVersion: 1, appVersion: buildInfo.appVersion, target: buildInfo.target, sourceCommit: buildInfo.sourceCommit, sourceState: buildInfo.sourceState },
     buildRunUrl: runUrl ?? null,
     builtAt: new Date().toISOString(),
     validationStatus: "build-only-awaiting-human-regression",
@@ -53,10 +69,13 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const [target, payloadPath, outputDirectory] = process.argv.slice(2);
-    if (!target || !payloadPath || !outputDirectory || process.argv.length !== 5) {
-      throw new Error("Usage: node scripts/prepare-regression.mjs <target> <payload> <new-output-directory>");
+    const [target, payloadPath, outputDirectory, executablePath] = process.argv.slice(2);
+    if (!target || !payloadPath || !outputDirectory || !executablePath || process.argv.length !== 6) {
+      throw new Error("Usage: node scripts/prepare-regression.mjs <target> <payload> <new-output-directory> <this-build-executable>");
     }
+    if (!Object.hasOwn(payloadNames, target)) throw new Error(`Unsupported target: ${target}`);
+    if (target === "x86_64-pc-windows-msvc" && path.resolve(payloadPath) !== path.resolve(executablePath)) throw new Error("Windows identity probe must use the payload executable");
+    if (target === "aarch64-apple-darwin" && path.dirname(path.resolve(executablePath)) !== path.resolve(payloadPath.replace(/\.zip$/, ""), "Contents/MacOS")) throw new Error("macOS identity probe must use this payload's app bundle executable");
     const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     const git = args => execFileSync("git", args, { cwd: appRoot, encoding: "utf8" }).trim();
     const changed = git(["status", "--porcelain", "--untracked-files=no"]);
@@ -74,6 +93,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       target, payloadPath, outputDirectory,
       docsDirectory: path.resolve(appRoot, "../docs/development/app/regression"),
       commit: git(["rev-parse", "HEAD"]), version: pkg.version, runUrl,
+      buildInfo: readBinaryBuildInfo(executablePath),
     });
     console.log(`Prepared ${manifest.target} at ${manifest.sourceCommit}`);
   } catch (error) {

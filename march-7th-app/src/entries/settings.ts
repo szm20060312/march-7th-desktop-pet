@@ -2,6 +2,7 @@ import { createDomReminderSettings } from "../adapters/dom-reminder-settings";
 import { connectReminders } from "../adapters/tauri-reminders";
 import { hideSettingsWindow } from "../adapters/tauri-reminder-window";
 import { createReminderSettingsController } from "../application/reminder-settings";
+import { mountBuildInfo } from "../adapters/dom-build-info";
 
 const view = createDomReminderSettings(document);
 const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: hideSettingsWindow });
@@ -16,6 +17,7 @@ const connection = connectReminders({
   },
 });
 const unbind = view.bind(controller);
-function dispose() { connection.dispose(); controller.dispose(); unbind(); window.removeEventListener("pagehide", dispose); }
+const disposeBuildInfo = mountBuildInfo(document);
+function dispose() { connection.dispose(); controller.dispose(); unbind(); disposeBuildInfo(); window.removeEventListener("pagehide", dispose); }
 window.addEventListener("pagehide", dispose, { once: true });
 import.meta.hot?.dispose(dispose);
