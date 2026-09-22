@@ -32,14 +32,23 @@ node scripts/check-architecture.mjs
 
 正常开发/CI 仍使用 `pnpm install --frozen-lockfile` 与 `pnpm check`，不跳过依赖校验。上面的直接入口只说明本次实际执行的证据，不能把安装阶段未完成改写成通过。
 
-本机未检测到可用 Rust 工具链，未在本机运行 Rust fmt/test/Clippy 或 Tauri 原生构建。CI 已配置两平台检查，其配置存在不代表运行通过；实际结果以 PR checks 为准。
+当时本机未检测到可用 Rust 工具链，未在本机运行 Rust fmt/test/Clippy 或 Tauri 原生构建。该本地限制保持原记录；后续远端验证结果单独补充如下。
 
-## 合并／发布前仍需完成
+## 2026-09-22 远端证据补充
 
-- [ ] 当前提交的 Windows 与 macOS CI 均通过。
+- [PR #1](https://github.com/szm20060312/march-7th-desktop-pet/pull/1) 已合并，主分支基线为 `77d12419125382e2d3441175c9a49ab8791e3f28`，与被测架构提交 `da56984e04d872d176222de393f6538c6ad6e0d2` 文件内容一致。
+- [CI 运行 35618545447](https://github.com/szm20060312/march-7th-desktop-pet/actions/runs/35618545447) 的 Windows x64 与 macOS ARM64 job 均为 `success`，包含锁文件依赖安装、`pnpm check`、Rust fmt/test/Clippy。
+- 这证明远端自动检查通过，不代表已经生成可分享原生测试包，更不代表桌面实测通过。
+- 所有者确认尚未测试本次新架构；M0 保持未关闭。后续 GUI 记录必须注明真实测试的提交和产物标识。
+
+## M0 关闭前仍需完成
+
+- [x] 架构提交 da56984 的 Windows 与 macOS CI 均通过（见上述运行）。
+- [ ] 同一提交的双平台可运行测试构建、标识、校验文件与共用清单。
 - [ ] Windows：透明置顶、16 方向注视、拖动/恢复、100%/150%/200% DPI 回归。
 - [ ] Mac：透明置顶、注视、拖动/恢复回归。
 - [ ] 多显示器和混合 DPI：有设备则实测，无设备则明确保留缺口。
 - [ ] 热更新及退出后没有重复循环或异常；长时间常驻无明显退化。
+- [ ] 两台实际设备的 CPU、内存和响应基准。
 
 既有 Windows 单屏报告、旧 Mac 报告、浏览器测试替身及本次单元测试，都不替代上述 GUI 实测。第二角色、提醒和托盘仍未实现。
