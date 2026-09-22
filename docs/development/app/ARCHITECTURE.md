@@ -2,7 +2,7 @@
 
 本文描述本次重构后的实际代码边界，并单独标出未来设计。产品选择见 [长期计划](PRODUCT-PLAN.md)，执行范围见 [本次执行计划](IMPLEMENTATION-ARCHITECTURE.md)。
 
-2026-09-22 更新：当前 Rust 已实现鼠标采样、G1/G2 原生托盘控制、交互/穿透模式和版本化位置存储，以及 G4 内置角色选择服务、G5 原生提醒后端；提醒气泡与设置仍待 G6。G1/G2 的自动验证与实机验收分开记录，当前分支仍待实机验收，不能把历史 v0.2.0 基线结果视为本提交通过。
+2026-09-22 更新：当前 Rust 已实现鼠标采样、G1/G2 原生托盘控制、交互/穿透模式和版本化位置存储，以及 G4 内置角色选择服务、G5 原生提醒后端。G6 Task1 已增加真实设置页、提醒页、类型适配与角色回应订阅；原生窗口、托盘和呈现握手处理仍待 Task2。G1/G2 的自动验证与实机验收分开记录，不能把历史 v0.2.0 基线结果视为本提交通过。
 
 实际测试结果和未验证项见 [架构验证记录](ARCHITECTURE-VALIDATION.md)。
 
@@ -33,6 +33,11 @@ flowchart TD
 | 路径（相对 `march-7th-app/src`） | 可以做 | 不可以做 |
 |---|---|---|
 | `main.ts` | 选定配置、构造适配器、启动、注册清理 | 保存业务状态、写动画规则 |
+| `entries/settings.ts`、`entries/reminder.ts` | 各自装配真实页面与生命周期 | URL 总路由、业务计时、原生窗口策略 |
+| `domain/reminder.ts` | Rust 提醒 DTO、固定 ID 与草稿复制 | 到期计算、业务状态迁移、IO |
+| `application/reminder-settings.ts`、`reminder-presentation.ts` | 草稿和保存反馈、稳定条目呈现、窄宿主端口 | 提醒计时、配置文件写入、乐观完成 |
+| `adapters/tauri-reminders.ts`、`reminder-dto.ts` | IPC 校验、revision 围栏、回应去重、ready 接口 | 复制 Rust 业务规则 |
+| `adapters/dom-reminder-*.ts` | 原生表单、文本、稳定按钮节点 | 持久化、自动启用或提交 |
 | `domain/animation.ts` | 纯坐标和图集帧计算、公共值类型 | DOM、Tauri、计时器、文件读写 |
 | `domain/character.ts` | 当前动画所需的角色契约 | 依赖某个角色 ID 或 UI |
 | `domain/pet-model.ts` | 接收采样和时间，输出动画帧 | 自行获取时间、异步 IO、调用原生窗口 |
@@ -74,15 +79,15 @@ Rust `desktop/` 负责托盘、交互/穿透模式和位置；`coordinates.rs` �
 
 单击/双击识别放在独立 DOM 输入适配器，动画状态机只接收明确动作事件。拖动优先于点击互动，互动结束回到注视或待机。用户意图和动画状态分开，不能靠 CSS 动画结束来认定提醒完成。提醒完成/稍后的短句入口只是有类型的呈现能力，没有创建提醒或更改提醒状态。
 
-### 提醒状态归属（G5 原生后端已实现，G6 呈现待接入）
+### 提醒状态归属（G5 后端与 G6 Task1 前端已实现，原生窗口待接入）
 
 `src-tauri/src/reminders/model.rs` 独占 settings、三项 progress、pause、quiet、snoozePending 与会话 presentation，只消费显式命令及 UTC/本地分钟/单调时间样本。pending 和软件展示处理标记分别保存；到期不累计周期，手动查看不完成事项。单项启用/间隔实际变化只重置该项，稍后覆盖新到期，手动视图处理普通自动意图，期满前保留明确稍后意图；期满且允许展示后就在同一手动视图消费，不因关闭再自动重弹。
 
 `store.rs` 校验 `reminders.json` v1 的固定 ID、范围及交叉状态，复用共享 atomic_file::replace，保存前验证旧内容。`service.rs` 一条专属线程独占规则和 IO，短锁只交换快照/队列；无变化不逐秒保存/发事件，写失败保留已应用状态并明确 unsaved。损坏/未来配置保护原件并禁自动提醒，配置不能绕过只读保护。v1 为首个格式，真实升级迁移和导出导入留 G7。
 
-`native.rs` 以 chrono Local/进程 Instant 注入时间，提供 get_reminders 和固定联合 reminder_command，发送 reminders-changed 与一次性 reminder-response。反馈以后以事件为准，不能由回复和事件各触发一次。lib 组合现有 setup/退出，未改变角色/desktop 文件或单一 app_context。退出不在 UI join，取消未执行队列；已开始写允许完成但不发布迟到状态/事件。此前前端 reminder-service 计时设想已替代，不能再建第二个业务计时器。
+`native.rs` 以 chrono Local/进程 Instant 注入时间，提供 get_reminders 和固定联合 reminder_command，发送 reminders-changed 与一次性 reminder-response。main 仅订阅一次回应事件并路由至当前角色呈现控制器；未初始化、已销毁时不排队，get/快照/命令回复不触发角色动作。lib 组合现有 setup/退出，未改变角色/desktop 文件或单一 app_context。退出不在 UI join，取消未执行队列；已开始写允许完成但不发布迟到状态/事件。此前前端 reminder-service 计时设想已替代，不能再建第二个业务计时器。
 
-初始三项全关。当前 presentation 是后端意图，尚无提醒气泡、设置或固定查看按钮，autoHandled 不证明真人看到。完整 schema、错误码、回拨补偿、手动查看裁定及 G6 接入协议见 [REMINDER-SPEC.md](REMINDER-SPEC.md)。本地自动测试与后续双平台 CI/GUI/真实反馈分开记录。
+初始三项全关。Vite 现在实际构建 `settings.html` 与 `reminder.html`；设置使用独立草稿，回复和最新快照都确认匹配且无 runtimeError 才报告保存成功；unsaved 明确区分本次已应用与未落盘。后台更新不覆盖未提交字段。提醒仅呈现当前 presentation，完成行留在本批次原位置，新条目追加，新 ID 重建。原生窗口/托盘/权限/ready 命令尚未接通，不能据此宣称用户已能从应用打开两页；autoHandled 或 ready 都不证明真人看到。接入接口与待验收边界见 [G6-REMINDERS.md](G6-REMINDERS.md)，规则以 [REMINDER-SPEC.md](REMINDER-SPEC.md) 为准。本地自动测试与后续双平台 CI/GUI/真实反馈分开记录。
 
 ### UI 与桌面能力
 

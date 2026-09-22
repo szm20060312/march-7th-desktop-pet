@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>日常提醒 · 桌面伙伴</title>
+  <link rel="stylesheet" href="/src/reminders.css" />
+  <script type="module" src="/src/entries/reminder.ts"></script>
+</head>
+<body class="reminder-page">
+  <main>
+    <header><p class="eyebrow">桌面伙伴 · 日常提醒</p><h1>留一点时间给自己</h1></header>
+    <div id="reminder-rows" class="reminder-rows" aria-label="当前提醒"></div>
+    <p id="reminder-empty" class="hint" role="status">正在读取提醒…</p>
+    <p id="reminder-error" class="notice" role="status" aria-live="polite"></p>
+    <footer><button id="dismiss-reminder" type="button" disabled>收起</button><button id="snooze-reminder" class="primary" type="button" disabled>稍后提醒</button></footer>
+  </main>
+</body>
+</html>
