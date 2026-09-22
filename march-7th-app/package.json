@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "check": "pnpm check:architecture && pnpm test && pnpm build",
+    "test:packaging": "node --test scripts/prepare-regression.node-test.mjs",
+    "check": "pnpm check:architecture && pnpm test && pnpm test:packaging && pnpm build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
