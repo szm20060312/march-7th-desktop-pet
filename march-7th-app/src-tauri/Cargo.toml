@@ -4,6 +4,7 @@ version = "0.2.0"
 description = "March 7th cross-platform desktop pet"
 authors = ["Steven Song"]
 edition = "2021"
+rust-version = "1.89"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

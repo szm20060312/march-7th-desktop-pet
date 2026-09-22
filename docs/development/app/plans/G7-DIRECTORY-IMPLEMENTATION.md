@@ -25,7 +25,7 @@
 1. 核查 `lib.rs`、三个native setup和现有Store边界。新增窄的 `src-tauri/src/data_directory.rs`：标准库目录/锁逻辑、Ready/AlreadyRunning/Unavailable等明确结果、持有锁的对象和只读根路径访问。核心保持不依赖Tauri，便于真实子进程测试；不做通用Storage/插件注册框架。
 2. 原生装配只调用一次 app_config_dir，确保目录存在并尝试排他锁。不改变现有文件名，也不解析/改写数据内容。可写对象交给Tauri managed state持有；Unavailable对象提供None路径，原因用固定诊断码或短说明，不输出配置内容。
 3. `characters/native.rs`、`reminders/native.rs`、`desktop/mod.rs` 从该状态取得路径。继续各自schema和原子保存。不要重写三服务状态机或把数据目录模块变成新的业务状态源。
-4. lib.rs启动顺序先取得资格，再依现有顺序初始化服务。Tauri2.11.5的SetupError封装不提供内部错误downcast；可用一个窄的启动结果标记区分受控的第二实例退出，避免比较错误字符串。第二实例不进入正常run回调/业务服务。真实其他setup错误仍按真实错误处理，不一概当成已有实例。
+4. lib.rs按已核对的Tauri2.11.5生命周期执行build→一次目录解析/acquire→managed state→run；Builder::build不执行setup，setup在run的Ready事件才执行。因此第二实例在run前直接正常返回，不启动业务服务/托盘，无需启动结果标记或比较SetupError字符串。真实build/setup错误保留原错误处理，不一概当成已有实例。
 5. 不能为Unavailable又回到各服务的app_config_dir创建/写入路径；显式覆盖这条降级接线。现有data path调用者应只依赖新入口。文件锁作用于参与此约定的实例，不能据此宣称能拦截旧版或任意外部修改。
 6. 关键行为先红绿：根目录/固定文件路径不变；有效锁下第二获取返回AlreadyRunning；关闭与异常子进程退出后可重获；锁文件存在但无人持有不误判；根目录是文件/路径不可用等返回Unavailable且不改原数据；持锁对象寿命与setup资格决定服务是否启动。使用实际OS锁，不只mock布尔值。
 7. 为跨进程/异常退出编写窄的真实Rust/Node fixture并纳入双平台native regression workflow。不要用空断言/默认跳过的“helper test”充数。可以用现有Rust工具链编译直接复用std核心的临时helper；不启动真正桌宠GUI。

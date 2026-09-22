@@ -118,6 +118,17 @@ impl Storage for Store {
 mod tests {
     use super::*;
     #[test]
+    fn unavailable_directory_keeps_reminders_disabled_and_read_only() {
+        use crate::data_directory::{acquire, DataFile};
+        let directory = acquire(None).unwrap();
+        let mut store = Store::new(directory.path(DataFile::Reminders));
+        let (data, persistence) = store.load();
+        assert!(data.settings.items.iter().all(|item| !item.enabled));
+        assert_eq!(persistence.status, SaveStatus::ReadOnly);
+        assert_eq!(persistence.code, Some("directoryUnavailable"));
+        assert_eq!(store.save(&data), persistence);
+    }
+    #[test]
     fn fixround1_all_day_unknown_fields_protect_real_file_on_load_and_save() {
         let temp = Temp::new();
         let path = temp.0.join("reminders.json");

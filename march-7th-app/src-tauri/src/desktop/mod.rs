@@ -3,6 +3,7 @@ pub(crate) mod geometry;
 mod state;
 mod store;
 
+use crate::data_directory::{DataDirectory, DataFile};
 use geometry::{Monitor, Placement};
 use state::{
     Availability, Lifecycle, Mode, Save, ScaleRequest, Session, StartupAction, StartupRestore,
@@ -52,15 +53,16 @@ pub fn setup<R: Runtime>(
     let window = main_window(app.handle())?;
     // Config starts hidden: no default-position flash before restoration.
     window.set_ignore_cursor_events(false)?;
-    let (store, placement, load_error) = match app.path().app_config_dir() {
-        Ok(path) => {
-            let (store, placement, error) = Store::load(path.join("desktop-state.json"));
+    let (store, placement, load_error) = match app.state::<DataDirectory>().path(DataFile::Desktop)
+    {
+        Some(path) => {
+            let (store, placement, error) = Store::load(path);
             (Some(store), placement, error)
         }
-        Err(error) => (
+        None => (
             None,
             None,
-            Some(format!("locate configuration directory: {error}")),
+            Some("configuration directory unavailable; placement cannot be saved".into()),
         ),
     };
     let writable = store.as_ref().is_some_and(|s| s.writable);

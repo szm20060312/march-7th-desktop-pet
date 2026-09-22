@@ -1,11 +1,13 @@
 mod atomic_file;
 pub mod build_info;
 mod characters;
+mod data_directory;
 mod desktop;
 mod platform;
 mod reminders;
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +40,7 @@ fn app_context() -> tauri::Context<tauri::Wry> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    desktop::configure(tauri::Builder::default())
+    let app = desktop::configure(tauri::Builder::default())
         .setup(|app| {
             let characters = characters::setup(app)?;
             let reminders = reminders::setup(app)?;
@@ -55,16 +57,27 @@ pub fn run() {
             reminders::ui::hide_reminder_settings
         ])
         .build(app_context())
-        .expect("error while building March 7th")
-        .run(|app, event| {
-            if matches!(
-                &event,
-                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-            ) {
-                characters::stop(app);
-                reminders::ui::stop(app);
-                reminders::stop(app);
-            }
-            desktop::on_run_event(app, event);
-        });
+        .expect("error while building March 7th");
+
+    // Tauri 2 runs setup on the event loop's Ready event, not in build().
+    // Qualify here so a duplicate never enters that loop or starts any service.
+    let directory = match data_directory::acquire(app.path().app_config_dir().ok()) {
+        Ok(directory) => directory,
+        Err(data_directory::AlreadyRunning) => return,
+    };
+    if let Some(code) = directory.diagnostic() {
+        eprintln!("March 7th configuration unavailable ({code}); session-only/read-only mode");
+    }
+    app.manage(directory);
+    app.run(|app, event| {
+        if matches!(
+            &event,
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+        ) {
+            characters::stop(app);
+            reminders::ui::stop(app);
+            reminders::stop(app);
+        }
+        desktop::on_run_event(app, event);
+    });
 }

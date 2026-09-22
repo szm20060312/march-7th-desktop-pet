@@ -23,6 +23,8 @@
 
 开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
 
+本分支 G7-B1 已统一配置目录并协调同目录的可写实例：第二个采用新协议的实例会正常结束；目录或锁不可用时保留临时角色选择、关闭且只读的提醒和位置不可保存提示。升级前先退出旧版；保留的 `instance.lock` 不能用来判断实例仍在运行，也不要删除它来解锁。三份配置的文件名与格式不变，导入导出及双平台 GUI 验收尚未完成。详见 [本地目录与实例协调](docs/development/app/G7-DATA-DIRECTORY.md)。
+
 March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用了经过完整 QA 的 Codex v2 动画图集，并逐步将待机、注视、移动和其他角色动作迁移到 Tauri 2。
 
 当前稳定版本为 **v0.2.0**。下方功能与平台实机记录属于该历史基线；本分支另已实现 G1/G2 托盘控制、点击穿透和位置持久化，仍待当前提交的实机验收，不能沿用历史通过结论。实现与验证边界见 [G2 记录](docs/development/app/G2-PLACEMENT.md)。
