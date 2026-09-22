@@ -50,4 +50,6 @@ button.primary:hover:not(:disabled) { background: #405849; }
 .reminder-page footer { flex: none; margin-top: 10px; padding: 10px 0 13px; }
 .reminder-page #reminder-empty { padding: 12px 0; }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
+/* Exceptionally small native work areas need scrolling around the entire view. */
+@media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 300px; } .settings-page footer { position: static; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }

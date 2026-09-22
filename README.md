@@ -19,7 +19,7 @@
 
 ### 项目简介
 
-长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。双角色、情境短句和提醒仍在计划中，当前运行功能见下文。
+长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。本开发分支已实现双角色、情境短句和本地提醒；当前提交的双平台实机体验与真实反馈仍待验收。
 
 开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
 
@@ -37,6 +37,14 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
 - 拖动期间屏蔽注视帧，解决眼神抖动
 - 停止移动约 160 ms 后恢复鼠标注视
 - 可拖动窗口
+
+### 本分支的本地提醒（实机待验收）
+
+首次启动喝水、起身活动、休息眼睛全部关闭；从系统托盘的“提醒 → 提醒设置…”查看间隔和活动时段，确认并保存后才启用。默认分钟数只是可调整偏好，不是健康建议。设置窗关闭只隐藏窗口，未保存草稿在下次打开时丢弃。
+
+提醒气泡有“完成”“全部稍后”“收起”；收起及约 10 秒无回应只结束这次自动展示，事项仍待处理，可从“提醒 → 查看待处理”恢复，空集合也能查看。从托盘“暂停提醒／恢复提醒”控制自动提示；隐藏角色或开启角色穿透不会暂停提醒，气泡独立接收鼠标。两角色共用同一套提醒规则，切换角色不重计时。
+
+全部数据保存在本机，无账号、云同步或另一套系统通知；保存失败、只读保护和界面失败会如实提示。关闭设置或气泡不退出应用；正常结束使用托盘“退出”。本地代码、自动测试、浏览器模拟、同提交双平台构建和真实桌面体验是不同证据，当前不宣称 M3 或完整日用首版完成。详见 [G6 记录](docs/development/app/G6-REMINDERS.md) 和 [实机清单](docs/development/app/regression/CHECKLIST.md)。
 
 ### 动画预览
 
@@ -124,7 +132,7 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### Overview
 
-The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. Two built-in characters, contextual lines and reminders are planned, not implemented yet. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
+The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. This development branch implements two built-in characters, contextual lines and local reminders; current-commit Windows/macOS hands-on acceptance and user feedback remain pending. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 

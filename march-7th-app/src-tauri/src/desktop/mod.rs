@@ -1,5 +1,5 @@
-mod coordinates;
-mod geometry;
+pub(crate) mod coordinates;
+pub(crate) mod geometry;
 mod state;
 mod store;
 
@@ -44,7 +44,11 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     builder.on_window_event(handle_window_event)
 }
 
-pub fn setup<R: Runtime>(app: &mut App<R>, characters: &Submenu<R>) -> Result<(), Box<dyn Error>> {
+pub fn setup<R: Runtime>(
+    app: &mut App<R>,
+    characters: &Submenu<R>,
+    reminders: &Submenu<R>,
+) -> Result<(), Box<dyn Error>> {
     let window = main_window(app.handle())?;
     // Config starts hidden: no default-position flash before restoration.
     window.set_ignore_cursor_events(false)?;
@@ -103,6 +107,7 @@ pub fn setup<R: Runtime>(app: &mut App<R>, characters: &Submenu<R>) -> Result<()
         .item(&click_through)
         .item(&status)
         .item(characters)
+        .item(reminders)
         .separator()
         .text("quit", "退出")
         .build()?;
@@ -225,6 +230,9 @@ fn active<R: Runtime>(desktop: &Desktop<R>) -> bool {
     desktop.shared.session.lock().unwrap().lifecycle == Lifecycle::Running
 }
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    if crate::reminders::ui::handle_menu_event(app, &event) {
+        return;
+    }
     if crate::characters::handle_menu_event(app, &event) {
         return;
     }
@@ -277,6 +285,9 @@ fn change_mode<R: Runtime>(app: &AppHandle<R>, next: Mode) -> Result<(), String>
     result
 }
 fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    if crate::reminders::ui::handle_window_event(window, event) {
+        return;
+    }
     if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
@@ -360,7 +371,7 @@ fn reapply_scale<R: Runtime>(app: &AppHandle<R>, request: ScaleRequest) -> Resul
     }
     schedule_current(app)
 }
-fn monitor_geometry(m: &tauri::Monitor, primary: bool) -> Monitor {
+pub(crate) fn monitor_geometry(m: &tauri::Monitor, primary: bool) -> Monitor {
     let area = m.work_area();
     Monitor {
         name: m.name().cloned(),

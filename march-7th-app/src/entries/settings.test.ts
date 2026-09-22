@@ -26,7 +26,7 @@ describe("real settings entry / adapter / controller error ownership", () => {
     let rejectOld!: (error: Error) => void;
     native.invoke.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
     edit(30); save(); await flush(); expect(dom.get("save-settings").textContent).toBe("正在保存…");
-    dom.get("close-settings").dispatch("click"); await flush(); expect(native.hide).toHaveBeenCalledOnce();
+    dom.get("close-settings").dispatch("click"); await flush(); expect(native.invoke).toHaveBeenCalledWith("hide_reminder_settings");
     native.invoke.mockResolvedValueOnce(fresh(3)); events.get("reminder-settings-opened")!({ payload: null }); await flush(); edit(50);
     if (nextState === "saved") { const saved = fresh(4); saved.settings.snoozeMinutes = 50; native.invoke.mockResolvedValueOnce(saved); save(); await flush(); expect(dom.get("settings-notice").textContent).toBe("设置已保存。"); }
     const notice = dom.get("settings-notice").textContent; const status = dom.get("settings-status").textContent;

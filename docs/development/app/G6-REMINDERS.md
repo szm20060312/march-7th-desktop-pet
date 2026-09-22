@@ -1,6 +1,6 @@
 # G6 提醒呈现接入记录
 
-2026-09-22：Task1 前端已实现；Task2 原生窗口与托盘仍待实施。此页不是实机验收或公开发布记录。
+2026-09-22：Task1 前端与 Task2 原生窗口/托盘已实现；Task2 独立审查、同提交双平台构建与实机验收待完成。此页不是实机验收或公开发布记录。
 
 ## 已实现
 
@@ -10,17 +10,17 @@
 - `adapters/tauri-reminders.ts`：先订阅再读；事件、get 与命令回复共用 revision 接受围栏。命令 Promise 返回本次回复供操作结果判断，但不会绕过控制器围栏更新界面。回应事件有独立的 revision 去重集合，较新快照不会吞掉较早回应。
 - `main.ts` 仅一次订阅 `reminder-response`，complete/snoozeAll 对应现有 reminderCompleted/reminderSnoozed；只转发当前控制器，无排队和强制显示角色。
 
-## Task2 需要接通的具体原生端口
+## Task2 已接通的具体原生端口
 
-| 页面/事件 | Task1 契约 | 待原生实现 |
+| 页面/事件 | Task1 契约 | 原生实现 |
 |---|---|---|
-| 设置窗口 | 页面 `settings.html`，建议 460×620；按钮调用当前窗口 `hide()` | 按需建窗、权限、关闭只隐藏；手动打开时允许 focus |
+| 设置窗口 | 页面 `settings.html`，建议 460×620；按钮调用限定 settings 调用方的 `hide_reminder_settings` | 按需隐藏建窗、最小事件权限、关闭取消待执行显示后隐藏；只有手动打开允许 focus |
 | 设置重新打开 | 监听无载荷事件 `reminder-settings-opened`，丢弃此前草稿、清操作提示并刷新 get；刷新期间新编辑不被覆盖 | 每次用户重新打开时发送该事件 |
 | 提醒窗口 | 页面 `reminder.html`，目标 320×300；UI 仅发 Rust complete/snoozeAll/dismiss 命令 | 按需隐藏建窗、位置恢复、不抢焦点/首次点击/独立穿透策略 |
 | 渲染握手 | DOM 渲染同步完成后调用 `reminder_ui_ready({ presentationId, windowToken })` | 处理该命令；初始化脚本注入 `window.__MARCH7_REMINDER_WINDOW_TOKEN__`，正安全整数；校验当前窗口/代次/当前 presentation |
 | 收起/关闭 | 按钮捕获当前 presentation ID 发 dismiss，等待真实快照；不自行 hide 或完成事项 | 原生标题栏关闭也必须按当前 ID dismiss，并隐藏对应窗口 |
 
-相同展示内容更新可以重复 ready。前端销毁后不再发起 ready，旧 ready 拒绝不会写回/记录错误；已发送 IPC 无法撤回，原生必须按 token/presentation/退出状态拒绝迟到握手。测试通过显式 fake transport 与 ready port 完成，不伪装已存在原生处理器。
+相同展示内容更新可以重复 ready。前端销毁后不再发起 ready，旧 ready 拒绝不会写回/记录错误；已发送 IPC 无法撤回，原生必须按 token/presentation/退出状态拒绝迟到握手。Task1 测试使用显式 fake transport 与 ready port；Task2 现已实现原生处理器，但策略测试不替代真实 WebView 体验。
 
 ## 草稿、反馈与生命周期
 
@@ -34,6 +34,18 @@
 
 Task1 本地验证：114 项前端测试、5 项打包测试、25 个生产模块架构检查、TypeScript、Vite 多页生产构建通过。详细命令、红绿历史与环境限制见 `.superpowers/sdd/G6-IMPLEMENTATION/task-1-report.md`（工作交接记录）。Rust 未修改，沿用协调者已提供的 G5 证据，未重跑 Rust。
 
-首轮审查发现的问题修复后仍待独立复审；浏览器模拟结果见下文。Task2 后才可开展 Windows/macOS 真正窗口焦点、按钮首次点击、穿透、关闭/恢复、睡眠/重启及真实提醒体验验收。当前不能称 G6 或 M3 已完成。
+Task1 修复后已独立审查通过；浏览器模拟结果见下文。Task2 独立审查与同提交构建后才开展 Windows/macOS 真正窗口焦点、按钮首次点击、穿透、关闭/恢复、睡眠/重启及真实提醒体验验收。当前不能称 G6 或 M3 已完成。
 
 Task1 第一轮修复验证：真实入口、适配器与控制器的 4 项组合回归（旧保存拒绝、新会话草稿、新保存提示、当前失败和读取错误）通过；受影响 6 文件共 37 项测试、类型/架构检查及多页构建通过。协调者另在实际浏览器确认：320×300 下同批次 1→2→3 项再出现运行错误，footer y=239.302 / bottom=300 保持不变；320×200 下 footer y=139.302 / bottom=200，内容可滚动，点击收起得到无展示状态。此为模拟宿主浏览器证据，不是原生实机验收。
+
+## Task2 原生实现与验证范围
+
+- `ui.rs` 协调专门的设置、提醒窗口和托盘子菜单；`ui_policy.rs` 仅管理展示/建窗/停止资格；`ui_geometry.rs` 用实际 inner/outer/scale 观测计算显示工作区内的位置与大小。复用 desktop 坐标适配，不改提醒规则、存储或服务计时。
+- 设置/提醒配置 create=false，首启全关不预建 WebView。锁定 Tauri 2.11.5 明确警告 Windows 同步事件处理器建窗可死锁，所以后台异步建隐藏窗口，主线程接收完成并执行布局/显示/菜单。迟到建窗直接 destroy，绕过正常关闭转隐藏拦截。
+- NativeReminders 仍唯一服务；托盘与前端共用 dispatch。快照变化在主线程重新读最新值，回应事件单独保留原动作 revision。托盘暂停勾选立即恢复真实快照值，直到服务成功更新；加载、只读、停止、未保存和 UI 故障不显示成成功。
+- 每次提醒建窗注入新 windowToken，ready 校验原生窗口身份、当前 token、presentationId 与退出状态。提前到达的 ready 保留；两个实际位置/尺寸/缩放观测稳定且 ready 后才显示。同 ID 不重复 show，新 ID 先隐藏旧视图；自动 null、原生关闭、销毁、重载与退出使旧任务失效。正常自动约 10 秒收起仍完全由后端驱动。
+- main 与 reminder 显式 acceptFirstMouse=true；提醒一直 focus=false/focusable=false，独立接收鼠标，没有 set_focus 或激活应用路径。设置只有明确托盘打开会聚焦并发送 reminder-settings-opened；关闭按钮和标题栏都先取消待显示意图再隐藏。
+- 优先角色所在屏上方，空间不够改下方并约束工作区；Mac 按目标屏缩放换算，Windows 使用全局物理坐标。缩小高 DPI/小工作区视口，保留滚动；同批次不跟随角色跳动，但屏幕变化不可达会重新约束。小于 180 高或 260 宽的提醒视口改为整页滚动，避免固定头尾遮住操作。
+- 本地 Rust 97 项测试、fmt、Clippy（-D warnings）与 Windows debug build 已通过；前端 120 项、打包 5 项、架构 25 模块、TypeScript 与 Vite 三页构建也通过。详细命令和测试先失败后通过的证据见 Task2 报告。编译有缓存环境路径提示及 MSVC 生成导入库信息，不是零输出承诺。
+
+未启动原生 GUI，不宣称 Mac 首次点击/拖动、不抢焦点、Windows 按钮、透明、混合 DPI、睡眠/重启或长期占用已通过。Task1 浏览器模拟不覆盖原生窗口；超小视口 CSS 也仍需浏览器/实机检查。协调者负责本提交独立审查、双平台 CI/构建和校验包；真实观察由测试者填写。M3 与完整日用首版继续开放。

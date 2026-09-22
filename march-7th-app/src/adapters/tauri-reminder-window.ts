@@ -1,2 +1,2 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
-export const hideSettingsWindow = () => getCurrentWindow().hide();
+import { invoke } from "@tauri-apps/api/core";
+export const hideSettingsWindow = () => invoke<void>("hide_reminder_settings");
