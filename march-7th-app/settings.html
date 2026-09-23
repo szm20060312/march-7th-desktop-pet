@@ -25,6 +25,11 @@
       <section class="pause-row" aria-label="即时控制"><div><strong id="pause-state">正在读取状态</strong><p class="hint">立即生效，与上面的草稿分开。</p></div><button id="pause" type="button" disabled>暂停提醒</button></section>
       <p id="settings-status" class="status" role="status" aria-live="polite">正在读取设置…</p>
       <p id="settings-notice" class="notice" role="status" aria-live="polite"></p>
+      <section class="backup-row" aria-labelledby="backup-heading">
+        <div><h2 id="backup-heading">本地数据</h2><p class="hint">保存当前角色、提醒及桌面位置，方便以后迁移。</p></div>
+        <button id="export-backup" type="button">导出备份…</button>
+      </section>
+      <p id="backup-status" class="notice backup-status" role="status" aria-live="polite"></p>
       <footer><button id="close-settings" type="button">关闭</button><button id="save-settings" class="primary" type="submit" disabled>保存设置</button></footer>
     </form>
     <details class="build-info">

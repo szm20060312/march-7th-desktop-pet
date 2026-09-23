@@ -102,6 +102,11 @@ pub fn get_selected_character<R: Runtime>(app: AppHandle<R>) -> Result<Snapshot,
         .running_snapshot()
         .ok_or("character selection is stopping".into())
 }
+pub(crate) fn snapshot<R: Runtime>(app: &AppHandle<R>) -> Option<Snapshot> {
+    app.try_state::<NativeCharacters<R>>()?
+        .service
+        .running_snapshot()
+}
 #[tauri::command]
 pub async fn select_character<R: Runtime>(
     app: AppHandle<R>,
