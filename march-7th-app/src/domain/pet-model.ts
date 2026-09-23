@@ -19,6 +19,7 @@ export class PetModel {
   private idleFrame = 0;
   private nextIdleFrameAt: number;
   private oneShot: Readonly<{ action: OneShotAction; clip: AnimationClip; startedAt: number }> | null = null;
+  private returningWaterSince: number | null = null;
 
   constructor(
     private readonly character: CharacterDefinition,
@@ -38,6 +39,7 @@ export class PetModel {
       const direction = horizontalDirection(dx, this.behavior.movementThresholdPx);
       if (direction !== null || Math.abs(dy) > this.behavior.movementThresholdPx) {
         this.oneShot = null;
+        this.returningWaterSince = null;
         if (direction && direction !== this.direction) {
           this.direction = direction;
           this.resetMovementClip(now);
@@ -56,6 +58,7 @@ export class PetModel {
 
   beginDrag(now: number): void {
     this.oneShot = null;
+    this.returningWaterSince = null;
     this.cursor = null;
     this.movingUntil = now + this.behavior.settleIntervalMs;
     this.resetMovementClip(now);
@@ -80,6 +83,15 @@ export class PetModel {
       if (column < clip.frameCount) return { row: clip.row, column };
       this.oneShot = null;
     }
+    if (this.returningWaterSince !== null) {
+      const offer = this.character.waterOffer;
+      const elapsed = Math.max(0, now - this.returningWaterSince);
+      if (elapsed < offer.frameCount * offer.frameIntervalMs) {
+        const frame = offer.frameCount - 1 - Math.floor(elapsed / offer.frameIntervalMs);
+        return { asset: "waterOffer", row: Math.floor(frame / offer.columns), column: frame % offer.columns };
+      }
+      this.returningWaterSince = null;
+    }
     const look = this.cursor && directionFrame(this.cursor, center, this.behavior.lookDeadzonePx, this.character);
     if (look) return look;
 
@@ -93,6 +105,7 @@ export class PetModel {
 
   respond(action: OneShotAction, now: number): boolean {
     if (this.isMoving(now)) return false;
+    this.returningWaterSince = null;
     const clip = action === "offerWater"
       ? { row: 0, frameCount: this.character.waterOffer.frameCount, frameIntervalMs: this.character.waterOffer.frameIntervalMs }
       : this.character.clips[action] ?? this.character.clips.idle;
@@ -100,8 +113,10 @@ export class PetModel {
     return true;
   }
 
-  endOfferWater(): void {
-    if (this.oneShot?.action === "offerWater") this.oneShot = null;
+  endOfferWater(now: number): void {
+    if (this.oneShot?.action !== "offerWater") return;
+    this.oneShot = null;
+    this.returningWaterSince = now;
   }
 
   private movementClip() {

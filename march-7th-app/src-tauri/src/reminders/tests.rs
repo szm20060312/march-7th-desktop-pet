@@ -35,6 +35,8 @@ fn simultaneous_due_is_one_batch_and_never_repeats() {
     assert!(e.data.progress.iter().all(|p| p.pending && p.auto_handled));
     assert_eq!(e.presentation.as_ref().unwrap().items, IDS);
     e.step(None, time(MINUTE + 10_000)).unwrap();
+    assert!(e.presentation.is_some());
+    e.step(None, time(MINUTE + 20_000)).unwrap();
     assert!(e.presentation.is_none());
     e.step(None, time(99 * MINUTE)).unwrap();
     assert!(e.presentation.is_none());
@@ -365,7 +367,7 @@ fn last_auto_completion_closes_and_wall_or_monotonic_expiry_each_suffices() {
         Time {
             utc_ms: 0,
             local_minute: 600,
-            monotonic_ms: 2 * MINUTE as u64 + 10_000,
+            monotonic_ms: 2 * MINUTE as u64 + AUTO_PRESENTATION_MS as u64,
         },
     )
     .unwrap();

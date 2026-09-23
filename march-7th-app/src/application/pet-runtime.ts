@@ -85,7 +85,7 @@ export function startPetRuntime(options: {
     phraseVisible = true;
     phraseContext = context;
     view.showPhrase(phraseOverride ?? phrases![index]);
-    phraseTimerId = scheduler.setDelay(() => {
+    if (context !== "reminderDue") phraseTimerId = scheduler.setDelay(() => {
       phraseTimerId = undefined;
       if (stopped || !phraseVisible) return;
       phraseVisible = false;
@@ -119,8 +119,13 @@ export function startPetRuntime(options: {
   };
 
   const endReminder = () => {
-    model.endOfferWater();
-    if (phraseContext === "reminderDue") clearPhrase();
+    model.endOfferWater(scheduler.now());
+    if (phraseContext !== "reminderDue") return;
+    if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
+    phraseTimerId = scheduler.setDelay(() => {
+      phraseTimerId = undefined;
+      if (!stopped && phraseContext === "reminderDue") clearPhrase();
+    }, character.waterOffer.frameCount * character.waterOffer.frameIntervalMs);
   };
 
   return { stop, respond, endReminder };

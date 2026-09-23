@@ -115,15 +115,34 @@ describe("pet runtime lifecycle", () => {
     expect(h.view.render).toHaveBeenLastCalledWith({ row: 4, column: 0 });
     runtime.stop();
   });
-  it("holds the offered cup after the four frames until an authoritative reminder end", () => {
+  it("keeps reminder text with the cup until the native end, then returns the cup smoothly", () => {
     const h = harness(); const runtime = h.start();
     expect(runtime.respond("reminderDue", "先喝口水吧，咱们再继续！", "offerWater")).toBe(true);
     const paint = [...h.frames.values()][0]; paint(0);
     expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 0, column: 0 });
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("先喝口水吧，咱们再继续！");
+    expect([...h.delays.values()].some(delay => delay.ms === 3_000)).toBe(false);
     paint(10_000);
     expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 1, column: 1 });
-    runtime.endReminder(); paint(10_001);
+    expect(h.view.clearPhrase).not.toHaveBeenCalled();
+    h.setNow(10_000); runtime.endReminder(); paint(10_220);
+    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 1, column: 0 });
+    expect(h.view.clearPhrase).not.toHaveBeenCalled();
+    const returnDelay = [...h.delays.values()].find(delay => delay.ms === 880)!;
+    returnDelay.callback(); paint(10_880);
+    expect(h.view.clearPhrase).toHaveBeenCalledOnce();
     expect(h.view.render).toHaveBeenLastCalledWith(expect.not.objectContaining({ asset: "waterOffer" }));
+    runtime.stop();
+  });
+  it("does not erase completion feedback when it follows the reminder end", () => {
+    const h = harness(); const runtime = h.start();
+    runtime.respond("reminderDue", "先喝口水吧，咱们再继续！", "offerWater");
+    h.setNow(1_000); runtime.endReminder();
+    const oldClear = [...h.delays.values()].find(delay => delay.ms === 880)!;
+    runtime.respond("reminderCompleted");
+    oldClear.callback();
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("好耶，先歇一小会儿！");
+    expect(h.view.clearPhrase).not.toHaveBeenCalled();
     runtime.stop();
   });
   it("clears phrases after three seconds and immediately on drag or stop", () => {

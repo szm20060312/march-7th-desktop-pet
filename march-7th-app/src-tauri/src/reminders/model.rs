@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const MAX_UTC: i64 = 253_402_300_799_999;
 pub const MINUTE: i64 = 60_000;
+pub const AUTO_PRESENTATION_MS: i64 = 20_000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Id {
@@ -220,14 +221,14 @@ impl Engine {
             mode,
             items,
             closes_at: if mode == Mode::Automatic {
-                Some(add_utc(time.utc_ms, 10_000)?)
+                Some(add_utc(time.utc_ms, AUTO_PRESENTATION_MS)?)
             } else {
                 None
             },
             monotonic_deadline: if mode == Mode::Automatic {
                 Some(
                     time.monotonic_ms
-                        .checked_add(10_000)
+                        .checked_add(AUTO_PRESENTATION_MS as u64)
                         .filter(|v| *v <= MAX_SAFE)
                         .ok_or(Error::new("invalidTime"))?,
                 )

@@ -110,6 +110,7 @@ describe("desktop pet behavior at the entry point", () => {
     expect(ended).toBeTypeOf("function");
     ended({ payload: { presentationId: 5 } });
     expect(paint(1_500)).not.toContain("water:");
+    [...timers.values()].find(timer => timer.ms === 880)!.callback();
     prompt({ payload: { presentationId: 5, items: ["water"] } });
     expect(message.hidden).toBe(true);
     native.listen.mock.calls.find(call => call[0] === "selected-character-changed")![1]({ payload: { selectedCharacterId: "raiden-shogun", revision: 2, persistence: "saved" } });
@@ -133,6 +134,7 @@ describe("desktop pet behavior at the entry point", () => {
     expect(native.invoke).toHaveBeenCalledWith("open_reminder_choices", { presentationId: 9 });
     expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
     native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")![1]({ payload: { presentationId: 9 } });
+    [...timers.values()].find(timer => timer.ms === 880)!.callback();
     expect(message.hidden).toBe(true);
     expect(paint(1000)).not.toContain("water:");
   });
