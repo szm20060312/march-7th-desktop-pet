@@ -31,14 +31,7 @@ input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; m
 .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 14px; margin-top: 16px; border-top: 1px solid var(--line); }
 .backup-row h2 { font-size: 14px; line-height: 1.4; margin: 0 0 3px; font-weight: 600; }
 .backup-row button { flex: none; }
-.backup-actions, .backup-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .backup-status { min-height: 1.2em; }
-.backup-preview { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--field); border-radius: 4px; }
-.backup-preview h3 { margin: 0 0 9px; font-size: 13px; font-weight: 650; }
-.backup-preview dl { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 6px 12px; margin: 0 0 11px; font-size: 12px; }
-.backup-preview dt { color: var(--muted); }
-.backup-preview dd { margin: 0; overflow-wrap: anywhere; }
-.backup-preview-actions { justify-content: flex-end; margin-top: 12px; }
 footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 0; border-top: 1px solid var(--line); margin-top: 14px; background: var(--paper); }
 .settings-page footer { position: sticky; bottom: 0; }
 button { border: 1px solid var(--line); border-radius: 5px; background: var(--field); padding: 7px 13px; min-height: 34px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
@@ -68,7 +61,7 @@ button.primary:hover:not(:disabled) { background: #405849; }
 .reminder-page footer { flex: none; margin-top: 10px; padding: 10px 0 13px; }
 .reminder-page #reminder-empty { padding: 12px 0; }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
-@media (max-width: 320px) { .backup-row { align-items: flex-start; flex-direction: column; gap: 8px; } .backup-actions { width: 100%; } .backup-actions button { flex: 1; } .backup-preview { padding: 10px; } }
+@media (max-width: 320px) { .backup-row { align-items: flex-start; flex-direction: column; gap: 8px; } }
 /* Exceptionally small native work areas need scrolling around the entire view. */
 @media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 300px; } .settings-page footer { position: static; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }

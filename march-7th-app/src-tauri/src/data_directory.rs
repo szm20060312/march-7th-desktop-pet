@@ -204,15 +204,6 @@ impl DataDirectory {
         }
     }
 
-    /// Read-only guard for the native picker. `prepare_import` still makes the
-    /// authoritative check, so a concurrent change cannot replace a pending set.
-    pub(crate) fn has_pending_import(&self) -> Result<bool, &'static str> {
-        let Access::Ready { root, .. } = &self.0 else {
-            return Err("directoryUnavailable");
-        };
-        Ok(read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")?.is_some())
-    }
-
     /// Schedules an internally validated complete set for the next startup.
     /// It does not change this process's selected paths or restart the app.
     pub fn prepare_import(&self, files: ImportFiles) -> Result<String, &'static str> {
