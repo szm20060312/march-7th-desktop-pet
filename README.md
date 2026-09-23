@@ -19,7 +19,7 @@
 
 ### 项目简介
 
-长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。本开发分支已实现双角色、情境短句和本地提醒；当前提交的双平台实机体验与真实反馈仍待验收。
+长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。本开发分支已实现双角色、本地提醒，以及单会话专注和“当前一件事”的技术候选；当前提交的双平台实机体验与真实反馈仍待验收。
 
 开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
 
@@ -47,6 +47,10 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
 提醒气泡有“完成”“全部稍后”“收起”；收起及约 10 秒无回应只结束这次自动展示，事项仍待处理，可从“提醒 → 查看待处理”恢复，空集合也能查看。从托盘“暂停提醒／恢复提醒”控制自动提示；隐藏角色或开启角色穿透不会暂停提醒，气泡独立接收鼠标。两角色共用同一套提醒规则，切换角色不重计时。
 
 全部数据保存在本机，无账号、云同步或另一套系统通知；保存失败、只读保护和界面失败会如实提示。关闭设置或气泡不退出应用；正常结束使用托盘“退出”。本地代码、自动测试、浏览器模拟、同提交双平台构建和真实桌面体验是不同证据，当前不宣称 M3 或完整日用首版完成。详见 [G6 记录](docs/development/app/G6-REMINDERS.md) 和 [实机清单](docs/development/app/regression/CHECKLIST.md)。
+
+### 专注与当前一件事（本地技术候选，实机待验收）
+
+现有设置窗可开始、暂停、继续或结束一场专注；过程中日常提醒仍保持待处理，但不主动弹出。专注自然完成只在允许时借同一个气泡提示一次，结果仍可从固定入口查看。开始时可选填一个当前任务名，明确标记完成或放弃；任务结果不自动结束计时，计时到时也不代替你完成任务。旧本地配置和备份有版本迁移，导入预览只显示任务状态，不显示名称。未签名安装候选的脚本已准备，真实安装、升级、回退以及素材/签名决定仍待后续。详见 [M5 技术候选与缺口](docs/development/app/M5-TECHNICAL-CANDIDATE.md)。
 
 ### 动画预览
 
@@ -87,7 +91,7 @@ pnpm tauri dev
 pnpm tauri build --target aarch64-apple-darwin --bundles app
 ```
 
-预构建安装包将在 GitHub Releases 中发布。
+是否公开发布尚待试用、素材范围、签名和维护决策；当前只准备未签名测试候选，不承诺 GitHub Release。
 
 ### 项目结构
 
@@ -133,7 +137,7 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### Overview
 
-The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. This development branch implements two built-in characters, contextual lines and local reminders; current-commit Windows/macOS hands-on acceptance and user feedback remain pending. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
+The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. This development branch also contains local technical candidates for one focus session and one optional current task. Current-commit Windows/macOS hands-on acceptance and user feedback remain pending. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [M5 candidate and evidence gaps](docs/development/app/M5-TECHNICAL-CANDIDATE.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 
@@ -189,7 +193,7 @@ Build for Apple Silicon macOS:
 pnpm tauri build --target aarch64-apple-darwin --bundles app
 ```
 
-Prebuilt packages will be published through GitHub Releases.
+Public distribution has not been decided. Unsigned test candidates are being prepared; a GitHub Release requires later trial, asset-rights, signing and maintenance decisions.
 
 ### Repository Layout
 
@@ -218,12 +222,10 @@ Prebuilt packages will be published through GitHub Releases.
 
 ### Roadmap
 
-- Click-through and interaction-mode switching
-- Single-click wave and double-click jump
-- Tray menu and a normal quit action
-- Persistent window position
-- Windows hardware, mixed-DPI, and installer validation
-- macOS signing and notarization
+- Same-commit Windows/macOS hands-on regression for the current candidate
+- Focus, reminder and current-task usefulness during a small friends trial
+- Clean installation, upgrade, rollback and privacy review
+- Asset-rights, signing/notarization and maintenance decisions before any public release
 
 ### Archived Codex Version
 
