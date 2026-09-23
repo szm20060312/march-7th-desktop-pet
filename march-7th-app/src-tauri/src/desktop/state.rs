@@ -213,6 +213,16 @@ impl Session {
         self.space_switch_active = None;
         self.space_switch_due = None;
     }
+    pub fn show_intent(&mut self, now: Instant) -> bool {
+        self.cancel_space_switch();
+        if let Some(startup) = self.startup.as_mut() {
+            startup.show = true;
+            self.startup_due = Some(now);
+            true
+        } else {
+            false
+        }
+    }
     pub fn schedule(&mut self, now: Instant, placement: Placement) {
         if self.lifecycle != Lifecycle::Running || self.startup.is_some() {
             return;
@@ -259,7 +269,6 @@ impl Session {
         if self.lifecycle != Lifecycle::Running {
             return;
         }
-        self.cancel_space_switch();
         self.position_revision += 1;
         self.revision += 1;
         self.pending.cancel();
@@ -434,6 +443,7 @@ mod tests {
         );
         assert!(!session.space_switch_is_current(hidden));
         let reset = session.begin_space_switch(now).unwrap();
+        session.cancel_space_switch(); // Explicit reset intent from the menu controller.
         session.begin_startup(
             StartupRestore {
                 original: None,
@@ -453,6 +463,74 @@ mod tests {
             None
         );
         assert!(session.begin_space_switch(now).is_none());
+    }
+    #[test]
+    fn automatic_topology_restore_carries_pending_space_switch_until_show_or_hide() {
+        let now = Instant::now();
+        let mut session = Session::new(None, vec![], Availability::Pending, true);
+        let switch = session.begin_space_switch(now).unwrap();
+        session.begin_startup(
+            StartupRestore {
+                original: None,
+                source_inner: (240, 260),
+                source_scale: 1.0,
+                show: false,
+                fallback: false,
+            },
+            now + Duration::from_millis(20),
+        );
+        assert!(session.space_switch_is_current(switch));
+        assert_eq!(
+            session.take_space_switch_due(now + Duration::from_millis(79)),
+            None
+        );
+        assert_eq!(
+            session.take_space_switch_due(now + Duration::from_millis(80)),
+            Some(switch)
+        );
+        assert!(session.space_switch_is_current(switch));
+        // The same show intent used by the controller carries visibility into
+        // the in-flight restore; its Ready step will perform the show.
+        assert!(session.show_intent(now + Duration::from_millis(80)));
+        assert!(session.startup.as_ref().unwrap().show);
+        assert!(!session.space_switch_is_current(switch));
+
+        let hidden = session.begin_space_switch(now).unwrap();
+        session.begin_startup(
+            StartupRestore {
+                original: None,
+                source_inner: (240, 260),
+                source_scale: 1.0,
+                show: false,
+                fallback: false,
+            },
+            now,
+        );
+        session.cancel_space_switch(); // User hide after relocation.
+        assert!(!session.space_switch_is_current(hidden));
+        assert_eq!(
+            session.take_space_switch_due(now + Duration::from_secs(1)),
+            None
+        );
+        assert!(!session.startup.as_ref().unwrap().show);
+
+        let exiting = session.begin_space_switch(now).unwrap();
+        session.begin_startup(
+            StartupRestore {
+                original: None,
+                source_inner: (240, 260),
+                source_scale: 1.0,
+                show: false,
+                fallback: false,
+            },
+            now,
+        );
+        session.stop(None, 0);
+        assert!(!session.space_switch_is_current(exiting));
+        assert_eq!(
+            session.take_space_switch_due(now + Duration::from_secs(1)),
+            None
+        );
     }
     #[test]
     fn mode_commits_only_after_host_success_and_recovers() {

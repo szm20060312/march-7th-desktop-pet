@@ -228,10 +228,7 @@ fn show_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
     {
         let mut session = desktop.shared.session.lock().unwrap();
-        session.cancel_space_switch();
-        if let Some(startup) = session.startup.as_mut() {
-            startup.show = true;
-            session.startup_due = Some(Instant::now());
+        if session.show_intent(Instant::now()) {
             desktop.shared.wake.notify_one();
             return Ok(());
         }
@@ -239,8 +236,8 @@ fn show_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     revalidate(app)?;
     {
         let mut session = desktop.shared.session.lock().unwrap();
-        if let Some(startup) = session.startup.as_mut() {
-            startup.show = true;
+        if session.show_intent(Instant::now()) {
+            desktop.shared.wake.notify_one();
             return Ok(());
         }
     }
