@@ -271,15 +271,15 @@ impl Engine {
         };
         let anchor = self.monotonic_anchor_ms.ok_or(Error::new("invalidState"))?;
         let mono_elapsed = now.monotonic_ms.checked_sub(anchor);
-        let wall_elapsed = now
-            .utc_ms
-            .checked_sub(anchor_utc_ms)
-            .and_then(|value| u64::try_from(value).ok());
+        // The persisted UTC anchor can be slightly ahead of the current UTC
+        // sample when monotonic time ran ahead within the jitter tolerance.
+        let wall_elapsed = now.utc_ms.checked_sub(anchor_utc_ms);
         let trustworthy = match (mono_elapsed, wall_elapsed) {
             (Some(mono), Some(wall)) => {
+                let wall = i128::from(wall);
                 mono <= MAX_TRUSTED_GAP_MS
-                    && wall <= MAX_TRUSTED_GAP_MS
-                    && mono.abs_diff(wall) <= MAX_CLOCK_DRIFT_MS
+                    && wall <= i128::from(MAX_TRUSTED_GAP_MS)
+                    && (i128::from(mono) - wall).unsigned_abs() <= u128::from(MAX_CLOCK_DRIFT_MS)
             }
             _ => false,
         };

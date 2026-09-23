@@ -277,6 +277,40 @@ fn small_clock_sample_jitter_does_not_accumulate_as_extra_session_time() {
 }
 
 #[test]
+fn negative_wall_clock_jitter_does_not_interrupt_successive_short_ticks() {
+    let mut engine = started(120_000);
+    engine.step(Command::Tick, time(1_009_500, 10_100)).unwrap();
+    assert!(matches!(
+        engine.data.session,
+        Session::Running {
+            remaining_ms: 110_000,
+            anchor_utc_ms: 1_010_000,
+            ..
+        }
+    ));
+    for (utc_ms, monotonic_ms, remaining_ms, anchor_utc_ms) in [
+        (1_009_600, 10_200, 109_900, 1_010_100),
+        (1_009_700, 10_300, 109_800, 1_010_200),
+        (1_009_800, 10_400, 109_700, 1_010_300),
+    ] {
+        assert!(
+            !engine
+                .step(Command::Tick, time(utc_ms, monotonic_ms))
+                .unwrap()
+                .completed_now
+        );
+        assert!(matches!(
+            engine.data.session,
+            Session::Running {
+                remaining_ms: actual_remaining,
+                anchor_utc_ms: actual_anchor,
+                ..
+            } if actual_remaining == remaining_ms && actual_anchor == anchor_utc_ms
+        ));
+    }
+}
+
+#[test]
 fn recovery_uses_bounded_utc_and_never_replays_completion_event() {
     let data = started(120_000).data;
     let restored = Engine::restore(data.clone(), time(1_030_000, 5)).unwrap();
