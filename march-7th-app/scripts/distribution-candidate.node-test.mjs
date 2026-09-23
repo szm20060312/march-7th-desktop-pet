@@ -111,6 +111,23 @@ test("rejects stale embedded program, target mismatch and malformed native progr
   assert.equal(existsSync(options.outputDirectory), false);
 });
 
+test("accepts only Tauri's NSIS bundle marker rewrite in the packaged Windows program", t => {
+  const options = fixture(t, "x86_64-pc-windows-msvc");
+  const built = Buffer.concat([nativeBytes(options.target), Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK")]);
+  const packaged = Buffer.from(built);
+  packaged.write("NSS", packaged.length - 3, "ascii");
+  writeFileSync(options.builtExecutablePath, built);
+  writeFileSync(options.packagedExecutablePath, packaged);
+  assert.equal(prepareDistribution(options).packagedExecutable.sha256, hash(packaged));
+
+  const changed = fixture(t, "x86_64-pc-windows-msvc");
+  writeFileSync(changed.builtExecutablePath, built);
+  packaged[80] ^= 1;
+  writeFileSync(changed.packagedExecutablePath, packaged);
+  assert.throws(() => prepareDistribution(changed), /differs/);
+  assert.equal(existsSync(changed.outputDirectory), false);
+});
+
 test("packet verification detects changed bytes and candidate pairs require one full commit", t => {
   const win = fixture(t, "x86_64-pc-windows-msvc");
   const mac = fixture(t, "aarch64-apple-darwin");

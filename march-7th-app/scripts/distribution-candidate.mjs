@@ -42,6 +42,20 @@ function ensureInstallerFormat(bytes, target) {
   }
 }
 
+function samePackagedProgram(built, packaged, target) {
+  if (built.equals(packaged)) return true;
+  if (target !== "x86_64-pc-windows-msvc" || built.length !== packaged.length) return false;
+  // Tauri rewrites this one bundle-type marker in the copy placed inside NSIS.
+  const before = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK");
+  const after = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_NSS");
+  const offset = built.indexOf(before);
+  if (offset < 0 || offset !== packaged.indexOf(after)
+    || built.lastIndexOf(before) !== offset || packaged.lastIndexOf(after) !== offset) return false;
+  const restored = Buffer.from(packaged);
+  before.copy(restored, offset);
+  return restored.equals(built);
+}
+
 export function assertMacExecutableMode(mode) {
   if ((mode & 0o111) === 0) throw new Error("Packaged macOS program is not executable");
 }
@@ -69,7 +83,7 @@ export function prepareDistribution({ target, payloadPath, builtExecutablePath, 
   ensureInstallerFormat(payload, target);
   ensureNativeProgram(builtProgram, target);
   ensureNativeProgram(packagedProgram, target);
-  if (!builtProgram.equals(packagedProgram)) throw new Error("Packaged program differs from the probed build program");
+  if (!samePackagedProgram(builtProgram, packagedProgram, target)) throw new Error("Packaged program differs from the probed build program");
   if (target === "aarch64-apple-darwin" && process.platform === "darwin") assertMacExecutableMode(statSync(packagedExecutablePath).mode);
   const inventoryBytes = readFileSync(licenseInventoryPath);
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
