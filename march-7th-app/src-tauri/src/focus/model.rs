@@ -254,6 +254,17 @@ impl Engine {
         if !matches!(command, Command::Start { .. }) {
             result.completed_now = next.advance_clock(now)?;
         }
+        // A duplicate Resume sent while running must not confirm an
+        // interruption discovered by this very clock sample. A later Resume
+        // against an already-interrupted snapshot remains an explicit choice.
+        let command = if matches!(command, Command::Resume)
+            && matches!(self.data.session, Session::Running { .. })
+            && matches!(next.data.session, Session::Interrupted { .. })
+        {
+            Command::Tick
+        } else {
+            command
+        };
         next.apply(command, now)?;
         next.data.validate()?;
         *self = next;
@@ -340,7 +351,9 @@ impl Engine {
                     remaining_ms,
                 }
             }
-            (Command::Pause, state @ Session::Paused { .. }) => state,
+            (Command::Pause, state @ (Session::Paused { .. } | Session::Interrupted { .. })) => {
+                state
+            }
             (
                 Command::Resume,
                 Session::Paused {
