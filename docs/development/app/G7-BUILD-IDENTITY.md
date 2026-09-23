@@ -24,6 +24,8 @@ G7 的一个技术切片，版本仍为 0.2.0；不关闭 M0、M4/G7 或 M5。�
 
 源码目录递归观察，可发现新文件；在此范围内被 Git 忽略的本地文件也视为修改。已存在的明确配置文件逐个观察；不递归观察应用根目录。`node_modules/`、`target/`、`dist/` 等生成物和缓存不在范围内；外部工具链、依赖缓存、构建参数和系统 SDK 不由此 SHA 证明。仓库文档、设计资料、测试辅助文件和打包脚本不作为编译应用输入；`src/` 内的测试仍属于该目录范围。新增构建输入位置时必须同步修改列表与此说明。
 
+目录在 Git status pathspec 中显式带尾斜杠：`src/`、`public/`、`src-tauri/src/`、`src-tauri/icons/`、`src-tauri/capabilities/`。已确认不带边界的 `src` 会在 ignored matching 中错配同名前缀的原生 target 缓存；真实 Cargo fixture 已复现由此产生的假 modified。尾斜杠只限定原本声明的目录，文件输入不变；Node 的 literal 诊断 scope 同样保留尾斜杠。缓存存在且身份重新采样仍应 clean，真正目录内的 ignored 源码仍必须 modified，不能据此排除整个 ignored 类别。
+
 Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没有 Git、查询失败、无提交的仓库或嵌入不相关父仓库的未跟踪导出包均为 unknown。Git 控制路径通过 `rev-parse --git-path` 取得，观察实际 HEAD、index、symbolic ref、packed-refs，以及存在的配置和排除文件，支持 `.git` 文件与 linked worktree。观察现有 ref 目录以捕获 packed ref 转为新 loose ref；不观察整个 Git 对象库。不存在的控制路径不被用作强制重建机制。无 Git 的导出包之后新建仓库时，应重新构建（清理此前 Cargo 缓存或修改已观察输入）；本机制不轮询新出现的仓库。
 
 来源在构建时采样；构建期间应冻结输入，不允许并发修改后再把程序当作该提交产物。正常测试包流程要求干净检出、先构建再探针。
@@ -32,7 +34,13 @@ Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没�
 
 第二轮探针仅针对 `frontend-source`，使用同一个无外部依赖的 Node 分类器读取 NUL 分隔状态和实际匹配规则。固定来源标签为 root-rules、app-rules、nested-rules、internal-external-rules；固定规则类别为 dependency-directory、build-output、logs、local-config、editor-metadata、other，条目仅分 file/directory/link/other。数量用 zero/one/few/many（0、1、2–9、10 以上），每次最多展示 8 组，超出用 overflow=yes；单行不超过 1024 字符。查询有 5 秒和 2 MiB 边界，超过 512 个项或查询／解析失败会显示 unavailable/unknown，不能当成空范围。未命中的规则只归 other，不输出原始规则。
 
-同一显式开关在安装前、安装后、前端检查后、Rust/fixture 完成且原生构建前、身份采样时输出阶段摘要；Rust 结束与原生构建前是相邻同一边界，合并记录避免重复。身份采样的 Node 直接子进程限时 20 秒，输出最多读取 1025 字节以判断是否超过 1024 字节，stderr 丢弃；清理或输出收尾最多再等 0.5 秒。仅允许固定词表、单行和数量桶通过，失败回退固定 unavailable。只有此诊断开启才额外需要 Node；缺少 Node 不改变身份判断。阶段摘要是时间点证据，不能直接证明 ignored 项不参与应用构建，也不能据此放宽拒包规则。
+同一显式开关在安装前、安装后、前端检查后、Cargo 测试后、Clippy 后、identity fixture 后及身份采样时输出阶段摘要。第三轮将 Rust 阶段拆开，以缩小首次出现或首次查询失败的区间；fixture 后即原生构建前，不再重复。三个测试后探针在对应步骤成功或失败后均可运行，但不继续原本失败的构建／打包。身份采样的 Node 直接子进程限时 20 秒，输出最多读取 1025 字节以判断是否超过 1024 字节，stderr 丢弃；清理或输出收尾最多再等 0.5 秒。仅允许固定词表、单行和数量桶通过，失败回退固定 unavailable。只有此诊断开启才额外需要 Node；缺少 Node 不改变身份判断。阶段摘要是时间点证据，不能直接证明 ignored 项不参与应用构建，也不能据此放宽拒包规则。
+
+unavailable 摘要另带固定 `failureStage`：phase、root、status-query、status-format、limit、ignore-query、ignore-format、path、metadata；Rust 无法取得或验证子进程摘要时为 helper。标签只说明失败的操作位置，不含异常原文或敏感输入，也不表示已经确定根因。路径范围校验在忽略规则查询前执行；任何不确定结果仍保持 unknown，成功摘要不添加失败字段。
+
+第四轮仅修复诊断路径解析：status 和 check-ignore 显式使用同一个已验证仓库根，status 使用 repo-relative literal pathspec，NUL 输入／返回保持 repo-relative，不尝试 app-relative 猜测回退。声明范围仍是本 app 的 `src` 目录，包括经验证的根目录自身。候选路径必须拒绝绝对、盘符相对、`.`／`..` 遍历、空组件及相似前缀；规范化后还比较真实范围目录的设备／文件标识，不能仅凭转小写接受大小写敏感文件系统中的另一个目录。链接解析后越出范围、源根本身是链接、无法取得可靠元数据或规则查询失败均保守 unavailable。该修复不扩大应用构建输入、不改变 sourceState 或拒包，并未证明已解释 CI 中实际的 ignored 项。
+
+Windows 8.3 短名与 Git 返回的长名统一通过 `realpathSync.native` 规范化；诊断器的 app/repo/src/候选路径及两个脚本的 CLI 入口都使用同一原生规则。目录身份与逃逸校验仍保留。这是独立于目录 pathspec 边界的兼容修复。Windows 回归只读取自有临时目录已有的短名，不安装组件或启用 8.3 设置；没有不同短名时明确跳过，其他平台继续既有别名／路径回归。测试默认使用已有 PowerShell 7；本地若其不在 PATH，可用仅测试用的 `MARCH_TEST_PWSH` 指定现有程序。
 
 ## 分发包核对
 
