@@ -200,6 +200,28 @@ impl LocalDataGate {
         active.cancel = None;
         Ok(())
     }
+    pub(crate) fn resolve_import_dialog<T>(
+        &mut self,
+        ticket: u64,
+        current: Option<(u64, u64)>,
+        selected: Option<T>,
+    ) -> Result<Option<T>, &'static str> {
+        let Some(current) = current else {
+            // A temporarily unavailable settings session must still consume
+            // this returned dialog's lease. Never touch a newer ticket.
+            if self.import_active.as_ref().is_some_and(|active| {
+                active.ticket == ticket && active.phase == ImportPhase::Dialog
+            }) {
+                self.cancel_import()?;
+            }
+            return Err("backupStale");
+        };
+        self.authorize_import(ticket, current)?;
+        if selected.is_none() {
+            self.cancel_import()?;
+        }
+        Ok(selected)
+    }
     pub(crate) fn import_dialog_returned(&mut self, ticket: u64) {
         if let Some(active) = self.import_active.as_mut() {
             if active.ticket == ticket && active.phase == ImportPhase::Dialog {
@@ -707,5 +729,45 @@ mod tests {
         assert_eq!(writing.join().unwrap(), Ok(()));
         gate.lock().unwrap().complete(ticket);
         assert!(gate.lock().unwrap().begin((4, 9), sender).is_ok());
+    }
+    #[test]
+    fn returned_import_picker_with_unavailable_session_releases_shared_gate() {
+        // A reflowing settings window can temporarily have no export session,
+        // whether the native picker returned a path or the user cancelled it.
+        for selected in [None, Some(())] {
+            let mut gate = LocalDataGate::default();
+            let (send, _) = mpsc::channel();
+            let ticket = gate.begin_import((2, 4), send).unwrap();
+            gate.import_dialog_returned(ticket);
+            assert_eq!(
+                gate.resolve_import_dialog(ticket, None, selected),
+                Err("backupStale")
+            );
+            let (export_send, _) = mpsc::channel();
+            let export = gate.begin((2, 5), export_send).unwrap();
+            gate.authorize(export, (2, 5)).unwrap();
+            gate.complete(export);
+            let (import_send, _) = mpsc::channel();
+            let next = gate.begin_import((2, 5), import_send).unwrap();
+            assert_ne!(next, ticket);
+            assert_eq!(
+                gate.resolve_import_dialog(ticket, None, Option::<()>::None),
+                Err("backupStale")
+            );
+            assert_eq!(gate.authorize_import(next, (2, 5)), Ok(()));
+        }
+    }
+    #[test]
+    fn returned_cancelled_import_picker_with_valid_session_releases_shared_gate() {
+        let mut gate = LocalDataGate::default();
+        let (send, _) = mpsc::channel();
+        let ticket = gate.begin_import((3, 7), send).unwrap();
+        gate.import_dialog_returned(ticket);
+        assert_eq!(
+            gate.resolve_import_dialog(ticket, Some((3, 7)), Option::<()>::None),
+            Ok(None)
+        );
+        let (send, _) = mpsc::channel();
+        assert!(gate.begin_import((3, 7), send).is_ok());
     }
 }
