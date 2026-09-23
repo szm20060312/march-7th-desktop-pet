@@ -709,44 +709,12 @@ fn settle_reminder<R: Runtime>(
             return Ok(());
         }
         window.set_focusable(false).map_err(|e| e.to_string())?;
-        let automatic = native::snapshot(app).ok().and_then(|snapshot| {
-            ui.state
-                .lock()
-                .unwrap()
-                .bubble
-                .automatic_prompt(&snapshot, ticket.presentation)
-        });
-        let choices_open = ui
-            .state
-            .lock()
-            .unwrap()
-            .bubble
-            .choices_open_for(ticket.presentation);
         window
-            .set_ignore_cursor_events(automatic.is_some() && !choices_open)
+            .set_ignore_cursor_events(false)
             .map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder_visible = true;
         window.show().map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder.finish_show(ticket, true);
-        if character_visible(app) {
-            if let Some(items) = automatic.filter(|_| {
-                let mut state = ui.state.lock().unwrap();
-                if state.announced_auto == Some(ticket.presentation) {
-                    false
-                } else {
-                    state.announced_auto = Some(ticket.presentation);
-                    true
-                }
-            }) {
-                if let Err(error) = app.emit_to(
-                    "main",
-                    "reminder-prompt",
-                    serde_json::json!({"presentationId": ticket.presentation, "items": items}),
-                ) {
-                    eprintln!("Reminder character prompt unavailable: {error}");
-                }
-            }
-        }
         let response = if character_visible(app) {
             ui.state
                 .lock()
@@ -761,6 +729,35 @@ fn settle_reminder<R: Runtime>(
         ui.state.lock().unwrap().reminder_attempts = 0;
     }
     Ok(())
+}
+
+pub(crate) fn choice_source<R: Runtime>(
+    app: &AppHandle<R>,
+    presentation_id: u64,
+) -> Result<u64, Error> {
+    refresh(app);
+    let raw = native::snapshot(app)?;
+    let ui = app.try_state::<Ui<R>>().ok_or(Error::new("stopped"))?;
+    let visible = character_visible(app);
+    let state = ui.state.lock().unwrap();
+    if !running(&ui)
+        || !visible
+        || state.announced_auto != Some(presentation_id)
+        || state
+            .bubble
+            .automatic_prompt(&raw, presentation_id)
+            .is_none()
+    {
+        return Err(Error::new("stalePresentation"));
+    }
+    match state.bubble.selected {
+        Some((id, super::presentation_policy::Source::Reminder(source)))
+            if id == presentation_id =>
+        {
+            Ok(source)
+        }
+        _ => Err(Error::new("stalePresentation")),
+    }
 }
 
 pub(crate) fn open_choices<R: Runtime>(
@@ -781,18 +778,6 @@ pub(crate) fn open_choices<R: Runtime>(
     {
         return Err(Error::new("stalePresentation"));
     }
-    let window = app
-        .get_webview_window("reminder")
-        .ok_or(Error::new("windowUnavailable"))?;
-    if !window
-        .is_visible()
-        .map_err(|_| Error::new("windowUnavailable"))?
-    {
-        return Err(Error::new("windowUnavailable"));
-    }
-    window
-        .set_ignore_cursor_events(false)
-        .map_err(|_| Error::new("interactionFailed"))?;
     if !ui
         .state
         .lock()

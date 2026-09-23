@@ -70,6 +70,10 @@ impl Bubble {
     pub fn choices_open_for(&self, presentation_id: u64) -> bool {
         self.choices_open == Some(presentation_id)
     }
+    pub fn window_presentation(&self, raw: &Snapshot) -> Option<u64> {
+        let id = self.selected?.0;
+        (self.automatic_prompt(raw, id).is_none() || self.choices_open_for(id)).then_some(id)
+    }
     pub fn update(
         &mut self,
         reminder: &Snapshot,
@@ -269,7 +273,7 @@ mod tests {
         );
     }
     fn session(b: &Bubble, ui: &mut PresentationUi, r: &Snapshot) {
-        ui.update(b.revision, b.selected.map(|(id, _)| id), r.stopped);
+        ui.update(b.revision, b.window_presentation(r), r.stopped);
     }
     #[test]
     fn only_a_selected_automatic_reminder_can_prompt_the_character() {
@@ -301,16 +305,24 @@ mod tests {
         let mut b = Bubble::default();
         update(&mut b, &r, &f, None, 0);
         let id = b.selected.unwrap().0;
+        assert_eq!(b.window_presentation(&r), None);
+        let mut ui = PresentationUi::default();
+        session(&b, &mut ui, &r);
+        assert!(ui.begin_create().is_none());
         assert!(!b.choices_open_for(id));
         assert!(!b.open_choices(&r, id + 1));
         assert!(b.open_choices(&r, id));
         update(&mut b, &r, &f, None, 1);
         assert_eq!(b.snapshot(&r).unwrap()["presentation"]["choicesOpen"], true);
         assert!(b.choices_open_for(id));
+        assert_eq!(b.window_presentation(&r), Some(id));
+        session(&b, &mut ui, &r);
+        assert!(ui.begin_create().is_some());
         r.presentation = None;
         r.revision += 1;
         update(&mut b, &r, &f, None, 2);
         assert!(!b.choices_open_for(id));
+        assert_eq!(b.window_presentation(&r), None);
     }
     #[test]
     fn committed_running_still_silences_reminders_during_transient_focus_write_failure() {
@@ -412,6 +424,8 @@ mod tests {
             pending(&mut r, 3, Mode::Automatic);
             let mut b = Bubble::default();
             let mut ui = PresentationUi::default();
+            update(&mut b, &r, &focus(Session::Idle {}), None, 0);
+            assert!(b.open_choices(&r, b.selected.unwrap().0));
             update(&mut b, &r, &focus(Session::Idle {}), None, 0);
             session(&b, &mut ui, &r);
             let token = ui.begin_create().unwrap();

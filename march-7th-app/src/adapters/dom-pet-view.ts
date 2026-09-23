@@ -1,7 +1,7 @@
 import type { PetView } from "../application/ports";
 import type { CharacterDefinition } from "../domain/character";
 
-export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, message: HTMLElement, body: HTMLElement): PetView {
+export function createDomPetView(sprite: HTMLElement, offerSprite: HTMLElement, stage: HTMLElement, message: HTMLElement, body: HTMLElement): PetView {
   let character: CharacterDefinition;
   let lastFrame = "";
   let lastAsset: "main" | "waterOffer" = "main";
@@ -23,6 +23,13 @@ export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, messag
       sprite.style.height = `${atlas.cellHeight}px`;
       sprite.style.backgroundImage = `url("${atlas.src}")`;
       sprite.style.backgroundSize = `${atlas.columns * atlas.cellWidth}px ${atlas.rows * atlas.cellHeight}px`;
+      sprite.style.opacity = "1";
+      offerSprite.style.width = `${atlas.cellWidth}px`;
+      offerSprite.style.height = `${atlas.cellHeight}px`;
+      offerSprite.style.backgroundImage = `url("${character.waterOffer.src}")`;
+      offerSprite.style.backgroundSize = `${character.waterOffer.columns * atlas.cellWidth}px ${character.waterOffer.rows * atlas.cellHeight}px`;
+      offerSprite.style.backgroundPosition = "0px 0px";
+      offerSprite.style.opacity = "0";
       sprite.setAttribute("aria-label", character.displayName);
       stage.setAttribute("aria-label", `${character.displayName} desktop pet`);
     },
@@ -36,13 +43,12 @@ export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, messag
       if (key === lastFrame) return;
       const { cellWidth, cellHeight } = character.atlas;
       if (asset !== lastAsset) {
-        sprite.style.backgroundImage = `url("${asset === "waterOffer" ? character.waterOffer.src : character.atlas.src}")`;
-        sprite.style.backgroundSize = asset === "waterOffer"
-          ? `${character.waterOffer.columns * cellWidth}px ${character.waterOffer.rows * cellHeight}px`
-          : `${character.atlas.columns * cellWidth}px ${character.atlas.rows * cellHeight}px`;
+        sprite.style.opacity = asset === "waterOffer" ? "0" : "1";
+        offerSprite.style.opacity = asset === "waterOffer" ? "1" : "0";
         lastAsset = asset;
       }
-      sprite.style.backgroundPosition = `${-frame.column * cellWidth}px ${-frame.row * cellHeight}px`;
+      const target = asset === "waterOffer" ? offerSprite : sprite;
+      target.style.backgroundPosition = `${-frame.column * cellWidth}px ${-frame.row * cellHeight}px`;
       sprite.dataset.frame = asset === "main" ? `${frame.row}:${frame.column}` : `water:${frame.row}:${frame.column}`;
       lastFrame = key;
     },

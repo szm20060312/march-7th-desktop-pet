@@ -36,13 +36,47 @@ fn simultaneous_due_is_one_batch_and_never_repeats() {
     assert_eq!(e.presentation.as_ref().unwrap().items, IDS);
     e.step(None, time(MINUTE + 10_000)).unwrap();
     assert!(e.presentation.is_some());
-    e.step(None, time(MINUTE + 20_000)).unwrap();
+    e.step(None, time(MINUTE + AUTO_PRESENTATION_MS)).unwrap();
     assert!(e.presentation.is_none());
     e.step(None, time(99 * MINUTE)).unwrap();
     assert!(e.presentation.is_none());
     let mut restart = Engine::new(e.data, false).unwrap();
     restart.step(None, time(100 * MINUTE)).unwrap();
     assert!(restart.presentation.is_none());
+}
+#[test]
+fn opening_choices_grants_time_to_act_without_repeating_or_completing_the_reminder() {
+    let mut e = engine();
+    e.step(None, time(MINUTE)).unwrap();
+    let id = e.presentation.as_ref().unwrap().id;
+    e.step(
+        Some(Command::ExtendChoices {
+            presentation_id: id,
+        }),
+        time(MINUTE + 30_000),
+    )
+    .unwrap();
+    assert_eq!(
+        e.presentation.as_ref().unwrap().closes_at,
+        Some(MINUTE + 90_000)
+    );
+    assert!(e.data.progress.iter().all(|item| item.pending));
+    e.step(None, time(MINUTE + 89_999)).unwrap();
+    assert!(e.presentation.is_some());
+    e.step(None, time(MINUTE + 90_000)).unwrap();
+    assert!(e.presentation.is_none());
+    assert!(e.data.progress.iter().all(|item| item.pending));
+    assert_eq!(
+        e.step(
+            Some(Command::ExtendChoices {
+                presentation_id: id
+            }),
+            time(MINUTE + 90_001),
+        )
+        .unwrap_err()
+        .code,
+        "stalePresentation"
+    );
 }
 #[test]
 fn snooze_defers_all_pending_across_pause_and_consumes_once() {

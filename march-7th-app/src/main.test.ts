@@ -18,6 +18,7 @@ let stageTarget: ReturnType<typeof eventTarget>;
 let documentTarget: ReturnType<typeof eventTarget>;
 let windowTarget: ReturnType<typeof eventTarget>;
 let sprite: { style: Record<string, unknown>; dataset: Record<string, string> };
+let offerSprite: { style: Record<string, unknown>; dataset: Record<string, string> };
 let body: { dataset: Record<string, string> };
 let message: { textContent: string; hidden: boolean; dataset: Record<string, string> };
 const sample = (x = 200, y = 100, windowX = 0, windowY = 0) => ({ x, y, windowX, windowY });
@@ -47,12 +48,14 @@ beforeEach(() => {
   timers = new Map();
   timerId = 0;
   sprite = { style: {}, dataset: {} };
+  offerSprite = { style: {}, dataset: {} };
   body = { dataset: {} };
   const element = {
     ...sprite,
     getBoundingClientRect: () => ({ left: 4, top: -4, width: 192, height: 208 }),
     setAttribute: vi.fn(),
   };
+  const offerElement = { ...offerSprite, setAttribute: vi.fn() };
   message = { textContent: "", hidden: true, dataset: {} };
   stageTarget = eventTarget();
   const capture = new Set<number>();
@@ -65,7 +68,7 @@ beforeEach(() => {
   documentTarget = eventTarget();
   const documentDouble = Object.assign(documentTarget, {
     body,
-    querySelector: (selector: string) => selector === "#pet-sprite" ? element : selector === "#pet-message" ? message : stage,
+    querySelector: (selector: string) => selector === "#pet-sprite" ? element : selector === "#pet-offer-sprite" ? offerElement : selector === "#pet-message" ? message : stage,
   });
   vi.stubGlobal("document", documentDouble);
   vi.stubGlobal("performance", { now: () => now });

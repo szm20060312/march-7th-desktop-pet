@@ -23,6 +23,7 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
     }
     if let Ok(snapshot) = native::snapshot(app) {
         let focus = crate::focus::native::current(app);
+        let visible = character_visible(app);
         let local = chrono::Local::now();
         let mut s = ui.state.lock().unwrap();
         let old = s.reminder.ticket();
@@ -37,13 +38,22 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
             },
         );
         let revision = s.bubble.revision;
-        let presentation = s.bubble.selected.map(|(id, _)| id);
-        let ended = s.announced_auto.filter(|id| {
-            !character_visible(app) || s.bubble.automatic_prompt(&snapshot, *id).is_none()
-        });
+        let ended = s
+            .announced_auto
+            .filter(|id| !visible || s.bubble.automatic_prompt(&snapshot, *id).is_none());
         if ended.is_some() {
             s.announced_auto = None;
         }
+        let announce = s.bubble.selected.and_then(|(id, _)| {
+            (visible && s.announced_auto != Some(id))
+                .then(|| s.bubble.automatic_prompt(&snapshot, id))
+                .flatten()
+                .map(|items| (id, items))
+        });
+        if let Some((id, _)) = &announce {
+            s.announced_auto = Some(*id);
+        }
+        let presentation = s.bubble.window_presentation(&snapshot);
         s.reminder.update(revision, presentation, snapshot.stopped);
         let hide = old != s.reminder.ticket();
         if hide {
@@ -57,7 +67,9 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
                 fail(app, "hideFailed", error);
             }
         }
-        if let Some(Ok(projection)) = projection {
+        if let Some(Ok(projection)) =
+            projection.filter(|_| app.get_webview_window("reminder").is_some())
+        {
             if let Err(error) = app.emit_to("reminder", "reminders-changed", projection) {
                 fail(app, "presentationFailed", error);
             }
@@ -69,6 +81,15 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
                 serde_json::json!({"presentationId": presentation_id}),
             ) {
                 eprintln!("Reminder character prompt end unavailable: {error}");
+            }
+        }
+        if let Some((presentation_id, items)) = announce {
+            if let Err(error) = app.emit_to(
+                "main",
+                "reminder-prompt",
+                serde_json::json!({"presentationId": presentation_id, "items": items}),
+            ) {
+                eprintln!("Reminder character prompt unavailable: {error}");
             }
         }
     }

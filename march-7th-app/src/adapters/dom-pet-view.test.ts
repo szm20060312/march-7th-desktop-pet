@@ -20,7 +20,7 @@ describe("DOM pet view", () => {
     const stage = element();
     const message = element();
     const body = element();
-    const view = createDomPetView(sprite.node, stage.node, message.node, body.node);
+    const view = createDomPetView(sprite.node, element().node, stage.node, message.node, body.node);
     view.configure(march7th);
     view.render({ row: 1, column: 2 });
     expect(sprite.style.backgroundSize).toBe("1536px 2288px");
@@ -37,7 +37,7 @@ describe("DOM pet view", () => {
     const stage = element();
     const message = element();
     const body = element();
-    const view = createDomPetView(sprite.node, stage.node, message.node, body.node);
+    const view = createDomPetView(sprite.node, element().node, stage.node, message.node, body.node);
     view.showPhrase("<b>纯文本</b>");
     expect(message.node.textContent).toBe("<b>纯文本</b>");
     expect(message.node.hidden).toBe(false);
@@ -49,15 +49,21 @@ describe("DOM pet view", () => {
     view.setPresentationError(null);
     expect(message.node.hidden).toBe(true);
   });
-  it("switches to the water action sheet and restores the original atlas afterward", () => {
-    const sprite = element(); const view = createDomPetView(sprite.node, element().node, element().node, element().node);
+  it("keeps both sheets layered so the offered cup can crossfade into the original atlas", () => {
+    const sprite = element(); const offer = element();
+    const view = createDomPetView(sprite.node, offer.node, element().node, element().node, element().node);
     view.configure(march7th);
     view.render({ asset: "waterOffer", row: 1, column: 0 });
-    expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/water-offer.png")');
-    expect(sprite.style.backgroundSize).toBe("384px 416px");
-    expect(sprite.style.backgroundPosition).toBe("0px -208px");
+    expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/spritesheet.webp")');
+    expect(offer.style.backgroundImage).toBe('url("/assets/march-7th/water-offer.png")');
+    expect(offer.style.backgroundSize).toBe("384px 416px");
+    expect(offer.style.backgroundPosition).toBe("0px -208px");
+    expect(sprite.style.opacity).toBe("0");
+    expect(offer.style.opacity).toBe("1");
     view.render({ row: 0, column: 0 });
     expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/spritesheet.webp")');
     expect(sprite.style.backgroundSize).toBe("1536px 2288px");
+    expect(sprite.style.opacity).toBe("1");
+    expect(offer.style.opacity).toBe("0");
   });
 });

@@ -48,9 +48,17 @@ body {
   will-change: background-position;
 }
 
+.pet-base-sprite, .pet-offer-sprite {
+  transition: opacity .32s ease;
+}
+
+.pet-offer-sprite {
+  opacity: 0;
+}
+
 .pet-message {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   top: 3px;
   left: 50%;
   width: max-content;
@@ -101,5 +109,6 @@ body {
   .pet-sprite {
     filter: none;
   }
+  .pet-base-sprite, .pet-offer-sprite { transition: none; }
 }
 

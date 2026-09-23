@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const MAX_UTC: i64 = 253_402_300_799_999;
 pub const MINUTE: i64 = 60_000;
-pub const AUTO_PRESENTATION_MS: i64 = 20_000;
+pub const AUTO_PRESENTATION_MS: i64 = 45_000;
+const CHOICES_GRACE_MS: i64 = 60_000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Id {
@@ -119,6 +120,10 @@ pub enum Command {
         paused: bool,
     },
     ShowPending {},
+    ExtendChoices {
+        #[serde(rename = "presentationId")]
+        presentation_id: u64,
+    },
     Dismiss {
         #[serde(rename = "presentationId")]
         presentation_id: u64,
@@ -245,7 +250,7 @@ impl Engine {
                 return Err(Error::new("readOnly"));
             }
         }
-        if matches!(command,Some(Command::Dismiss{presentation_id}) if presentation_id==0 || presentation_id>MAX_SAFE)
+        if matches!(command,Some(Command::Dismiss{presentation_id} | Command::ExtendChoices{presentation_id}) if presentation_id==0 || presentation_id>MAX_SAFE)
         {
             return Err(Error::new("invalidPresentationId"));
         }
@@ -335,6 +340,20 @@ impl Engine {
             }
             Some(Command::SetPaused { paused }) => self.data.paused = paused,
             Some(Command::ShowPending {}) => self.present(Mode::Manual, self.pending(), time)?,
+            Some(Command::ExtendChoices { presentation_id }) => {
+                let presentation = self
+                    .presentation
+                    .as_mut()
+                    .filter(|p| p.id == presentation_id && p.mode == Mode::Automatic)
+                    .ok_or(Error::new("stalePresentation"))?;
+                presentation.closes_at = Some(add_utc(time.utc_ms, CHOICES_GRACE_MS)?);
+                presentation.monotonic_deadline = Some(
+                    time.monotonic_ms
+                        .checked_add(CHOICES_GRACE_MS as u64)
+                        .filter(|v| *v <= MAX_SAFE)
+                        .ok_or(Error::new("invalidTime"))?,
+                );
+            }
             Some(Command::Dismiss { presentation_id })
                 if self
                     .presentation

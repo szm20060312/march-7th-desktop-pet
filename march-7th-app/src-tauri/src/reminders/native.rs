@@ -121,6 +121,17 @@ pub async fn open_reminder_choices<R: Runtime>(
     {
         return Err(Error::new("invalidWindow"));
     }
+    let source = on_ui(&app, move |app| {
+        super::ui::choice_source(app, presentation_id)
+    })
+    .await?;
+    dispatch(
+        &app,
+        Command::ExtendChoices {
+            presentation_id: source,
+        },
+    )
+    .await?;
     on_ui(&app, move |app| {
         super::ui::open_choices(app, presentation_id)
     })

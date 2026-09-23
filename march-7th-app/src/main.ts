@@ -15,7 +15,7 @@ function requiredElement(selector: string): HTMLElement {
   return element;
 }
 const stage = requiredElement("#pet-stage");
-const view = createDomPetView(requiredElement("#pet-sprite"), stage, requiredElement("#pet-message"), document.body);
+const view = createDomPetView(requiredElement("#pet-sprite"), requiredElement("#pet-offer-sprite"), stage, requiredElement("#pet-message"), document.body);
 const gestures = createDomPetGestures(stage, document, window, browserScheduler);
 const host = createTauriHost();
 let errorTimer: number | undefined;
