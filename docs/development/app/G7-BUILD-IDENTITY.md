@@ -24,6 +24,8 @@ G7 的一个技术切片，版本仍为 0.2.0；不关闭 M0、M4/G7 或 M5。�
 
 源码目录递归观察，可发现新文件；在此范围内被 Git 忽略的本地文件也视为修改。已存在的明确配置文件逐个观察；不递归观察应用根目录。`node_modules/`、`target/`、`dist/` 等生成物和缓存不在范围内；外部工具链、依赖缓存、构建参数和系统 SDK 不由此 SHA 证明。仓库文档、设计资料、测试辅助文件和打包脚本不作为编译应用输入；`src/` 内的测试仍属于该目录范围。新增构建输入位置时必须同步修改列表与此说明。
 
+目录在 Git status pathspec 中显式带尾斜杠：`src/`、`public/`、`src-tauri/src/`、`src-tauri/icons/`、`src-tauri/capabilities/`。已确认不带边界的 `src` 会在 ignored matching 中错配同名前缀的原生 target 缓存；真实 Cargo fixture 已复现由此产生的假 modified。尾斜杠只限定原本声明的目录，文件输入不变；Node 的 literal 诊断 scope 同样保留尾斜杠。缓存存在且身份重新采样仍应 clean，真正目录内的 ignored 源码仍必须 modified，不能据此排除整个 ignored 类别。
+
 Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没有 Git、查询失败、无提交的仓库或嵌入不相关父仓库的未跟踪导出包均为 unknown。Git 控制路径通过 `rev-parse --git-path` 取得，观察实际 HEAD、index、symbolic ref、packed-refs，以及存在的配置和排除文件，支持 `.git` 文件与 linked worktree。观察现有 ref 目录以捕获 packed ref 转为新 loose ref；不观察整个 Git 对象库。不存在的控制路径不被用作强制重建机制。无 Git 的导出包之后新建仓库时，应重新构建（清理此前 Cargo 缓存或修改已观察输入）；本机制不轮询新出现的仓库。
 
 来源在构建时采样；构建期间应冻结输入，不允许并发修改后再把程序当作该提交产物。正常测试包流程要求干净检出、先构建再探针。

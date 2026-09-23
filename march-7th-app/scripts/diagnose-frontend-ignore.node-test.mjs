@@ -21,6 +21,16 @@ function fixture(t, appName = "app") {
 const phase = "after-check";
 const unavailable = stage => `ignored-input phase=${phase} state=unavailable total=unknown groups=unknown overflow=no failureStage=${stage}`;
 
+test("literal source directory scope does not match the native target sibling", t => {
+  const { root, appRoot } = fixture(t);
+  appendFileSync(path.join(root, ".gitignore"), "target/\n");
+  mkdirSync(path.join(appRoot, "src-tauri/target"), { recursive: true });
+  writeFileSync(path.join(appRoot, "src-tauri/target/generated.txt"), "ignored cache\n");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=zero groups=none overflow=no`);
+  writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "real ignored source\n");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no`);
+});
+
 test("a real ignored source root directory is part of the declared scope", t => {
   const { root, appRoot } = fixture(t);
   appendFileSync(path.join(root, ".gitignore"), "app/src/\n");
@@ -227,7 +237,7 @@ test("real queries share one repository cwd, literal scope and repo-relative NUL
     const command = args[0] === "-C" ? args[2] : args[0];
     seen.push(command);
     if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync(root), "fixed repository context");
-    if (command === "status") assert.ok(args.at(-1) === ":(literal)app[private]/src", "literal source scope");
+    if (command === "status") assert.ok(args.at(-1) === ":(literal)app[private]/src/", "literal source directory boundary");
     if (command === "check-ignore") assert.ok(input.equals(Buffer.from("app[private]/src/PRIVATE.local\0")), "repo-relative stdin must match porcelain records");
     return execFileSync("git", args, { cwd: appRoot, input, stdio: ["pipe", "pipe", "pipe"] });
   };

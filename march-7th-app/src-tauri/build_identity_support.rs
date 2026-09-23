@@ -18,9 +18,11 @@ const PLATFORM_CONFIGS: &[(&str, &str)] = &[
 ];
 
 // Labels are fixed public vocabulary, never derived from filesystem names.
+// Directory pathspecs require a trailing slash: ignored matching must not
+// treat a similarly prefixed sibling (e.g. the native target cache) as input.
 const INPUTS: &[(&str, &str)] = &[
-    ("src", "frontend-source"),
-    ("public", "public-assets"),
+    ("src/", "frontend-source"),
+    ("public/", "public-assets"),
     ("index.html", "main-entry"),
     ("settings.html", "settings-entry"),
     ("reminder.html", "reminder-entry"),
@@ -30,9 +32,9 @@ const INPUTS: &[(&str, &str)] = &[
     ("vite.config.ts", "vite-config"),
     (".gitignore", "app-ignore"),
     ("src-tauri/.gitignore", "native-ignore"),
-    ("src-tauri/src", "native-source"),
-    ("src-tauri/icons", "native-icons"),
-    ("src-tauri/capabilities", "native-capabilities"),
+    ("src-tauri/src/", "native-source"),
+    ("src-tauri/icons/", "native-icons"),
+    ("src-tauri/capabilities/", "native-capabilities"),
     ("src-tauri/Cargo.toml", "native-manifest"),
     ("src-tauri/Cargo.lock", "native-lock"),
     ("src-tauri/tauri.conf.json", "tauri-config"),

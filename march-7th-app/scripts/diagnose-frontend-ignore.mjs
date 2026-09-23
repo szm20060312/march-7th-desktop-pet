@@ -62,7 +62,7 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
     const frontendIdentity = statSync(frontend, { bigint: true });
     const scope = within(repoRoot, frontend);
     if (scope === null || scope === "") return unavailable("path");
-    const repoScope = scope.split(path.sep).join("/");
+    const repoScope = scope.split(path.sep).join("/") + "/";
     failureStage = "status-query";
     const statusBytes = query(["-C", repoRoot, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--", `:(literal)${repoScope}`]);
     failureStage = "status-format";
