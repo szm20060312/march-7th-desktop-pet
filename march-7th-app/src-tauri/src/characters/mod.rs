@@ -7,6 +7,7 @@ use std::{
     sync::{mpsc, Arc, Mutex},
 };
 pub(crate) use store::validate_import as validate_imported_characters;
+pub(crate) use store::validate_stored as validate_stored_characters;
 use store::Store;
 
 #[derive(Deserialize)]

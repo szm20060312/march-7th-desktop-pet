@@ -41,11 +41,16 @@ pub struct ImportFiles {
     pub characters: Vec<u8>,
     pub reminders: Vec<u8>,
 }
+#[derive(Clone, Copy)]
+enum SetValidation {
+    Candidate,
+    Active,
+}
 impl ImportFiles {
     fn desktop_bytes(&self) -> &[u8] {
         self.desktop.as_deref().unwrap_or(ABSENT_DESKTOP)
     }
-    fn validate(&self) -> Result<(), &'static str> {
+    fn validate(&self, use_as: SetValidation) -> Result<(), &'static str> {
         let total = self
             .desktop_bytes()
             .len()
@@ -57,8 +62,15 @@ impl ImportFiles {
         }
         crate::desktop::validate_imported_desktop(self.desktop_bytes())
             .map_err(|_| "dataSetInvalid")?;
-        crate::characters::validate_imported_characters(&self.characters)
-            .map_err(|_| "dataSetInvalid")?;
+        match use_as {
+            SetValidation::Candidate => {
+                crate::characters::validate_imported_characters(&self.characters)
+            }
+            SetValidation::Active => {
+                crate::characters::validate_stored_characters(&self.characters)
+            }
+        }
+        .map_err(|_| "dataSetInvalid")?;
         crate::reminders::validate_imported_reminders(&self.reminders)
             .map_err(|_| "dataSetInvalid")?;
         Ok(())
@@ -195,7 +207,7 @@ impl DataDirectory {
         let Access::Ready { root, selected, .. } = &self.0 else {
             return Err("directoryUnavailable");
         };
-        files.validate()?;
+        files.validate(SetValidation::Candidate)?;
         if read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")?.is_some() {
             return Err("pendingImportExists");
         }
@@ -239,7 +251,7 @@ impl DataDirectory {
                 .and_then(|_| target.sync_all())
                 .map_err(|_| "dataSetWriteFailed")?;
         }
-        let prepared = read_set(root, &set_id)?;
+        let prepared = read_set(root, &set_id, SetValidation::Candidate)?;
         if prepared.digest() != files.digest() {
             return Err("dataSetChanged");
         }
@@ -278,7 +290,7 @@ fn resolve_locked_with(
         return Err("activationMarkerMissing");
     }
     if let Some(pointer) = &active {
-        read_set(root, &pointer.set_id)?;
+        read_set(root, &pointer.set_id, SetValidation::Active)?;
     }
     let Some(pending) = read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")? else {
         if activated && active.is_none() {
@@ -299,7 +311,7 @@ fn resolve_locked_with(
     if !pending.matches_base(active.as_ref()) {
         return Err("pendingImportConflict");
     }
-    let staged = read_set(root, &pending.set_id)?;
+    let staged = read_set(root, &pending.set_id, SetValidation::Candidate)?;
     if staged.digest() != pending.digest {
         return Err("pendingImportChanged");
     }
@@ -375,7 +387,7 @@ fn read_record_with_reader<T: DeserializeOwned>(
         Err(_) => Err(error_code),
     }
 }
-fn read_set(root: &Path, id: &str) -> Result<ImportFiles, &'static str> {
+fn read_set(root: &Path, id: &str, use_as: SetValidation) -> Result<ImportFiles, &'static str> {
     if !valid_id(id) {
         return Err("dataSetInvalid");
     }
@@ -397,7 +409,7 @@ fn read_set(root: &Path, id: &str) -> Result<ImportFiles, &'static str> {
         characters: read(DataFile::Characters)?,
         reminders: read(DataFile::Reminders)?,
     };
-    files.validate()?;
+    files.validate(use_as)?;
     Ok(files)
 }
 fn read_limited(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
@@ -568,5 +580,55 @@ mod tests {
         assert_eq!(restarted.diagnostic(), None);
         assert!(root.join(ACTIVATED).exists());
         assert!(root.join(ACTIVE).exists());
+    }
+
+    #[test]
+    fn retired_character_in_active_set_uses_store_fallback_then_explicit_save() {
+        let temp = Temp::new();
+        let root = &temp.0;
+        let first = acquire(Some(root.clone())).unwrap();
+        first.prepare_import(candidate()).unwrap();
+        drop(first);
+        let active = acquire(Some(root.clone())).unwrap();
+        let path = active.path(DataFile::Characters).unwrap();
+        drop(active);
+        let retired = br#"{"version":1,"selectedCharacterId":"retired-character"}"#;
+        fs::write(&path, retired).unwrap();
+
+        let restarted = acquire(Some(root.clone())).unwrap();
+        assert_eq!(restarted.diagnostic(), None);
+        assert_eq!(restarted.path(DataFile::Characters), Some(path.clone()));
+        let service = crate::characters::Service::start(Some(path.clone()), |_| {}).unwrap();
+        let before = service.snapshot();
+        assert_eq!(before.persistence, crate::characters::Persistence::Fallback);
+        let default_id = crate::characters::Catalog::builtin().unwrap().default_id;
+        assert_eq!(before.selected_character_id, default_id);
+        assert_eq!(fs::read(&path).unwrap(), retired);
+        let saved = service
+            .select(default_id.clone())
+            .unwrap()
+            .recv()
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.persistence, crate::characters::Persistence::Saved);
+        assert_eq!(saved.selected_character_id, default_id);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(path).unwrap()).unwrap()
+                ["selectedCharacterId"],
+            default_id
+        );
+        service.stop();
+    }
+
+    #[test]
+    fn retired_character_is_still_rejected_as_a_new_import_candidate() {
+        let temp = Temp::new();
+        let root = &temp.0;
+        let directory = acquire(Some(root.clone())).unwrap();
+        let mut files = candidate();
+        files.characters = br#"{"version":1,"selectedCharacterId":"retired-character"}"#.to_vec();
+        assert_eq!(directory.prepare_import(files), Err("dataSetInvalid"));
+        assert!(!root.join(PENDING).exists());
+        assert!(!root.join(ACTIVATED).exists());
     }
 }

@@ -16,6 +16,9 @@ pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+pub(crate) fn validate_stored(bytes: &[u8]) -> Result<(), String> {
+    parse(bytes).map(|_| ())
+}
 fn parse(bytes: &[u8]) -> Result<Config, String> {
     let config: Config =
         serde_json::from_slice(bytes).map_err(|_| "invalid character configuration".to_string())?;
