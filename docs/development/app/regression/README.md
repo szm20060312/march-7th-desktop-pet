@@ -9,6 +9,7 @@
 1. 从项目 GitHub Actions 的 **Desktop Regression Builds** 同一次成功运行下载对应平台 artifact。GitHub 下载可能要求登录。
 2. 解压到一个新的测试目录，不覆盖旧版或旧 Codex 宠物包。
 3. 打开 `BUILD-INFO.json`，记录完整 `sourceCommit`、`target` 和 `buildRunUrl`。Windows 与 Mac 必须测试同一 `sourceCommit`；只比较 `0.2.0` 版本号不够。
+   对包含 G7-A 的构建，再从托盘打开提醒设置，展开“版本信息”，核对完整提交、版本和平台；应显示“构建输入无本地修改”。该版本的 manifest 还含 `binaryBuildInfo`，由 CI 对本次实际程序读取核对；它不证明素材授权、签名或 GUI 验收。
 4. 包内 `validationStatus` 固定为 `build-only-awaiting-human-regression`，不可把它改成测试结果。
 5. 按 [CHECKLIST.md](CHECKLIST.md) 测试，将结果填写到 [RESULT-TEMPLATE.md](RESULT-TEMPLATE.md) 的副本。
 

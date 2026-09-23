@@ -148,6 +148,8 @@ G5 Task 1 原生后端与可控时间/存储/退出测试已实现，见 [REMIND
 
 ### Shared / 双平台分发
 
+- [-] G7-A：运行构建身份、设置页版本信息、实际程序与测试包 manifest 核对已实现；本地自动验证见 [G7-BUILD-IDENTITY.md](G7-BUILD-IDENTITY.md)，同提交双平台 CI 与 GUI 验收另行记录，不关闭 M4
+
 - [ ] 双角色与提醒完整合流，必要设置与本地迁移可用
 - [ ] Windows NSIS、macOS App/DMG 测试版流程
 - [ ] 同提交双平台产物、校验、安装／升级／卸载说明

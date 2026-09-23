@@ -27,6 +27,17 @@
       <p id="settings-notice" class="notice" role="status" aria-live="polite"></p>
       <footer><button id="close-settings" type="button">关闭</button><button id="save-settings" class="primary" type="submit" disabled>保存设置</button></footer>
     </form>
+    <details class="build-info">
+      <summary>版本信息</summary>
+      <p id="build-status" class="hint" role="status">正在读取版本信息…</p>
+      <dl>
+        <dt>版本</dt><dd id="build-version"></dd>
+        <dt>平台</dt><dd id="build-target"></dd>
+        <dt>源提交</dt><dd id="build-commit" class="build-commit"></dd>
+        <dt>来源状态</dt><dd id="build-state"></dd>
+      </dl>
+      <p class="hint">用于核对测试包；不代表正式发布或验收通过。</p>
+    </details>
   </main>
 </body>
 </html>

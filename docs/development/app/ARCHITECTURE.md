@@ -1,5 +1,7 @@
 # 架构与开发说明
 
+G7-A 新增只读构建身份：`build_identity_support.rs` 在构建时捕获限定输入范围的 Git 来源并观察增量输入；`build_info.rs` 的一个常量供预 GUI `--build-info` 与 `get_build_info` IPC 使用。现有设置页的折叠版本区域独立读取，不加入提醒业务控制器或持久化；打包器核对实际二进制后才写 manifest。输入范围、契约和验收边界见 [G7-BUILD-IDENTITY.md](G7-BUILD-IDENTITY.md)。
+
 本文描述本次重构后的实际代码边界，并单独标出未来设计。产品选择见 [长期计划](PRODUCT-PLAN.md)，执行范围见 [本次执行计划](IMPLEMENTATION-ARCHITECTURE.md)。
 
 2026-09-22 更新：当前 Rust 已实现鼠标采样、G1/G2 原生托盘控制、交互/穿透模式和版本化位置存储，以及 G4 内置角色选择服务、G5 原生提醒后端。G6 Task1 已增加真实设置页、提醒页、类型适配与角色回应订阅；原生窗口、托盘和呈现握手处理仍待 Task2。G1/G2 的自动验证与实机验收分开记录，不能把历史 v0.2.0 基线结果视为本提交通过。
