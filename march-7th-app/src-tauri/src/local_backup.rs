@@ -389,7 +389,11 @@ fn prepare<R: Runtime>(
         reminders::native::snapshot(app).map_err(|_| ExportError::new("backupUnavailable"))?;
     let position =
         desktop::export_current(app).map_err(|_| ExportError::new("backupUnavailable"))?;
-    let files = export_snapshot::capture(Some(&character), &reminder, position)
+    let focus = app
+        .state::<DataDirectory>()
+        .read_focus()
+        .map_err(|_| ExportError::new("backupUnavailable"))?;
+    let files = export_snapshot::capture(Some(&character), &reminder, position, focus)
         .map_err(|_| ExportError::new("backupUnavailable"))?;
     let bytes = backup_codec::encode(files, chrono::Utc::now().timestamp_millis())
         .map_err(|_| ExportError::new("backupUnavailable"))?;
@@ -672,6 +676,7 @@ mod tests {
         assert_eq!(directory.has_pending_import(), Ok(false));
         let files = ImportFiles {
             desktop: None,
+            focus: serde_json::to_vec(&crate::focus::model::Data::default()).unwrap(),
             characters: br#"{"version":1,"selectedCharacterId":"march-7th"}"#.to_vec(),
             reminders: br#"{"version":1,"settings":{"items":[{"id":"water","enabled":false,"intervalMinutes":60},{"id":"move","enabled":false,"intervalMinutes":60},{"id":"eyes","enabled":false,"intervalMinutes":30}],"activeHours":{"kind":"daily","start":540,"end":1320},"snoozeMinutes":10},"progress":[{"id":"water","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"move","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"eyes","nextDueAt":null,"pending":false,"autoHandled":false}],"paused":false,"quiet":null,"snoozePending":false}"#.to_vec(),
         };

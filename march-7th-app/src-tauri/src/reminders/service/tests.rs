@@ -83,8 +83,13 @@ fn complete_export_candidate_is_atomic_across_three_module_qualifications() {
             y: -4.0,
         })
     };
-    let candidate =
-        data_directory::export_snapshot::capture(Some(&character), &reminder, placement()).unwrap();
+    let candidate = data_directory::export_snapshot::capture(
+        Some(&character),
+        &reminder,
+        placement(),
+        crate::data_directory::default_focus().unwrap(),
+    )
+    .unwrap();
     let decoded = data_directory::backup_codec::decode(
         &data_directory::backup_codec::encode(candidate, 123).unwrap(),
     )
@@ -101,7 +106,8 @@ fn complete_export_candidate_is_atomic_across_three_module_qualifications() {
     assert!(data_directory::export_snapshot::capture(
         Some(&failed_character),
         &reminder,
-        placement()
+        placement(),
+        crate::data_directory::default_focus().unwrap(),
     )
     .is_err());
     let mut failed_reminder = reminder.clone();
@@ -109,19 +115,22 @@ fn complete_export_candidate_is_atomic_across_three_module_qualifications() {
     assert!(data_directory::export_snapshot::capture(
         Some(&character),
         &failed_reminder,
-        placement()
+        placement(),
+        crate::data_directory::default_focus().unwrap(),
     )
     .is_err());
     assert!(data_directory::export_snapshot::capture(
         Some(&character),
         &reminder,
-        desktop::ExportPlacement::Unavailable
+        desktop::ExportPlacement::Unavailable,
+        crate::data_directory::default_focus().unwrap(),
     )
     .is_err());
     let no_position = data_directory::export_snapshot::capture(
         Some(&character),
         &reminder,
         desktop::ExportPlacement::NeverSaved,
+        crate::data_directory::default_focus().unwrap(),
     )
     .unwrap();
     assert!(no_position.desktop.is_none());

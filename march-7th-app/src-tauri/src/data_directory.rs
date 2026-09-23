@@ -1,5 +1,5 @@
 //! One participating writer per configuration root, and one selected data set
-//! for all three stores. No pointer means the original flat files remain live.
+//! for all four stores. Legacy three-file sets are copied before a v2 pointer commits.
 pub mod backup_codec;
 pub(crate) mod export_snapshot;
 pub use crate::data_lock::AlreadyRunning;
@@ -16,7 +16,9 @@ const ACTIVE: &str = "active-data-set.json";
 const PENDING: &str = "pending-import.json";
 const ACTIVATED: &str = "data-set-activated.json";
 const SETS: &str = "data-sets";
-const MAX_SET_BYTES: usize = 1024 * 1024;
+const MAX_SET_BYTES: usize = 1024 * 1024; // v1 limit is part of the legacy contract
+const MAX_FOCUS_BYTES: usize = 4096;
+const MAX_V2_SET_BYTES: usize = MAX_SET_BYTES + MAX_FOCUS_BYTES;
 const MAX_RECORD_BYTES: usize = 4096;
 const ABSENT_DESKTOP: &[u8] = br#"{"version":1,"placement":null}"#;
 
@@ -25,6 +27,7 @@ pub enum DataFile {
     Desktop,
     Characters,
     Reminders,
+    Focus,
 }
 impl DataFile {
     fn name(self) -> &'static str {
@@ -32,6 +35,7 @@ impl DataFile {
             Self::Desktop => "desktop-state.json",
             Self::Characters => "character-preferences.json",
             Self::Reminders => "reminders.json",
+            Self::Focus => "focus.json",
         }
     }
 }
@@ -43,6 +47,7 @@ pub struct ImportFiles {
     pub desktop: Option<Vec<u8>>,
     pub characters: Vec<u8>,
     pub reminders: Vec<u8>,
+    pub focus: Vec<u8>,
 }
 #[derive(Clone, Copy)]
 enum SetValidation {
@@ -54,13 +59,22 @@ impl ImportFiles {
         self.desktop.as_deref().unwrap_or(ABSENT_DESKTOP)
     }
     fn validate(&self, use_as: SetValidation) -> Result<(), &'static str> {
+        self.validate_for(2, use_as)
+    }
+    fn validate_for(&self, version: u8, use_as: SetValidation) -> Result<(), &'static str> {
         let total = self
             .desktop_bytes()
             .len()
             .checked_add(self.characters.len())
             .and_then(|v| v.checked_add(self.reminders.len()))
+            .and_then(|v| v.checked_add(if version == 1 { 0 } else { self.focus.len() }))
             .ok_or("dataSetTooLarge")?;
-        if total > MAX_SET_BYTES {
+        let limit = if version == 1 {
+            MAX_SET_BYTES
+        } else {
+            MAX_V2_SET_BYTES
+        };
+        if total > limit || self.focus.len() > MAX_FOCUS_BYTES {
             return Err("dataSetTooLarge");
         }
         crate::desktop::validate_imported_desktop(self.desktop_bytes())
@@ -76,9 +90,14 @@ impl ImportFiles {
         .map_err(|_| "dataSetInvalid")?;
         crate::reminders::validate_imported_reminders(&self.reminders)
             .map_err(|_| "dataSetInvalid")?;
+        decode_focus(&self.focus)?;
         Ok(())
     }
     fn digest(&self) -> String {
+        self.digest_for(2)
+    }
+    // v1 checksums deliberately exclude the synthesized default focus.
+    fn digest_for(&self, version: u8) -> String {
         let mut digest = Sha256::new();
         for (file, bytes) in [
             (DataFile::Desktop, self.desktop_bytes()),
@@ -88,6 +107,11 @@ impl ImportFiles {
             digest.update(file.name().as_bytes());
             digest.update((bytes.len() as u64).to_le_bytes());
             digest.update(bytes);
+        }
+        if version == 2 {
+            digest.update(DataFile::Focus.name().as_bytes());
+            digest.update((self.focus.len() as u64).to_le_bytes());
+            digest.update(&self.focus);
         }
         hex(&digest.finalize())
     }
@@ -109,6 +133,8 @@ struct Pending {
     base_set_id: Option<String>,
     base_transaction_id: Option<String>,
     digest: String,
+    #[serde(default)]
+    migration: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -118,12 +144,13 @@ struct Activation {
 }
 impl Pointer {
     fn valid(&self) -> bool {
-        self.version == 1 && valid_id(&self.set_id) && valid_id(&self.transaction_id)
+        matches!(self.version, 1 | 2) && valid_id(&self.set_id) && valid_id(&self.transaction_id)
     }
 }
 impl Pending {
     fn valid(&self) -> bool {
-        self.version == 1
+        matches!(self.version, 1 | 2)
+            && (!self.migration || self.version == 2)
             && valid_id(&self.set_id)
             && valid_id(&self.transaction_id)
             && self.base_set_id.as_deref().is_none_or(valid_id)
@@ -134,7 +161,7 @@ impl Pending {
     }
     fn target(&self) -> Pointer {
         Pointer {
-            version: 1,
+            version: self.version,
             set_id: self.set_id.clone(),
             transaction_id: self.transaction_id.clone(),
         }
@@ -187,6 +214,11 @@ impl DataDirectory {
     pub fn path(&self, file: DataFile) -> Option<PathBuf> {
         match &self.0 {
             Access::Ready { root, selected, .. } => {
+                if matches!(file, DataFile::Focus)
+                    && !selected.as_ref().is_some_and(|p| p.version == 2)
+                {
+                    return None;
+                }
                 let selected_root = selected
                     .as_ref()
                     .map(|p| set_dir(root, &p.set_id))
@@ -230,64 +262,128 @@ impl DataDirectory {
         if read_activation(root)? != selected.is_some() {
             return Err("activationMarkerChanged");
         }
-        let mut random = [0_u8; 32];
-        getrandom::fill(&mut random).map_err(|_| "randomUnavailable")?;
-        let set_id = hex(&random[..16]);
-        let transaction_id = hex(&random[16..]);
-        let sets = root.join(SETS);
-        // create_dir_all would follow an existing symlink/junction; reject it.
-        match fs::symlink_metadata(&sets) {
-            Ok(metadata) if !metadata.is_dir() || metadata.is_symlink() => {
-                return Err("dataSetsUnavailable")
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                fs::create_dir(&sets).map_err(|_| "dataSetsUnavailable")?;
-            }
-            Err(_) => return Err("dataSetsUnavailable"),
-        }
-        let new_set = set_dir(root, &set_id);
-        fs::create_dir(&new_set).map_err(|_| "dataSetCreateFailed")?;
-        for (file, bytes) in [
-            (DataFile::Desktop, files.desktop_bytes()),
-            (DataFile::Characters, files.characters.as_slice()),
-            (DataFile::Reminders, files.reminders.as_slice()),
-        ] {
-            let mut target = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(new_set.join(file.name()))
-                .map_err(|_| "dataSetWriteFailed")?;
-            target
-                .write_all(bytes)
-                .and_then(|_| target.sync_all())
-                .map_err(|_| "dataSetWriteFailed")?;
-        }
-        let prepared = read_set(root, &set_id, SetValidation::Candidate)?;
-        if prepared.digest() != files.digest() {
-            return Err("dataSetChanged");
-        }
-        let pending = Pending {
-            version: 1,
-            set_id,
-            transaction_id: transaction_id.clone(),
-            base_set_id: selected.as_ref().map(|p| p.set_id.clone()),
-            base_transaction_id: selected.as_ref().map(|p| p.transaction_id.clone()),
-            digest: files.digest(),
-        };
-        let bytes = serde_json::to_vec(&pending).map_err(|_| "pendingImportWriteFailed")?;
-        crate::atomic_file::replace(&root.join(PENDING), &bytes, None)
-            .map_err(|_| "pendingImportWriteFailed")?;
-        Ok(transaction_id)
+        stage(root, selected.as_ref(), &files, false)
+    }
+
+    /// Until a focus service owns live state, export its exact qualified persisted bytes.
+    pub(crate) fn read_focus(&self) -> Result<Vec<u8>, &'static str> {
+        let path = self.path(DataFile::Focus).ok_or("directoryUnavailable")?;
+        let bytes = read_store(&path)?;
+        decode_focus(&bytes)?;
+        Ok(bytes)
     }
 }
 
+fn stage(
+    root: &Path,
+    selected: Option<&Pointer>,
+    files: &ImportFiles,
+    migration: bool,
+) -> Result<String, &'static str> {
+    stage_with_writer(root, selected, files, migration, write_new_store)
+}
+
+fn write_new_store(path: &Path, bytes: &[u8]) -> Result<(), &'static str> {
+    let mut target = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "dataSetWriteFailed")?;
+    target
+        .write_all(bytes)
+        .and_then(|_| target.sync_all())
+        .map_err(|_| "dataSetWriteFailed")
+}
+
+fn stage_with_writer(
+    root: &Path,
+    selected: Option<&Pointer>,
+    files: &ImportFiles,
+    migration: bool,
+    mut write_store: impl FnMut(&Path, &[u8]) -> Result<(), &'static str>,
+) -> Result<String, &'static str> {
+    let use_as = if migration {
+        SetValidation::Active
+    } else {
+        SetValidation::Candidate
+    };
+    files.validate(use_as)?;
+    let mut random = [0_u8; 32];
+    getrandom::fill(&mut random).map_err(|_| "randomUnavailable")?;
+    let set_id = hex(&random[..16]);
+    let transaction_id = hex(&random[16..]);
+    let sets = root.join(SETS);
+    // create_dir_all would follow an existing symlink/junction; reject it.
+    match fs::symlink_metadata(&sets) {
+        Ok(metadata) if !metadata.is_dir() || metadata.is_symlink() => {
+            return Err("dataSetsUnavailable")
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir(&sets).map_err(|_| "dataSetsUnavailable")?;
+        }
+        Err(_) => return Err("dataSetsUnavailable"),
+    }
+    let new_set = set_dir(root, &set_id);
+    fs::create_dir(&new_set).map_err(|_| "dataSetCreateFailed")?;
+    for (file, bytes) in [
+        (DataFile::Desktop, files.desktop_bytes()),
+        (DataFile::Characters, files.characters.as_slice()),
+        (DataFile::Reminders, files.reminders.as_slice()),
+        (DataFile::Focus, files.focus.as_slice()),
+    ] {
+        write_store(&new_set.join(file.name()), bytes)?;
+    }
+    let prepared = read_set(root, &set_id, 2, use_as)?;
+    if prepared.digest() != files.digest() {
+        return Err("dataSetChanged");
+    }
+    let pending = Pending {
+        version: 2,
+        set_id,
+        transaction_id: transaction_id.clone(),
+        base_set_id: selected.as_ref().map(|p| p.set_id.clone()),
+        base_transaction_id: selected.as_ref().map(|p| p.transaction_id.clone()),
+        digest: files.digest(),
+        migration,
+    };
+    let bytes = serde_json::to_vec(&pending).map_err(|_| "pendingImportWriteFailed")?;
+    crate::atomic_file::replace(&root.join(PENDING), &bytes, None)
+        .map_err(|_| "pendingImportWriteFailed")?;
+    Ok(transaction_id)
+}
+
 fn resolve_locked(root: &Path) -> Result<Option<Pointer>, &'static str> {
+    resolve_with_cleanup(root, |path| fs::remove_file(path))
+}
+
+fn resolve_with_cleanup(
+    root: &Path,
+    remove_pending: impl Fn(&Path) -> io::Result<()>,
+) -> Result<Option<Pointer>, &'static str> {
+    let selected = resolve_locked_with(
+        root,
+        |path, bytes| crate::atomic_file::replace(path, bytes, None),
+        crate::atomic_file::replace,
+        &remove_pending,
+    )?;
+    if selected.as_ref().is_some_and(|p| p.version == 2) {
+        return Ok(selected);
+    }
+    // Do not overwrite an unremoved v1 pending receipt during migration.
+    if read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")?.is_some() {
+        return Err("pendingImportCleanupFailed");
+    }
+    let files = match &selected {
+        Some(pointer) => read_set(root, &pointer.set_id, 1, SetValidation::Active)?,
+        None => read_legacy(root)?,
+    };
+    stage(root, selected.as_ref(), &files, true)?;
     resolve_locked_with(
         root,
         |path, bytes| crate::atomic_file::replace(path, bytes, None),
         crate::atomic_file::replace,
-        |path| fs::remove_file(path),
+        &remove_pending,
     )
 }
 fn resolve_locked_with(
@@ -302,7 +398,12 @@ fn resolve_locked_with(
         return Err("activationMarkerMissing");
     }
     if let Some(pointer) = &active {
-        read_set(root, &pointer.set_id, SetValidation::Active)?;
+        read_set(
+            root,
+            &pointer.set_id,
+            pointer.version,
+            SetValidation::Active,
+        )?;
     }
     let Some(pending) = read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")? else {
         if activated && active.is_none() {
@@ -323,8 +424,16 @@ fn resolve_locked_with(
     if !pending.matches_base(active.as_ref()) {
         return Err("pendingImportConflict");
     }
-    let staged = read_set(root, &pending.set_id, SetValidation::Candidate)?;
-    if staged.digest() != pending.digest {
+    if pending.migration && active.as_ref().is_some_and(|p| p.version != 1) {
+        return Err("pendingImportConflict");
+    }
+    let use_as = if pending.migration {
+        SetValidation::Active
+    } else {
+        SetValidation::Candidate
+    };
+    let staged = read_set(root, &pending.set_id, pending.version, use_as)?;
+    if staged.digest_for(pending.version) != pending.digest {
         return Err("pendingImportChanged");
     }
     if !activated {
@@ -399,7 +508,12 @@ fn read_record_with_reader<T: DeserializeOwned>(
         Err(_) => Err(error_code),
     }
 }
-fn read_set(root: &Path, id: &str, use_as: SetValidation) -> Result<ImportFiles, &'static str> {
+fn read_set(
+    root: &Path,
+    id: &str,
+    version: u8,
+    use_as: SetValidation,
+) -> Result<ImportFiles, &'static str> {
     if !valid_id(id) {
         return Err("dataSetInvalid");
     }
@@ -408,22 +522,76 @@ fn read_set(root: &Path, id: &str, use_as: SetValidation) -> Result<ImportFiles,
         return Err("dataSetInvalid");
     }
     let dir = set_dir(root, id);
-    let read = |file: DataFile| -> Result<Vec<u8>, &'static str> {
-        let path = dir.join(file.name());
-        let metadata = fs::symlink_metadata(&path).map_err(|_| "dataSetInvalid")?;
-        if !metadata.is_file() || metadata.is_symlink() {
-            return Err("dataSetInvalid");
-        }
-        read_limited(&path, MAX_SET_BYTES).map_err(|_| "dataSetInvalid")
-    };
+    if version == 1 {
+        require_absent_focus(&dir)?;
+    }
+    let read =
+        |file: DataFile| -> Result<Vec<u8>, &'static str> { read_store(&dir.join(file.name())) };
     let files = ImportFiles {
         desktop: Some(read(DataFile::Desktop)?),
         characters: read(DataFile::Characters)?,
         reminders: read(DataFile::Reminders)?,
+        focus: if version == 1 {
+            default_focus()?
+        } else {
+            read(DataFile::Focus)?
+        },
     };
-    files.validate(use_as)?;
+    files.validate_for(version, use_as)?;
     Ok(files)
 }
+
+pub(crate) fn default_focus() -> Result<Vec<u8>, &'static str> {
+    serde_json::to_vec(&crate::focus::model::Data::default()).map_err(|_| "dataSetInvalid")
+}
+fn decode_focus(bytes: &[u8]) -> Result<crate::focus::model::Data, &'static str> {
+    if bytes.len() > MAX_FOCUS_BYTES {
+        return Err("dataSetTooLarge");
+    }
+    let data: crate::focus::model::Data =
+        serde_json::from_slice(bytes).map_err(|_| "dataSetInvalid")?;
+    data.validate().map_err(|_| "dataSetInvalid")?;
+    Ok(data)
+}
+fn read_store(path: &Path) -> Result<Vec<u8>, &'static str> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| "dataSetInvalid")?;
+    if !metadata.is_file() || metadata.is_symlink() {
+        return Err("dataSetInvalid");
+    }
+    read_limited(path, MAX_V2_SET_BYTES).map_err(|_| "dataSetInvalid")
+}
+fn require_absent_focus(dir: &Path) -> Result<(), &'static str> {
+    match fs::symlink_metadata(dir.join(DataFile::Focus.name())) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        _ => Err("dataSetInvalid"),
+    }
+}
+fn read_legacy(root: &Path) -> Result<ImportFiles, &'static str> {
+    let read = |file: DataFile| -> Result<Option<Vec<u8>>, &'static str> {
+        let path = root.join(file.name());
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            _ => read_store(&path).map(Some),
+        }
+    };
+    // A stray fourth file has no v1 ownership and must never be silently ignored.
+    require_absent_focus(root)?;
+    let files = ImportFiles {
+        desktop: read(DataFile::Desktop)?,
+        characters: match read(DataFile::Characters)? {
+            Some(bytes) => bytes,
+            None => serde_json::to_vec(&serde_json::json!({"version":1,"selectedCharacterId":crate::characters::Catalog::builtin().map_err(|_| "dataSetInvalid")?.default_id})).map_err(|_| "dataSetInvalid")?,
+        },
+        reminders: match read(DataFile::Reminders)? {
+            Some(bytes) => bytes,
+            None => crate::reminders::default_data_bytes()?,
+        },
+        focus: default_focus()?,
+    };
+    files.validate_for(1, SetValidation::Active)?;
+    Ok(files)
+}
+
 fn read_limited(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?
@@ -482,6 +650,7 @@ mod tests {
     fn candidate() -> ImportFiles {
         ImportFiles {
             desktop: None,
+            focus: default_focus().unwrap(),
             characters: br#"{"version":1,"selectedCharacterId":"march-7th"}"#.to_vec(),
             reminders: br#"{"version":1,"settings":{"items":[{"id":"water","enabled":false,"intervalMinutes":60},{"id":"move","enabled":false,"intervalMinutes":60},{"id":"eyes","enabled":false,"intervalMinutes":30}],"activeHours":{"kind":"daily","start":540,"end":1320},"snoozeMinutes":10},"progress":[{"id":"water","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"move","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"eyes","nextDueAt":null,"pending":false,"autoHandled":false}],"paused":false,"quiet":null,"snoozePending":false}"#.to_vec(),
         }
@@ -492,9 +661,7 @@ mod tests {
         let temp = Temp::new();
         let root = &temp.0;
         fs::write(root.join("desktop-state.json"), b"legacy").unwrap();
-        let directory = acquire(Some(root.clone())).unwrap();
-        directory.prepare_import(candidate()).unwrap();
-        drop(directory);
+        stage(root, None, &candidate(), false).unwrap();
         assert_eq!(
             resolve_locked_with(
                 root,
@@ -569,9 +736,7 @@ mod tests {
         let temp = Temp::new();
         let root = &temp.0;
         fs::write(root.join("desktop-state.json"), b"legacy").unwrap();
-        let directory = acquire(Some(root.clone())).unwrap();
-        directory.prepare_import(candidate()).unwrap();
-        drop(directory);
+        stage(root, None, &candidate(), false).unwrap();
         assert_eq!(
             resolve_locked_with(
                 root,
@@ -641,6 +806,80 @@ mod tests {
         files.characters = br#"{"version":1,"selectedCharacterId":"retired-character"}"#.to_vec();
         assert_eq!(directory.prepare_import(files), Err("dataSetInvalid"));
         assert!(!root.join(PENDING).exists());
-        assert!(!root.join(ACTIVATED).exists());
+        assert!(root.join(ACTIVATED).exists());
+    }
+    #[test]
+    fn fourth_store_write_failure_never_schedules_partial_migration() {
+        let temp = Temp::new();
+        let files = candidate();
+        fs::write(temp.0.join("reminders.json"), &files.reminders).unwrap();
+        let mut written = 0;
+        assert_eq!(
+            stage_with_writer(&temp.0, None, &files, true, |path, bytes| {
+                if path.file_name().unwrap() == "focus.json" {
+                    return Err("dataSetWriteFailed");
+                }
+                written += 1;
+                write_new_store(path, bytes)
+            }),
+            Err("dataSetWriteFailed")
+        );
+        assert_eq!(written, 3);
+        assert!(!temp.0.join(ACTIVE).exists());
+        assert!(!temp.0.join(PENDING).exists());
+        assert!(!temp.0.join(ACTIVATED).exists());
+        assert_eq!(
+            fs::read(temp.0.join("reminders.json")).unwrap(),
+            files.reminders
+        );
+        let restarted = acquire(Some(temp.0.clone())).unwrap();
+        assert_eq!(restarted.diagnostic(), None);
+        assert_eq!(
+            fs::read(restarted.path(DataFile::Focus).unwrap()).unwrap(),
+            files.focus
+        );
+        assert!(!temp.0.join("focus.json").exists());
+    }
+
+    #[test]
+    fn v1_cleanup_failure_preserves_receipt_and_never_overwrites_it_with_migration() {
+        let temp = Temp::new();
+        let files = candidate();
+        // Downgrade a staged fixture to the exact v1 on-disk protocol.
+        stage(&temp.0, None, &files, false).unwrap();
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&fs::read(temp.0.join(PENDING)).unwrap()).unwrap();
+        record["version"] = 1.into();
+        record["digest"] = files.digest_for(1).into();
+        record.as_object_mut().unwrap().remove("migration");
+        let old_set = set_dir(&temp.0, record["setId"].as_str().unwrap());
+        fs::remove_file(old_set.join("focus.json")).unwrap();
+        let receipt = serde_json::to_vec(&record).unwrap();
+        fs::write(temp.0.join(PENDING), &receipt).unwrap();
+        assert_eq!(
+            resolve_with_cleanup(&temp.0, |_| Err(io::Error::other("cleanup injection"))),
+            Err("pendingImportCleanupFailed")
+        );
+        assert_eq!(fs::read(temp.0.join(PENDING)).unwrap(), receipt);
+        assert_eq!(read_pointer(&temp.0).unwrap().unwrap().version, 1);
+        assert_eq!(fs::read_dir(temp.0.join(SETS)).unwrap().count(), 1);
+        let recovered = acquire(Some(temp.0.clone())).unwrap();
+        assert_eq!(recovered.diagnostic(), None);
+        assert_eq!(read_pointer(&temp.0).unwrap().unwrap().version, 2);
+        assert!(!temp.0.join(PENDING).exists());
+        assert!(!old_set.join("focus.json").exists());
+    }
+
+    #[test]
+    fn export_reads_exact_focus_from_selected_set_and_refuses_runtime_corruption() {
+        let temp = Temp::new();
+        let directory = acquire(Some(temp.0.clone())).unwrap();
+        let path = directory.path(DataFile::Focus).unwrap();
+        let paused=br#"{ "version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":12000}}"#;
+        fs::write(&path, paused).unwrap();
+        assert_eq!(directory.read_focus().unwrap(), paused);
+        fs::write(&path, b"invalid").unwrap();
+        assert_eq!(directory.read_focus(), Err("dataSetInvalid"));
+        assert_eq!(fs::read(&path).unwrap(), b"invalid");
     }
 }

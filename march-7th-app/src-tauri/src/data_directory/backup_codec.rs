@@ -5,7 +5,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Deserializer, Serialize};
 
 const FORMAT: &str = "march7-local-backup";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 pub const MAX_BACKUP_BYTES: usize = 2 * 1024 * 1024;
 const MAX_CREATED_AT_UTC_MS: i64 = 253_402_300_799_999; // 9999-12-31T23:59:59.999Z
 
@@ -26,6 +26,16 @@ struct BackupFiles {
     desktop_json_base64: Option<String>,
     characters_json_base64: String,
     reminders_json_base64: String,
+    #[serde(
+        default,
+        deserialize_with = "present_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    focus_json_base64: Option<String>,
+}
+
+fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
 }
 
 fn required_nullable<'de, D: Deserializer<'de>>(
@@ -41,6 +51,14 @@ pub struct Preview {
     pub selected_character_id: String,
     pub has_desktop_placement: bool,
     pub reminders: ReminderPreview,
+    pub focus: FocusPreview,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusPreview {
+    pub status: &'static str,
+    pub defaulted_from_v1: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -75,7 +93,7 @@ pub struct DecodedBackup {
     pub preview: Preview,
 }
 
-/// Encode only a complete v1 candidate. Caller owns snapshot consistency.
+/// Encode only a complete v2 candidate. Caller owns snapshot consistency.
 pub fn encode(files: ImportFiles, created_at_utc_ms: i64) -> Result<Vec<u8>, &'static str> {
     validate_time(created_at_utc_ms)?;
     files.validate(SetValidation::Candidate)?;
@@ -87,6 +105,7 @@ pub fn encode(files: ImportFiles, created_at_utc_ms: i64) -> Result<Vec<u8>, &'s
             desktop_json_base64: files.desktop.as_deref().map(|bytes| STANDARD.encode(bytes)),
             characters_json_base64: STANDARD.encode(&files.characters),
             reminders_json_base64: STANDARD.encode(&files.reminders),
+            focus_json_base64: Some(STANDARD.encode(&files.focus)),
         },
         sha256: files.digest(),
     };
@@ -106,7 +125,7 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedBackup, &'static str> {
     if document.format != FORMAT {
         return Err("backupInvalid");
     }
-    if document.schema_version != VERSION {
+    if !matches!(document.schema_version, 1 | VERSION) {
         return Err("backupUnsupportedVersion");
     }
     validate_time(document.created_at_utc_ms)?;
@@ -127,9 +146,17 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedBackup, &'static str> {
             .transpose()?,
         characters: decode_canonical(&document.files.characters_json_base64)?,
         reminders: decode_canonical(&document.files.reminders_json_base64)?,
+        focus: match (
+            document.schema_version,
+            document.files.focus_json_base64.as_deref(),
+        ) {
+            (1, None) => super::default_focus()?,
+            (2, Some(value)) => decode_canonical(value)?,
+            _ => return Err("backupInvalid"),
+        },
     };
-    files.validate(SetValidation::Candidate)?;
-    if files.digest() != document.sha256 {
+    files.validate_for(document.schema_version, SetValidation::Candidate)?;
+    if files.digest_for(document.schema_version) != document.sha256 {
         return Err("backupChecksumMismatch");
     }
     let character_id =
@@ -167,6 +194,18 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedBackup, &'static str> {
         quiet_until_utc_ms: data.quiet.map(|quiet| quiet.until),
         snooze_pending: data.snooze_pending,
     };
+    let focus_data = super::decode_focus(&files.focus)?;
+    use crate::focus::model::Session;
+    let focus = FocusPreview {
+        status: match focus_data.session {
+            Session::Idle {} => "idle",
+            Session::Running { .. } => "running",
+            Session::Paused { .. } => "paused",
+            Session::Interrupted { .. } => "interrupted",
+            Session::Finished { .. } => "finished",
+        },
+        defaulted_from_v1: document.schema_version == 1,
+    };
     Ok(DecodedBackup {
         files,
         preview: Preview {
@@ -174,6 +213,7 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedBackup, &'static str> {
             selected_character_id: character_id,
             has_desktop_placement,
             reminders,
+            focus,
         },
     })
 }
@@ -202,6 +242,7 @@ mod tests {
     fn candidate() -> ImportFiles {
         ImportFiles {
             desktop: None,
+            focus: serde_json::to_vec(&crate::focus::model::Data::default()).unwrap(),
             characters: br#"{ "version":1, "selectedCharacterId":"march-7th" }"#.to_vec(),
             reminders: br#"{"version":1,"settings":{"items":[{"id":"water","enabled":false,"intervalMinutes":60},{"id":"move","enabled":false,"intervalMinutes":60},{"id":"eyes","enabled":false,"intervalMinutes":30}],"activeHours":{"kind":"daily","start":540,"end":1320},"snoozeMinutes":10},"progress":[{"id":"water","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"move","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"eyes","nextDueAt":null,"pending":false,"autoHandled":false}],"paused":false,"quiet":null,"snoozePending":false}"#.to_vec(),
         }
@@ -222,7 +263,7 @@ mod tests {
         let encoded = encode(files, 1_700_000_000_000).unwrap();
         let document: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(document["format"], "march7-local-backup");
-        assert_eq!(document["schemaVersion"], 1);
+        assert_eq!(document["schemaVersion"], 2);
         assert_eq!(
             document["files"]["desktopJsonBase64"],
             serde_json::Value::Null
@@ -273,7 +314,7 @@ mod tests {
         for bad in [
             mutate(|v| v["unexpected"] = true.into()),
             mutate(|v| v["files"]["unexpected"] = true.into()),
-            mutate(|v| v["schemaVersion"] = 2.into()),
+            mutate(|v| v["schemaVersion"] = 3.into()),
             mutate(|v| v["format"] = "different".into()),
             mutate(|v| {
                 v.as_object_mut().unwrap().remove("files");
@@ -327,7 +368,7 @@ mod tests {
         too_large.extend(vec![b' '; MAX_BACKUP_BYTES + 1]);
         assert_eq!(decode(&too_large).err(), Some("backupTooLarge"));
         let mut files = candidate();
-        files.characters = vec![b'x'; 1024 * 1024];
+        files.characters = vec![b'x'; super::super::MAX_V2_SET_BYTES];
         let over_set = mutate(|v| {
             v["files"]["charactersJsonBase64"] = STANDARD.encode(&files.characters).into();
             v["sha256"] = files.digest().into();
@@ -385,5 +426,111 @@ mod tests {
             v["sha256"] = bad_progress.digest().into();
         });
         assert_eq!(decode(&progress_package).err(), Some("dataSetInvalid"));
+    }
+    #[test]
+    fn v1_golden_checksum_is_accepted_and_default_focus_is_explicit_in_preview() {
+        use sha2::{Digest, Sha256};
+        let files = candidate();
+        let mut digest = Sha256::new();
+        for (name, bytes) in [
+            ("desktop-state.json", super::super::ABSENT_DESKTOP),
+            ("character-preferences.json", files.characters.as_slice()),
+            ("reminders.json", files.reminders.as_slice()),
+        ] {
+            digest.update(name.as_bytes());
+            digest.update((bytes.len() as u64).to_le_bytes());
+            digest.update(bytes);
+        }
+        let old = serde_json::json!({"format":"march7-local-backup","schemaVersion":1,"createdAtUtcMs":0,
+            "files":{"desktopJsonBase64":null,"charactersJsonBase64":STANDARD.encode(&files.characters),"remindersJsonBase64":STANDARD.encode(&files.reminders)},
+            "sha256":format!("{:x}",digest.finalize())});
+        let decoded = decode(&serde_json::to_vec(&old).unwrap()).unwrap();
+        assert_eq!(decoded.files.focus, super::super::default_focus().unwrap());
+        assert!(decoded.preview.focus.defaulted_from_v1);
+        assert_eq!(decoded.preview.focus.status, "idle");
+        let reencoded = encode(decoded.files, 0).unwrap();
+        let document: serde_json::Value = serde_json::from_slice(&reencoded).unwrap();
+        assert_eq!(document["schemaVersion"], 2);
+        assert_ne!(old["sha256"], document["sha256"]);
+        let mut with_focus = old.clone();
+        with_focus["files"]["focusJsonBase64"] = STANDARD.encode(&files.focus).into();
+        assert_eq!(
+            decode(&serde_json::to_vec(&with_focus).unwrap()).err(),
+            Some("backupInvalid")
+        );
+    }
+
+    #[test]
+    fn v2_focus_roundtrip_checksum_shape_and_limits_are_enforced() {
+        let mut files = candidate();
+        files.focus=br#"{ "version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":12000}}"#.to_vec();
+        let bytes = encode(files.clone(), 0).unwrap();
+        let decoded = decode(&bytes).unwrap();
+        assert_eq!(decoded.files.focus, files.focus);
+        assert_eq!(decoded.preview.focus.status, "paused");
+        assert!(!decoded.preview.focus.defaulted_from_v1);
+        assert_eq!(
+            serde_json::to_value(&decoded.preview.focus).unwrap(),
+            serde_json::json!({"status":"paused","defaultedFromV1":false})
+        );
+        let mut changed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        changed["files"]["focusJsonBase64"] = STANDARD
+            .encode(super::super::default_focus().unwrap())
+            .into();
+        assert_eq!(
+            decode(&serde_json::to_vec(&changed).unwrap()).err(),
+            Some("backupChecksumMismatch")
+        );
+        for bad in [
+            mutate(|v| {
+                v["files"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("focusJsonBase64");
+            }),
+            mutate(|v| v["files"]["focusJsonBase64"] = serde_json::Value::Null),
+            mutate(|v| v["files"]["focusJsonBase64"] = "bad".into()),
+        ] {
+            assert_eq!(decode(&bad).err(), Some("backupInvalid"));
+        }
+        for bad in [
+            br#"{"version":2,"session":{"status":"idle"}}"#.as_slice(),
+            br#"{"version":1,"session":{"status":"idle","task":"secret"}}"#.as_slice(),
+            br#"{"version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":0}}"#
+                .as_slice(),
+        ] {
+            files.focus = bad.to_vec();
+            assert_eq!(encode(files.clone(), 0).err(), Some("dataSetInvalid"));
+        }
+        files.focus = vec![b' '; super::super::MAX_SET_BYTES];
+        assert_eq!(encode(files, 0).err(), Some("dataSetTooLarge"));
+    }
+    #[test]
+    fn legacy_limit_and_reserved_focus_budget_are_both_bounded() {
+        let mut files = candidate();
+        let total =
+            super::super::ABSENT_DESKTOP.len() + files.characters.len() + files.reminders.len();
+        files
+            .reminders
+            .extend(vec![b' '; super::super::MAX_SET_BYTES - total]);
+        let v1 = |files: &ImportFiles| {
+            serde_json::to_vec(&serde_json::json!({
+            "format":"march7-local-backup","schemaVersion":1,"createdAtUtcMs":0,
+            "files":{"desktopJsonBase64":null,"charactersJsonBase64":STANDARD.encode(&files.characters),"remindersJsonBase64":STANDARD.encode(&files.reminders)},
+            "sha256":files.digest_for(1)
+        })).unwrap()
+        };
+        let decoded = decode(&v1(&files)).unwrap();
+        assert_eq!(decoded.files.reminders, files.reminders);
+        assert_eq!(decoded.files.focus, super::super::default_focus().unwrap());
+        files.focus=br#"{"version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":12000}}"#.to_vec();
+        files.focus.resize(super::super::MAX_FOCUS_BYTES, b' ');
+        let restored = decode(&encode(files.clone(), 0).unwrap()).unwrap();
+        assert_eq!(restored.files.focus, files.focus);
+        files.focus.push(b' ');
+        assert_eq!(encode(files.clone(), 0).err(), Some("dataSetTooLarge"));
+        files.focus = super::super::default_focus().unwrap();
+        files.reminders.push(b' ');
+        assert_eq!(decode(&v1(&files)).err(), Some("dataSetTooLarge"));
     }
 }

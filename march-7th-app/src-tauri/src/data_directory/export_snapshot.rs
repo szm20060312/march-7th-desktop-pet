@@ -8,6 +8,7 @@ pub(crate) fn capture(
     character: Option<&characters::Snapshot>,
     reminder: &reminders::ExportSnapshot,
     desktop: desktop::ExportPlacement,
+    focus: Vec<u8>,
 ) -> Result<ImportFiles, &'static str> {
     let characters = characters::export_snapshot(character)?;
     let reminders = reminders::export_snapshot(reminder)?;
@@ -16,6 +17,7 @@ pub(crate) fn capture(
         desktop,
         characters,
         reminders,
+        focus,
     };
     files.validate(SetValidation::Candidate)?;
     Ok(files)

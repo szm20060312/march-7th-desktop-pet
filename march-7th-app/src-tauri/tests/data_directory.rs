@@ -30,26 +30,31 @@ impl Drop for Temp {
 }
 
 #[test]
-fn ready_creates_only_the_fixed_lock_and_preserves_flat_paths() {
+fn ready_initializes_one_complete_v2_set_under_the_fixed_lock() {
     let temp = Temp::new();
     let root = temp.0.join("config");
     let directory = acquire(Some(root.clone())).unwrap();
     assert_eq!(directory.root(), Some(root.as_path()));
     assert_eq!(directory.diagnostic(), None);
-    assert_eq!(
-        directory.path(DataFile::Desktop),
-        Some(root.join("desktop-state.json"))
-    );
-    assert_eq!(
-        directory.path(DataFile::Characters),
-        Some(root.join("character-preferences.json"))
-    );
-    assert_eq!(
-        directory.path(DataFile::Reminders),
-        Some(root.join("reminders.json"))
-    );
-    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
-    drop(directory); // Windows denies reading locked bytes through another handle.
+    let selected = directory
+        .path(DataFile::Desktop)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    assert_eq!(selected.parent(), Some(root.join("data-sets").as_path()));
+    for (file, name) in [
+        (DataFile::Desktop, "desktop-state.json"),
+        (DataFile::Characters, "character-preferences.json"),
+        (DataFile::Reminders, "reminders.json"),
+        (DataFile::Focus, "focus.json"),
+    ] {
+        assert_eq!(directory.path(file), Some(selected.join(name)));
+        assert!(selected.join(name).is_file());
+        assert!(!root.join(name).exists());
+    }
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 4);
+    drop(directory);
     assert_eq!(fs::read(root.join("instance.lock")).unwrap(), b"");
 }
 
@@ -117,6 +122,7 @@ fn lock_open_failure_is_unavailable_not_duplicate_and_preserves_data() {
 fn valid_import() -> ImportFiles {
     ImportFiles {
         desktop: None,
+        focus: serde_json::to_vec(&march_7th_app_lib::focus::model::Data::default()).unwrap(),
         characters: br#"{"version":1,"selectedCharacterId":"march-7th"}"#.to_vec(),
         reminders: serde_json::to_vec(&serde_json::json!({
             "version": 1,
@@ -141,23 +147,36 @@ fn valid_import() -> ImportFiles {
 }
 
 #[test]
-fn prepared_import_switches_all_three_paths_only_on_next_acquisition() {
+fn prepared_import_switches_all_four_paths_only_on_next_acquisition() {
     let temp = Temp::new();
     let root = temp.0.join("config");
     fs::create_dir(&root).unwrap();
     let legacy = root.join("character-preferences.json");
-    fs::write(&legacy, b"legacy bytes remain exact").unwrap();
+    fs::write(&legacy, &valid_import().characters).unwrap();
     let directory = acquire(Some(root.clone())).unwrap();
+    let original_path = directory.path(DataFile::Characters).unwrap();
+    let original_pointer = fs::read(root.join("active-data-set.json")).unwrap();
     let transaction = directory.prepare_import(valid_import()).unwrap();
-    assert_eq!(directory.path(DataFile::Characters), Some(legacy.clone()));
-    assert_eq!(fs::read(&legacy).unwrap(), b"legacy bytes remain exact");
-    assert!(!root.join("active-data-set.json").exists());
+    assert_eq!(
+        directory.path(DataFile::Characters),
+        Some(original_path.clone())
+    );
+    assert_eq!(fs::read(&legacy).unwrap(), valid_import().characters);
+    assert_eq!(
+        fs::read(root.join("active-data-set.json")).unwrap(),
+        original_pointer
+    );
     drop(directory);
 
     let switched = acquire(Some(root.clone())).unwrap();
     assert_eq!(switched.diagnostic(), None);
     let character_path = switched.path(DataFile::Characters).unwrap();
+    assert_ne!(character_path, original_path);
     let dataset = character_path.parent().unwrap();
+    assert_eq!(
+        switched.path(DataFile::Focus),
+        Some(dataset.join("focus.json"))
+    );
     assert_eq!(dataset.parent(), Some(root.join("data-sets").as_path()));
     assert_eq!(
         switched.path(DataFile::Desktop),
@@ -170,7 +189,7 @@ fn prepared_import_switches_all_three_paths_only_on_next_acquisition() {
     assert!(fs::read_to_string(dataset.join("desktop-state.json"))
         .unwrap()
         .contains("null"));
-    assert_eq!(fs::read(&legacy).unwrap(), b"legacy bytes remain exact");
+    assert_eq!(fs::read(&legacy).unwrap(), valid_import().characters);
     assert!(!root.join("pending-import.json").exists());
     assert!(!transaction.is_empty());
 }
@@ -180,16 +199,15 @@ fn invalid_import_never_schedules_or_changes_legacy_data() {
     let temp = Temp::new();
     let root = temp.0.join("config");
     let directory = acquire(Some(root.clone())).unwrap();
+    let before = fs::read(root.join("active-data-set.json")).unwrap();
+    let before_path = directory.path(DataFile::Desktop);
     let mut invalid = valid_import();
     invalid.characters =
         br#"{"version":1,"selectedCharacterId":"march-7th","future":true}"#.to_vec();
     assert!(directory.prepare_import(invalid).is_err());
     assert!(!root.join("pending-import.json").exists());
-    assert!(!root.join("active-data-set.json").exists());
-    assert_eq!(
-        directory.path(DataFile::Desktop),
-        Some(root.join("desktop-state.json"))
-    );
+    assert_eq!(fs::read(root.join("active-data-set.json")).unwrap(), before);
+    assert_eq!(directory.path(DataFile::Desktop), before_path);
 }
 
 #[test]
@@ -223,12 +241,15 @@ fn incomplete_preparation_and_changed_staging_never_change_active_pointer() {
     let temp = Temp::new();
     let root = temp.0.join("config");
     let directory = acquire(Some(root.clone())).unwrap();
+    let before = fs::read(root.join("active-data-set.json")).unwrap();
+    fs::rename(root.join("data-sets"), root.join("held-sets")).unwrap();
     fs::write(root.join("data-sets"), b"block directory creation").unwrap();
     assert!(directory.prepare_import(valid_import()).is_err());
     assert!(!root.join("pending-import.json").exists());
-    assert!(!root.join("data-set-activated.json").exists());
+    assert!(root.join("data-set-activated.json").exists());
     drop(directory);
     fs::remove_file(root.join("data-sets")).unwrap();
+    fs::rename(root.join("held-sets"), root.join("data-sets")).unwrap();
     let directory = acquire(Some(root.clone())).unwrap();
     directory.prepare_import(valid_import()).unwrap();
     drop(directory);
@@ -247,7 +268,7 @@ fn incomplete_preparation_and_changed_staging_never_change_active_pointer() {
     let protected = acquire(Some(root.clone())).unwrap();
     assert_eq!(protected.diagnostic(), Some("pendingImportChanged"));
     assert!(protected.path(DataFile::Desktop).is_none());
-    assert!(!root.join("active-data-set.json").exists());
+    assert_eq!(fs::read(root.join("active-data-set.json")).unwrap(), before);
     assert!(root.join("pending-import.json").exists());
 }
 
@@ -255,7 +276,7 @@ fn incomplete_preparation_and_changed_staging_never_change_active_pointer() {
 fn invalid_or_future_pointer_protects_all_stores_without_legacy_fallback() {
     for pointer in [
         "{broken",
-        r#"{"version":2,"setId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","transactionId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+        r#"{"version":3,"setId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","transactionId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
         r#"{"version":1,"setId":"../../other","transactionId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
         r#"{"version":1,"setId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","transactionId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
     ] {
@@ -364,7 +385,7 @@ fn process_exit_after_prepare_is_recovered_by_next_process() {
         .unwrap();
     assert!(result.success());
     assert!(root.join("pending-import.json").exists());
-    assert!(!root.join("active-data-set.json").exists());
+    let before = fs::read(root.join("active-data-set.json")).unwrap();
     let recovered = acquire(Some(root.clone())).unwrap();
     assert!(recovered
         .path(DataFile::Reminders)
@@ -372,6 +393,7 @@ fn process_exit_after_prepare_is_recovered_by_next_process() {
         .starts_with(root.join("data-sets")));
     assert!(root.join("active-data-set.json").exists());
     assert!(!root.join("pending-import.json").exists());
+    assert_ne!(fs::read(root.join("active-data-set.json")).unwrap(), before);
 }
 
 #[test]
@@ -379,7 +401,11 @@ fn committed_pointer_loss_never_falls_back_to_legacy_files() {
     let temp = Temp::new();
     let root = temp.0.join("config");
     fs::create_dir(&root).unwrap();
-    fs::write(root.join("desktop-state.json"), b"old flat position").unwrap();
+    fs::write(
+        root.join("desktop-state.json"),
+        br#"{"version":1,"placement":null}"#,
+    )
+    .unwrap();
     let directory = acquire(Some(root.clone())).unwrap();
     directory.prepare_import(valid_import()).unwrap();
     drop(directory);
@@ -395,7 +421,7 @@ fn committed_pointer_loss_never_falls_back_to_legacy_files() {
     }
     assert_eq!(
         fs::read(root.join("desktop-state.json")).unwrap(),
-        b"old flat position"
+        br#"{"version":1,"placement":null}"#
     );
 }
 
@@ -485,4 +511,313 @@ fn losing_activation_marker_with_a_valid_pointer_is_protected() {
     assert_eq!(protected.diagnostic(), Some("activationMarkerMissing"));
     assert!(protected.path(DataFile::Reminders).is_none());
     assert!(root.join("active-data-set.json").exists());
+}
+
+#[test]
+fn v2_migration_preserves_legacy_flat_bytes_and_adds_idle_focus_in_selected_set() {
+    let temp = Temp::new();
+    let old = valid_import();
+    fs::write(temp.0.join("character-preferences.json"), &old.characters).unwrap();
+    fs::write(temp.0.join("reminders.json"), &old.reminders).unwrap();
+    let directory = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(directory.diagnostic(), None);
+    let selected = directory.path(DataFile::Reminders).unwrap();
+    assert!(selected.starts_with(temp.0.join("data-sets")));
+    let focus = selected.parent().unwrap().join("focus.json");
+    let data: serde_json::Value = serde_json::from_slice(&fs::read(focus).unwrap()).unwrap();
+    assert_eq!(
+        data,
+        serde_json::json!({"version":1,"session":{"status":"idle"}})
+    );
+    assert!(!temp.0.join("focus.json").exists());
+    assert_eq!(fs::read(selected).unwrap(), old.reminders);
+    assert_eq!(
+        fs::read(temp.0.join("reminders.json")).unwrap(),
+        old.reminders
+    );
+    let pointer: serde_json::Value =
+        serde_json::from_slice(&fs::read(temp.0.join("active-data-set.json")).unwrap()).unwrap();
+    assert_eq!(pointer["version"], 2);
+    drop(directory);
+    let repeated = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(repeated.diagnostic(), None);
+    let after: serde_json::Value =
+        serde_json::from_slice(&fs::read(temp.0.join("active-data-set.json")).unwrap()).unwrap();
+    assert_eq!(after, pointer);
+}
+
+#[test]
+fn v2_empty_root_is_complete_and_bad_flat_bytes_are_never_defaulted() {
+    let temp = Temp::new();
+    let ready = acquire(Some(temp.0.clone())).unwrap();
+    let selected = ready.path(DataFile::Reminders).unwrap();
+    assert!(selected.parent().unwrap().join("focus.json").is_file());
+    drop(ready);
+    let broken = Temp::new();
+    let bytes = br#"{"version":99,"future":"preserve"}"#;
+    fs::write(broken.0.join("reminders.json"), bytes).unwrap();
+    let guarded = acquire(Some(broken.0.clone())).unwrap();
+    assert!(guarded.diagnostic().is_some());
+    assert!(guarded.path(DataFile::Reminders).is_none());
+    assert_eq!(fs::read(broken.0.join("reminders.json")).unwrap(), bytes);
+    assert!(!broken.0.join("active-data-set.json").exists());
+}
+
+// Deliberately construct v1 fixtures without the current staging/encoding path.
+fn legacy_set(root: &std::path::Path, set_id: &str, files: &ImportFiles) -> String {
+    use sha2::{Digest, Sha256};
+    let dir = root.join("data-sets").join(set_id);
+    fs::create_dir_all(&dir).unwrap();
+    let mut digest = Sha256::new();
+    for (name, bytes) in [
+        (
+            "desktop-state.json",
+            files
+                .desktop
+                .as_deref()
+                .unwrap_or(br#"{"version":1,"placement":null}"#),
+        ),
+        ("character-preferences.json", files.characters.as_slice()),
+        ("reminders.json", files.reminders.as_slice()),
+    ] {
+        fs::write(dir.join(name), bytes).unwrap();
+        digest.update(name.as_bytes());
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+    format!("{:x}", digest.finalize())
+}
+fn legacy_pointer(root: &std::path::Path, set: &str, transaction: &str) -> Vec<u8> {
+    let bytes = serde_json::to_vec(
+        &serde_json::json!({"version":1,"setId":set,"transactionId":transaction}),
+    )
+    .unwrap();
+    fs::write(root.join("active-data-set.json"), &bytes).unwrap();
+    fs::write(
+        root.join("data-set-activated.json"),
+        br#"{"version":1,"activated":true}"#,
+    )
+    .unwrap();
+    bytes
+}
+
+#[test]
+fn v1_active_migrates_exact_bytes_preserves_retired_role_and_pointer_backup() {
+    let temp = Temp::new();
+    let set = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let mut files = valid_import();
+    files.characters = br#"{ "version":1, "selectedCharacterId":"retired-character" }"#.to_vec();
+    legacy_set(&temp.0, set, &files);
+    let before = legacy_pointer(&temp.0, set, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let directory = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(directory.diagnostic(), None);
+    assert_eq!(
+        fs::read(directory.path(DataFile::Characters).unwrap()).unwrap(),
+        files.characters
+    );
+    assert_eq!(
+        fs::read(temp.0.join("active-data-set.json.bak")).unwrap(),
+        before
+    );
+    assert_eq!(
+        fs::read(
+            temp.0
+                .join("data-sets")
+                .join(set)
+                .join("character-preferences.json")
+        )
+        .unwrap(),
+        files.characters
+    );
+    assert!(!temp
+        .0
+        .join("data-sets")
+        .join(set)
+        .join("focus.json")
+        .exists());
+    assert!(directory.path(DataFile::Focus).unwrap().is_file());
+}
+
+#[test]
+fn v1_pending_finishes_before_upgrade_with_its_original_three_file_digest() {
+    for has_base in [false, true] {
+        let temp = Temp::new();
+        let base = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let target = "cccccccccccccccccccccccccccccccc";
+        let base_tx = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        if has_base {
+            legacy_set(&temp.0, base, &valid_import());
+            legacy_pointer(&temp.0, base, base_tx);
+        }
+        let mut imported = valid_import();
+        imported.characters = br#"{"version":1,"selectedCharacterId":"raiden-shogun"}"#.to_vec();
+        let digest = legacy_set(&temp.0, target, &imported);
+        fs::write(temp.0.join("pending-import.json"), serde_json::to_vec(&serde_json::json!({
+            "version":1,"setId":target,"transactionId":"dddddddddddddddddddddddddddddddd",
+            "baseSetId":if has_base {Some(base)} else {None},"baseTransactionId":if has_base {Some(base_tx)} else {None},"digest":digest
+        })).unwrap()).unwrap();
+        let directory = acquire(Some(temp.0.clone())).unwrap();
+        assert_eq!(directory.diagnostic(), None);
+        assert_eq!(
+            fs::read(directory.path(DataFile::Characters).unwrap()).unwrap(),
+            imported.characters
+        );
+        assert!(!temp.0.join("pending-import.json").exists());
+        let selected: serde_json::Value =
+            serde_json::from_slice(&fs::read(temp.0.join("active-data-set.json")).unwrap())
+                .unwrap();
+        assert_eq!(selected["version"], 2);
+        assert_ne!(selected["setId"], target);
+        assert!(!temp
+            .0
+            .join("data-sets")
+            .join(target)
+            .join("focus.json")
+            .exists());
+        assert_eq!(
+            fs::read(directory.path(DataFile::Focus).unwrap()).unwrap(),
+            valid_import().focus
+        );
+    }
+}
+
+#[test]
+fn v2_missing_corrupt_or_future_focus_blocks_all_stores_without_fallback() {
+    for bytes in [
+        None,
+        Some(b"broken".as_slice()),
+        Some(br#"{"version":2,"session":{"status":"idle"}}"#.as_slice()),
+        Some(br#"{"version":1,"session":{"status":"idle","task":"secret"}}"#.as_slice()),
+    ] {
+        let temp = Temp::new();
+        let directory = acquire(Some(temp.0.clone())).unwrap();
+        let focus = directory.path(DataFile::Focus).unwrap();
+        let pointer = fs::read(temp.0.join("active-data-set.json")).unwrap();
+        drop(directory);
+        match bytes {
+            Some(bytes) => fs::write(&focus, bytes).unwrap(),
+            None => fs::remove_file(&focus).unwrap(),
+        }
+        let protected = acquire(Some(temp.0.clone())).unwrap();
+        assert_eq!(protected.diagnostic(), Some("dataSetInvalid"));
+        for file in [
+            DataFile::Desktop,
+            DataFile::Characters,
+            DataFile::Reminders,
+            DataFile::Focus,
+        ] {
+            assert!(protected.path(file).is_none());
+        }
+        assert_eq!(
+            fs::read(temp.0.join("active-data-set.json")).unwrap(),
+            pointer
+        );
+        if let Some(bytes) = bytes {
+            assert_eq!(fs::read(&focus).unwrap(), bytes);
+        }
+    }
+}
+
+#[test]
+fn staged_focus_is_checked_before_commit_and_real_atomic_failure_is_restartable() {
+    let temp = Temp::new();
+    let directory = acquire(Some(temp.0.clone())).unwrap();
+    let before = fs::read(temp.0.join("active-data-set.json")).unwrap();
+    let mut imported = valid_import();
+    imported.focus =
+        br#"{ "version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":12000}}"#
+            .to_vec();
+    directory.prepare_import(imported.clone()).unwrap();
+    assert_eq!(
+        fs::read(directory.path(DataFile::Focus).unwrap()).unwrap(),
+        valid_import().focus
+    );
+    drop(directory);
+    let pending = fs::read(temp.0.join("pending-import.json")).unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&pending).unwrap();
+    let staged = temp
+        .0
+        .join("data-sets")
+        .join(record["setId"].as_str().unwrap())
+        .join("focus.json");
+    fs::write(&staged, &valid_import().focus).unwrap();
+    let guarded = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(guarded.diagnostic(), Some("pendingImportChanged"));
+    assert_eq!(
+        fs::read(temp.0.join("active-data-set.json")).unwrap(),
+        before
+    );
+    drop(guarded);
+    fs::write(&staged, &imported.focus).unwrap();
+    let backup = temp.0.join("active-data-set.json.bak");
+    fs::create_dir(&backup).unwrap(); // deterministic failure at the pointer backup write
+    let failed = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(failed.diagnostic(), Some("activePointerWriteFailed"));
+    assert_eq!(
+        fs::read(temp.0.join("active-data-set.json")).unwrap(),
+        before
+    );
+    assert_eq!(
+        fs::read(temp.0.join("pending-import.json")).unwrap(),
+        pending
+    );
+    drop(failed);
+    fs::remove_dir(&backup).unwrap();
+    let recovered = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(recovered.diagnostic(), None);
+    assert_eq!(
+        fs::read(recovered.path(DataFile::Focus).unwrap()).unwrap(),
+        imported.focus
+    );
+    assert!(!temp.0.join("pending-import.json").exists());
+    let chosen = recovered.path(DataFile::Focus).unwrap();
+    drop(recovered);
+    let again = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(again.path(DataFile::Focus), Some(chosen));
+}
+
+#[test]
+fn v1_unowned_focus_is_preserved_and_never_silently_dropped_by_migration() {
+    for flat in [false, true] {
+        let temp = Temp::new();
+        let dir = if flat {
+            temp.0.clone()
+        } else {
+            let set = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            legacy_set(&temp.0, set, &valid_import());
+            legacy_pointer(&temp.0, set, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+            temp.0.join("data-sets").join(set)
+        };
+        let future = br#"{"version":99,"future":"preserve"}"#;
+        fs::write(dir.join("focus.json"), future).unwrap();
+        let guarded = acquire(Some(temp.0.clone())).unwrap();
+        assert_eq!(guarded.diagnostic(), Some("dataSetInvalid"));
+        assert!(guarded.path(DataFile::Focus).is_none());
+        assert_eq!(fs::read(dir.join("focus.json")).unwrap(), future);
+    }
+}
+
+#[test]
+fn valid_v1_at_original_size_limit_can_upgrade_without_losing_source_bytes() {
+    let temp = Temp::new();
+    let mut files = valid_import();
+    let desktop = br#"{"version":1,"placement":null}"#;
+    let total = desktop.len() + files.characters.len() + files.reminders.len();
+    files.reminders.extend(vec![b' '; 1024 * 1024 - total]);
+    legacy_set(&temp.0, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &files);
+    legacy_pointer(
+        &temp.0,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    );
+    let directory = acquire(Some(temp.0.clone())).unwrap();
+    assert_eq!(directory.diagnostic(), None);
+    assert_eq!(
+        fs::read(directory.path(DataFile::Reminders).unwrap()).unwrap(),
+        files.reminders
+    );
+    assert_eq!(
+        fs::read(directory.path(DataFile::Focus).unwrap()).unwrap(),
+        files.focus
+    );
 }

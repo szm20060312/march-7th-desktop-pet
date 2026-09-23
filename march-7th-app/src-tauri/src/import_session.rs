@@ -297,6 +297,7 @@ mod tests {
     fn candidate() -> ImportFiles {
         ImportFiles {
             desktop: None,
+            focus: serde_json::to_vec(&crate::focus::model::Data::default()).unwrap(),
             characters: br#"{"version":1,"selectedCharacterId":"march-7th"}"#.to_vec(),
             reminders: br#"{"version":1,"settings":{"items":[{"id":"water","enabled":false,"intervalMinutes":60},{"id":"move","enabled":false,"intervalMinutes":60},{"id":"eyes","enabled":false,"intervalMinutes":30}],"activeHours":{"kind":"daily","start":540,"end":1320},"snoozeMinutes":10},"progress":[{"id":"water","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"move","nextDueAt":null,"pending":false,"autoHandled":false},{"id":"eyes","nextDueAt":null,"pending":false,"autoHandled":false}],"paused":false,"quiet":null,"snoozePending":false}"#.to_vec(),
         }
@@ -311,6 +312,7 @@ mod tests {
         fs::write(temp.backup(), package()).unwrap();
         let directory = acquire(Some(temp.0.clone())).unwrap();
         let mut session = ImportSession::default();
+        let old_path = directory.path(DataFile::Characters).unwrap();
         let ticket = session.begin_selection((7, 9)).unwrap();
         let selected = read_selected(&temp.backup()).unwrap();
         let shown = session
@@ -318,10 +320,7 @@ mod tests {
             .unwrap();
         assert_eq!(shown.ticket, ticket);
         assert_eq!(shown.preview.selected_character_id, "march-7th");
-        assert_eq!(
-            directory.path(DataFile::Characters).unwrap(),
-            temp.0.join("character-preferences.json")
-        );
+        assert_eq!(directory.path(DataFile::Characters).unwrap(), old_path);
         fs::write(temp.backup(), b"changed after preview").unwrap();
         let committed = session.confirm(ticket, (7, 9), &directory).unwrap();
         assert_eq!(committed.transaction_id.len(), 32);
@@ -330,10 +329,7 @@ mod tests {
             session.confirm(ticket, (7, 9), &directory).err(),
             Some("backupStale")
         );
-        assert_eq!(
-            directory.path(DataFile::Characters).unwrap(),
-            temp.0.join("character-preferences.json")
-        );
+        assert_eq!(directory.path(DataFile::Characters).unwrap(), old_path);
         drop(directory);
         let next = acquire(Some(temp.0.clone())).unwrap();
         assert_eq!(
@@ -415,7 +411,7 @@ mod tests {
             b"not json".to_vec(),
             {
                 let mut v: serde_json::Value = serde_json::from_slice(&package()).unwrap();
-                v["schemaVersion"] = 2.into();
+                v["schemaVersion"] = 3.into();
                 serde_json::to_vec(&v).unwrap()
             },
             {
@@ -443,22 +439,24 @@ mod tests {
     fn pending_or_failed_prepare_preserves_candidate_and_original_data() {
         let temp = Temp::new();
         let original = temp.0.join("character-preferences.json");
-        fs::write(&original, b"original").unwrap();
+        fs::write(&original, &candidate().characters).unwrap();
         let directory = acquire(Some(temp.0.clone())).unwrap();
         let mut session = ImportSession::default();
         let ticket = session.begin_selection((1, 1)).unwrap();
         session
             .finish_selection(ticket, (1, 1), backup_codec::decode(&package()))
             .unwrap();
+        fs::rename(temp.0.join("data-sets"), temp.0.join("held-sets")).unwrap();
         fs::write(temp.0.join("data-sets"), b"obstacle").unwrap();
         assert_eq!(
             session.confirm(ticket, (1, 1), &directory).err(),
             Some("dataSetsUnavailable")
         );
         assert_eq!(session.current_preview((1, 1)).unwrap().ticket, ticket);
-        assert_eq!(fs::read(&original).unwrap(), b"original");
+        assert_eq!(fs::read(&original).unwrap(), candidate().characters);
         assert!(!temp.0.join("pending-import.json").exists());
         fs::remove_file(temp.0.join("data-sets")).unwrap();
+        fs::rename(temp.0.join("held-sets"), temp.0.join("data-sets")).unwrap();
         assert!(session.confirm(ticket, (1, 1), &directory).is_ok());
         let existing_pending = fs::read(temp.0.join("pending-import.json")).unwrap();
         let next = session.begin_selection((1, 1)).unwrap();
@@ -469,7 +467,7 @@ mod tests {
             session.confirm(next, (1, 1), &directory).err(),
             Some("pendingImportExists")
         );
-        assert_eq!(fs::read(&original).unwrap(), b"original");
+        assert_eq!(fs::read(&original).unwrap(), candidate().characters);
         assert_eq!(
             fs::read(temp.0.join("pending-import.json")).unwrap(),
             existing_pending

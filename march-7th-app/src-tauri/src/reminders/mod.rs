@@ -21,3 +21,7 @@ pub fn setup<R: tauri::Runtime>(
 }
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn default_data_bytes() -> Result<Vec<u8>, &'static str> {
+    serde_json::to_vec(&model::Data::default()).map_err(|_| "dataSetInvalid")
+}
