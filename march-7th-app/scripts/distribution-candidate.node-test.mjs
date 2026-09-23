@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { prepareDistribution, verifyDistributionPacket, verifyCandidatePair } from "./distribution-candidate.mjs";
+import { assertMacExecutableMode, prepareDistribution, verifyDistributionPacket, verifyCandidatePair } from "./distribution-candidate.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const commit = "a".repeat(40);
@@ -36,6 +36,7 @@ function fixture(t, target) {
   writeFileSync(payloadPath, windows ? nativeBytes(target) : Buffer.from("fixture DMG bytes"));
   writeFileSync(builtExecutablePath, nativeBytes(target));
   writeFileSync(packagedExecutablePath, nativeBytes(target));
+  if (!windows) chmodSync(packagedExecutablePath, 0o755);
   const licenseInventoryPath = path.join(root, "licenses.json");
   writeFileSync(licenseInventoryPath, JSON.stringify({ schemaVersion: 1, sourceCommit: commit, target, npm: [], cargo: [] }));
   return {
@@ -46,6 +47,17 @@ function fixture(t, target) {
     buildInfo: { schemaVersion: 1, appVersion: "0.2.0", target, sourceCommit: commit, sourceState: "clean" },
   };
 }
+
+test("Mac program requires executable permission before a candidate is written", t => {
+  assert.throws(() => assertMacExecutableMode(0o100644), /not executable/);
+  assert.doesNotThrow(() => assertMacExecutableMode(0o100755));
+  if (process.platform === "darwin") {
+    const options = fixture(t, "aarch64-apple-darwin");
+    chmodSync(options.packagedExecutablePath, 0o644);
+    assert.throws(() => prepareDistribution(options), /not executable/);
+    assert.equal(existsSync(options.outputDirectory), false);
+  }
+});
 
 test("records full identity, size and hash for installer and its verified embedded program", t => {
   for (const target of ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]) {

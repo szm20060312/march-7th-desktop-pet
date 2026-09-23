@@ -36,6 +36,10 @@ function ensureInstallerFormat(bytes, target) {
   }
 }
 
+export function assertMacExecutableMode(mode) {
+  if ((mode & 0o111) === 0) throw new Error("Packaged macOS program is not executable");
+}
+
 export function prepareDistribution({ target, payloadPath, builtExecutablePath, packagedExecutablePath, packagedExecutableLocation,
   docsDirectory, licenseInventoryPath, outputDirectory, commit, version, runUrl, buildInfo, bundleIdentifier, bundleVersion }) {
   const spec = targets[target];
@@ -60,7 +64,7 @@ export function prepareDistribution({ target, payloadPath, builtExecutablePath, 
   ensureNativeProgram(builtProgram, target);
   ensureNativeProgram(packagedProgram, target);
   if (!builtProgram.equals(packagedProgram)) throw new Error("Packaged program differs from the probed build program");
-  if (target === "aarch64-apple-darwin" && process.platform === "darwin" && (statSync(packagedExecutablePath).mode & 0o111) === 0) throw new Error("Packaged macOS program is not executable");
+  if (target === "aarch64-apple-darwin" && process.platform === "darwin") assertMacExecutableMode(statSync(packagedExecutablePath).mode);
   const inventoryBytes = readFileSync(licenseInventoryPath);
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (inventory.schemaVersion !== 1 || inventory.sourceCommit !== commit || inventory.target !== target
