@@ -9,7 +9,9 @@ pub const MAX_DURATION_MS: u64 = 4 * 60 * 60_000;
 pub const MAX_TRUSTED_GAP_MS: u64 = 24 * 60 * 60_000;
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const MAX_UTC: i64 = 253_402_300_799_999;
-const MAX_CLOCK_DRIFT_MS: u64 = 5 * 60_000;
+// Allow sampling jitter, but treat a meaningful wall/monotonic split as
+// uncertain sleep or clock correction rather than silently extending a timer.
+const MAX_CLOCK_DRIFT_MS: u64 = 1_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Time {
@@ -235,6 +237,7 @@ impl Engine {
     /// publishing its own externally visible snapshot.
     pub fn step(&mut self, command: Command, now: Time) -> Result<Transition, Error> {
         now.validate()?;
+        self.data.validate()?;
         if let Command::Start { duration_ms } = command {
             if !(MIN_DURATION_MS..=MAX_DURATION_MS).contains(&duration_ms) {
                 return Err(Error::new("invalidDuration"));
@@ -301,7 +304,9 @@ impl Engine {
         self.data.session = Session::Running {
             duration_ms,
             remaining_ms: remaining_ms - elapsed,
-            anchor_utc_ms: now.utc_ms,
+            // Preserve any tolerated wall-clock skew across ticks. Rebasing to
+            // `now.utc_ms` would discard the gap and extend the session.
+            anchor_utc_ms: anchor_utc_ms + elapsed as i64,
         };
         self.monotonic_anchor_ms = Some(now.monotonic_ms);
         Ok(false)

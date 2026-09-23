@@ -240,6 +240,43 @@ fn clock_anomalies_interrupt_without_extending_time() {
 }
 
 #[test]
+fn short_sleep_does_not_discard_elapsed_wall_time_when_monotonic_stalls() {
+    let mut engine = started(120_000);
+    let result = engine.step(Command::Tick, time(1_180_000, 100)).unwrap();
+    assert!(!result.completed_now);
+    assert!(matches!(
+        engine.data.session,
+        Session::Interrupted {
+            remaining_ms: 120_000,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn small_clock_sample_jitter_does_not_accumulate_as_extra_session_time() {
+    let mut engine = started(120_000);
+    engine.step(Command::Tick, time(1_010_500, 10_100)).unwrap();
+    assert!(matches!(
+        engine.data.session,
+        Session::Running {
+            remaining_ms: 110_000,
+            anchor_utc_ms: 1_010_000,
+            ..
+        }
+    ));
+    engine.step(Command::Tick, time(1_020_500, 20_100)).unwrap();
+    assert!(matches!(
+        engine.data.session,
+        Session::Running {
+            remaining_ms: 100_000,
+            anchor_utc_ms: 1_020_000,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn recovery_uses_bounded_utc_and_never_replays_completion_event() {
     let data = started(120_000).data;
     let restored = Engine::restore(data.clone(), time(1_030_000, 5)).unwrap();
@@ -346,6 +383,25 @@ fn invalid_serialized_combinations_and_deadline_overflow_are_rejected() {
         },
     };
     assert_eq!(invalid.validate().unwrap_err().code, "invalidState");
+}
+
+#[test]
+fn invalid_existing_state_cannot_emit_completion_or_mutate_engine() {
+    let mut engine = started(MIN_DURATION_MS);
+    engine.data.session = Session::Running {
+        duration_ms: MIN_DURATION_MS,
+        remaining_ms: 0,
+        anchor_utc_ms: 1_000_000,
+    };
+    let before = engine.clone();
+    assert_eq!(
+        engine
+            .step(Command::Tick, time(1_000_000, 100))
+            .unwrap_err()
+            .code,
+        "invalidState"
+    );
+    assert_eq!(engine, before);
 }
 
 #[test]
