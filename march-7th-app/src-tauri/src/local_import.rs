@@ -72,21 +72,16 @@ pub async fn select_local_backup<R: Runtime>(
         .await
         .map_err(|_| ExportError::new("backupUnavailable"))?
         .map_err(|_| ExportError::new("backupUnavailable"))??;
-    let current = current_session_on_main(&app, &window).await?;
-    gate(&app)
+    let current = current_session_on_main(&app, &window).await.ok();
+    let selected = gate(&app)
         .lock()
         .unwrap()
-        .authorize_import(ticket, current)
+        .resolve_import_dialog(ticket, current, selected)
         .map_err(ExportError::new)?;
-    if selected.is_none() {
-        gate(&app)
-            .lock()
-            .unwrap()
-            .cancel_import()
-            .map_err(ExportError::new)?;
+    let Some(selected) = selected else {
         return Ok(None);
-    }
-    let decoded = match selected.unwrap().into_path() {
+    };
+    let decoded = match selected.into_path() {
         Ok(path) => tauri::async_runtime::spawn_blocking(move || read_selected(&path))
             .await
             .unwrap_or(Err("backupReadFailed")),
