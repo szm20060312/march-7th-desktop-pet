@@ -45,7 +45,6 @@
 - 复用已封存的 v2 图集，实现六帧待机和真实鼠标 16 方向跟随。
 - 建立 Windows x64 `GetCursorPos` 平台实现和 macOS/Windows CI 矩阵。
 - 前端方向映射 7 项测试、Rust 单元测试、Clippy 和 Apple Silicon Release 构建通过。
-- 明确不支持 macOS Intel。
 
 ### 尚未实现
 

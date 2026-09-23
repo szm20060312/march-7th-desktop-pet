@@ -18,8 +18,10 @@ March 7th 是从现有 Codex v2 桌宠迁移而来的独立 Tauri 2 桌面应用
 - Windows 10/11 x64 单显示器实机基线已通过（100%、150%、200% DPI）
 - 拖动期间暂停注视追踪，修复眼神在方向帧之间抖动的问题
 - 根据窗口实际移动方向播放向左或向右奔跑动画
+- macOS 状态栏显示 March 7th 图标，并提供显示、隐藏和退出菜单
+- macOS 状态栏提供“切换到当前桌面”，通过隐藏后重新显示解决 Spaces 切换后的窗口跟随问题
 
-尚未实现：点击穿透、托盘菜单、自动启动、设置界面、位置持久化和安装包签名。
+尚未实现：Windows 托盘菜单、点击穿透、自动启动、设置界面、位置持久化和安装包签名。
 
 阶段验收记录见 [v0.2.0 阶段文档](../docs/development/app/STAGE-0.2.0.md)。
 
@@ -47,8 +49,6 @@ pnpm tauri dev
 
 - macOS Apple Silicon：`aarch64-apple-darwin`
 - Windows 10/11 x64：`x86_64-pc-windows-msvc`
-
-不支持 macOS Intel。
 
 ## 项目边界
 

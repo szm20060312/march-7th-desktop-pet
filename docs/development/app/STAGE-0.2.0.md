@@ -77,7 +77,6 @@ Rust 采样命令现在一次返回：
 ### macOS
 
 - 仅支持 Apple Silicon (`aarch64-apple-darwin`)
-- 不支持 macOS Intel
 - 当前构建为未签名开发版本
 
 ### Windows
