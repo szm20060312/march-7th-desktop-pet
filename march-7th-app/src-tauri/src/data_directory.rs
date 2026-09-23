@@ -38,6 +38,7 @@ impl DataFile {
 
 /// An internal, already parsed candidate. B3 will own the external backup
 /// format; this type deliberately cannot carry a source path or file names.
+#[derive(Clone)]
 pub struct ImportFiles {
     pub desktop: Option<Vec<u8>>,
     pub characters: Vec<u8>,
