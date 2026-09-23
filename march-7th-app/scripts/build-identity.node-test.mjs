@@ -90,6 +90,31 @@ test("real Cargo cache follows source changes, new files, Git index, HEAD and wo
   assert.equal(build(linkedApp, linkedTarget).commit, git(worktree, "rev-parse", "HEAD"), "new loose ref after packing must invalidate Cargo");
 });
 
+test("real Cargo target and ignored directory siblings stay outside input scopes after resampling", t => {
+  const root = fixture(t); const directory = app(root);
+  for (const scope of ["public", "src-tauri/icons", "src-tauri/capabilities"]) {
+    mkdirSync(path.join(directory, scope), { recursive: true });
+    writeFileSync(path.join(directory, scope, "fixture.txt"), "input\n");
+  }
+  exec("cargo", ["generate-lockfile", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory); initialize(root);
+  assert.equal(build(directory, path.join(root, "target")).state, "clean");
+  // Cargo now creates its real cache beside src, exactly as the native CI does.
+  const nativeTarget = path.join(directory, "src-tauri/target");
+  assert.equal(build(directory, nativeTarget).state, "clean");
+  for (const sibling of ["public-cache/target", "src-tauri/src-cache/target", "src-tauri/icons-cache/target", "src-tauri/capabilities-cache/target"]) {
+    mkdirSync(path.join(directory, sibling), { recursive: true });
+    writeFileSync(path.join(directory, sibling, "generated.txt"), "ignored output\n");
+  }
+  git(root, "commit", "--allow-empty", "-qm", "force identity resampling");
+  const resampled = build(directory, nativeTarget);
+  assert.equal(resampled.state, "clean");
+  assert.equal(resampled.commit, git(root, "rev-parse", "HEAD"));
+  writeFileSync(path.join(directory, "src/ignored.ts"), "// genuine ignored application input\n");
+  assert.equal(build(directory, nativeTarget).state, "modified");
+  rmSync(path.join(directory, "src/ignored.ts"));
+  assert.equal(build(directory, nativeTarget).state, "clean");
+});
+
 test("exports, unrelated parent repositories and unavailable Git never invent provenance", t => {
   const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
   let result = build(directory, target);
@@ -186,16 +211,22 @@ test("opt-in source diagnostics report only bounded fixed scopes and categories 
   assert.equal(disabledAgain.identity, disabled.identity);
   assert.deepEqual(disabledAgain.diagnostics, []);
   assert.deepEqual(disabledAgain.ignored, []);
+  const classifiedFailure = "ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=metadata";
+  writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), `console.log(${JSON.stringify(classifiedFailure)});`);
+  const knownFailure = run("1");
+  assert.equal(knownFailure.identity, disabled.identity);
+  assert.equal(knownFailure.ignored.length, 1);
+  assert.ok(knownFailure.ignored[0].endsWith(classifiedFailure));
   writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), 'console.log("PRIVATE-NAME /private/path raw-config");');
   const unsafeChild = run("1");
   assert.equal(unsafeChild.identity, disabled.identity);
   assert.equal(unsafeChild.ignored.length, 1);
-  assert.ok(unsafeChild.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
-  for (const script of ['console.log("PRIVATE".repeat(1000));', 'console.log("ignored-input phase=identity-sample\\nstate=ok total=zero groups=none overflow=no");', 'setInterval(() => {}, 60000);']) {
+  assert.ok(unsafeChild.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=helper"));
+  for (const script of ['console.log("PRIVATE".repeat(1000));', 'console.log("ignored-input phase=identity-sample\\nstate=ok total=zero groups=none overflow=no");', 'console.log("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=PRIVATE");', 'setInterval(() => {}, 60000);']) {
     writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), script);
     const bounded = run("1");
     assert.equal(bounded.identity, disabled.identity);
     assert.equal(bounded.ignored.length, 1);
-    assert.ok(bounded.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
+    assert.ok(bounded.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=helper"));
   }
 });
