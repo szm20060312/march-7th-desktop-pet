@@ -16,6 +16,10 @@ pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+pub(crate) fn imported_selected_id(bytes: &[u8]) -> Result<String, String> {
+    validate_import(bytes)?;
+    Ok(parse(bytes)?.selected_character_id)
+}
 pub(crate) fn validate_stored(bytes: &[u8]) -> Result<(), String> {
     parse(bytes).map(|_| ())
 }
