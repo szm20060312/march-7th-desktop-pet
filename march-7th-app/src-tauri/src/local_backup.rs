@@ -613,6 +613,90 @@ mod tests {
         gate.complete(second);
         assert!(gate.active.is_none());
     }
+    fn shown_settings() -> reminders::SettingsUi {
+        let mut ui = reminders::SettingsUi::default();
+        let token = ui.request_open(false, false).unwrap();
+        assert!(ui.created(token));
+        assert!(ui.presented(ui.intent));
+        ui
+    }
+    fn preview_in_settings(gate: &mut LocalDataGate, ui: &reminders::SettingsUi) -> u64 {
+        let session = ui.export_session(false).unwrap();
+        let ticket = gate.begin_import(session, mpsc::channel().0).unwrap();
+        gate.import_dialog_returned(ticket);
+        gate.authorize_import(ticket, session).unwrap();
+        let files = crate::data_directory::ImportFiles {
+            desktop: None,
+            characters: br#"{"version":1,"selectedCharacterId":"march-7th"}"#.to_vec(),
+            reminders: reminders::default_data_bytes().unwrap(),
+            focus: serde_json::to_vec(&crate::focus::model::Data::default()).unwrap(),
+        };
+        let bytes = backup_codec::encode(files, 100).unwrap();
+        gate.finish_import(ticket, session, backup_codec::decode(&bytes))
+            .unwrap();
+        ticket
+    }
+    #[test]
+    fn visible_settings_location_preserves_real_preview_confirmation_session() {
+        for settled in [false, true] {
+            let mut ui = shown_settings();
+            let mut gate = LocalDataGate::default();
+            let ticket = preview_in_settings(&mut gate, &ui);
+            let session = ui.export_session(false).unwrap();
+            ui.request_open(true, true);
+            if settled {
+                assert!(ui.presented(ui.intent));
+            }
+            let current = ui.export_session(false).unwrap();
+            assert_eq!(current, session);
+            assert!(gate.begin_import_prepare(ticket, current).is_ok());
+        }
+    }
+    #[test]
+    fn visible_settings_location_keeps_inflight_picker_authorized_before_settle() {
+        let mut ui = shown_settings();
+        let mut gate = LocalDataGate::default();
+        let session = ui.export_session(false).unwrap();
+        let ticket = gate.begin_import(session, mpsc::channel().0).unwrap();
+        ui.request_open(true, true);
+        gate.import_dialog_returned(ticket);
+        assert_eq!(
+            gate.resolve_import_dialog(ticket, ui.export_session(false), Some(())),
+            Ok(Some(()))
+        );
+        let mut export = LocalDataGate::default();
+        let ticket = export.begin(session, mpsc::channel().0).unwrap();
+        ui.request_open(true, true);
+        export.export_dialog_returned(ticket);
+        assert_eq!(
+            export.authorize(ticket, ui.export_session(false).unwrap()),
+            Ok(())
+        );
+    }
+    #[test]
+    fn hidden_settings_reopen_rejects_real_previous_preview_and_picker() {
+        let mut ui = shown_settings();
+        let mut gate = LocalDataGate::default();
+        let ticket = preview_in_settings(&mut gate, &ui);
+        let session = ui.export_session(false).unwrap();
+        ui.close();
+        ui.request_open(true, false);
+        assert!(ui.presented(ui.intent));
+        let current = ui.export_session(false).unwrap();
+        assert_ne!(current, session);
+        // Even without the explicit native invalidate, the gate rejects old identity.
+        assert_eq!(
+            gate.begin_import_prepare(ticket, current).err(),
+            Some("backupStale")
+        );
+        let mut picker = LocalDataGate::default();
+        let ticket = picker.begin_import(session, mpsc::channel().0).unwrap();
+        picker.import_dialog_returned(ticket);
+        assert_eq!(
+            picker.resolve_import_dialog(ticket, Some(current), Some(())),
+            Err("backupStale")
+        );
+    }
     #[test]
     fn one_gate_serializes_export_and_import_dialogs_and_rejects_late_selection() {
         let mut gate = LocalDataGate::default();

@@ -22,6 +22,8 @@ export function createReminderSettingsController(ports: {
   render(state: SettingsViewState): void;
   command(command: ReminderCommand): Promise<ReminderSnapshot | undefined>;
   close(): Promise<void> | void;
+  // Cleanup after native hide succeeds, only while its originating session lives.
+  closed?(): void;
 }) {
   let snapshot: ReminderSnapshot | null = null; let draft: ReminderSettings | null = null;
   let dirty = false; let saving = false; let pauseBusy = false; let notice = ""; let disposed = false; let session = 0;
@@ -66,7 +68,15 @@ export function createReminderSettingsController(ports: {
       finally { if (!disposed && token === session) { pauseBusy = false; render(); } }
     },
     reopen(latest?: ReminderSnapshot) { if (disposed) return; if (latest) receive(latest); reset(); },
-    async close() { if (disposed) return; try { await ports.close(); if (!disposed) reset(); } catch { if (!disposed) { notice = "无法关闭窗口，请重试。"; render(); } } },
+    async close() {
+      if (disposed) return;
+      const token = session;
+      try {
+        await ports.close();
+        if (disposed || token !== session) return;
+        ports.closed?.(); reset();
+      } catch { if (!disposed && token === session) { notice = "无法关闭窗口，请重试。"; render(); } }
+    },
     error(message: string) { if (!disposed) { notice = message; render(); } },
     dispose() { disposed = true; session++; },
   };

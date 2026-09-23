@@ -9,6 +9,7 @@ export interface ReminderTransport {
 }
 const nativeTransport: ReminderTransport = { invoke, listen: (name, callback) => listen<unknown>(name, event => callback(event.payload)) };
 export type ReminderConnectionError = { stage: "listen" | "snapshot" | "event" | "command"; recovery: "restart" | "retry"; cause: unknown };
+// The wire generation orders presentation intents, independently of native backup tickets.
 export type SettingsOpenIntent = { generation: number; target: "focus" | "settings"; alreadyVisible: boolean };
 export function parseSettingsOpenIntent(value: unknown): SettingsOpenIntent {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw Error("Invalid settings open event");

@@ -13,6 +13,8 @@ pub(crate) mod ui;
 mod ui_geometry;
 mod ui_policy;
 pub use native::stop;
+#[cfg(test)]
+pub(crate) use ui_policy::SettingsUi;
 pub fn setup<R: tauri::Runtime>(
     app: &mut tauri::App<R>,
 ) -> Result<tauri::menu::Submenu<R>, Box<dyn std::error::Error>> {

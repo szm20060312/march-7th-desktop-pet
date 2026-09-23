@@ -105,6 +105,23 @@ describe("local backup entry stays separate from reminder drafts", () => {
     expect(dom.get("backup-preview").hidden).toBe(false);
     expect(dom.get("confirm-import").disabled).toBe(false);
   });
+  it.each([false, true])("preserves the reopened draft, preview and focus after old hide completes (reject=%s)", async reject => {
+    let finish!: () => void; let fail!: (reason: unknown) => void;
+    const focus = { snapshot: { revision: 1, data: { version: 1, session: { status: "idle" } }, error: null, stopped: false }, completedNow: false, error: null };
+    native.invoke.mockImplementation(name => name === "hide_reminder_settings" ? new Promise<void>((yes, no) => { finish = yes; fail = no; }) : name === "select_local_backup" ? Promise.resolve(preview) : name === "get_focus" ? Promise.resolve(focus) : name === "focus_command" ? Promise.resolve({ ...focus.snapshot, revision: 2, data: { version: 1, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } } }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); edit(37);
+    dom.get("close-settings").dispatch("click"); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 2, target: "focus", alreadyVisible: false } }); await flush();
+    edit(47); dom.get("import-backup").dispatch("click"); await flush();
+    if (reject) fail({ code: "hideFailed" }); else finish();
+    await flush();
+    expect(dom.get("snooze-minutes").value).toBe("47");
+    expect(dom.get("settings-notice").textContent).toBe("");
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    expect(dom.get("confirm-import").disabled).toBe(false);
+    dom.get("focus-start").dispatch("click"); await flush();
+    expect(dom.get("focus-state").textContent).toBe("专注进行中");
+  });
   it("previews limited coverage, confirms only on explicit action, and preserves reminder draft", async () => {
     native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "confirm_local_backup" ? Promise.resolve({ transactionId: "abc", restartRequired: true }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); edit(37);

@@ -9,6 +9,17 @@ function setup() {
   return { c, command, close, state: () => state };
 }
 describe("reminder settings draft", () => {
+  it.each([false, true])("ignores old close completion after reopen (reject=%s)", async reject => {
+    const h = setup(); let finish!: () => void; let fail!: (reason: Error) => void;
+    h.close.mockReturnValue(new Promise<void>((yes, no) => { finish = yes; fail = no; }));
+    const closing = h.c.close(); h.c.reopen();
+    const draft = fresh().settings; draft.snoozeMinutes = 47; h.c.edit(draft);
+    if (reject) fail(Error("old hide")); else finish();
+    await closing;
+    expect(h.state().draft?.snoozeMinutes).toBe(47);
+    expect(h.state().dirty).toBe(true);
+    expect(h.state().notice).toBe("");
+  });
   it("preserves edited fields across snapshots and immediate pause commands", async () => {
     const h = setup(); const draft = h.state().draft!; draft.items[0].enabled = true; draft.snoozeMinutes = 20; h.c.edit(draft);
     const incoming = fresh(5); incoming.paused = true; h.c.receive(incoming); h.c.receive(fresh(3));

@@ -104,12 +104,13 @@ fn running<R: Runtime>(ui: &Ui<R>) -> bool {
 }
 
 fn settings_open_payload(
-    generation: u64,
+    intent: u64,
     focus_target: bool,
     already_visible: bool,
 ) -> serde_json::Value {
+    // Keep the wire field name; its value orders UI intents, never backup sessions.
     serde_json::json!({
-        "generation": generation,
+        "generation": intent,
         "target": if focus_target { "focus" } else { "settings" },
         "alreadyVisible": already_visible,
     })
@@ -190,7 +191,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
                 s.settings_was_visible = already_visible;
                 s.settings_settle = None;
                 s.settings_attempts = 0;
-                s.settings.request_open(exists)
+                s.settings.request_open(exists, already_visible)
             };
             if let Some(token) = token {
                 create_window(app, "settings", token);
@@ -490,7 +491,7 @@ pub fn reconcile<R: Runtime>(app: &AppHandle<R>) {
                 Ok(false) => {
                     let mut s = ui.state.lock().unwrap();
                     s.settings_reflow = true;
-                    s.settings.generation += 1;
+                    s.settings.intent += 1;
                     s.settings_attempts = 0;
                     s.settings_settle = None;
                 }
@@ -725,7 +726,7 @@ fn settle_settings<R: Runtime>(
     window: &WebviewWindow<R>,
 ) -> Result<(), String> {
     let ui = app.state::<Ui<R>>();
-    let generation = ui.state.lock().unwrap().settings.generation;
+    let intent = ui.state.lock().unwrap().settings.intent;
     {
         let mut s = ui.state.lock().unwrap();
         s.settings_attempts += 1;
@@ -735,17 +736,16 @@ fn settle_settings<R: Runtime>(
     }
     let (observation, desired) = placement(app, window, true)?;
     let settled = apply_placement(window, &observation, &desired)?;
-    let candidate = (generation, observation, desired);
+    let candidate = (intent, observation, desired);
     let stable = {
         let mut s = ui.state.lock().unwrap();
         let stable = settled && s.settings_settle.as_ref() == Some(&candidate);
         s.settings_settle = Some(candidate);
         stable
-            && (s.settings.may_show(generation)
-                || (s.settings_reflow && s.settings.generation == generation))
+            && (s.settings.may_show(intent) || (s.settings_reflow && s.settings.intent == intent))
     };
     if stable && running(&ui) {
-        if ui.state.lock().unwrap().settings.may_show(generation) {
+        if ui.state.lock().unwrap().settings.may_show(intent) {
             // The only focus call belongs to an explicit tray open, never reflow.
             let (focus_target, already_visible) = {
                 let state = ui.state.lock().unwrap();
@@ -754,14 +754,14 @@ fn settle_settings<R: Runtime>(
             window
                 .emit(
                     "reminder-settings-opened",
-                    settings_open_payload(generation, focus_target, already_visible),
+                    settings_open_payload(intent, focus_target, already_visible),
                 )
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
         }
         let mut state = ui.state.lock().unwrap();
-        if state.settings.presented(generation) {
+        if state.settings.presented(intent) {
             state.settings_reflow = false;
         }
     }
