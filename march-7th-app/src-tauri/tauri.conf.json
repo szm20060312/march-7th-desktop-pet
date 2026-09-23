@@ -69,6 +69,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    },
     "macOS": {
       "minimumSystemVersion": "13.0"
     },

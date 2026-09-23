@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "test:packaging": "node --test scripts/prepare-regression.node-test.mjs",
+    "test:packaging": "node --test scripts/prepare-regression.node-test.mjs scripts/distribution-candidate.node-test.mjs scripts/dependency-licenses.node-test.mjs",
     "test:directory": "node --test scripts/data-directory.node-test.mjs",
     "check": "pnpm check:architecture && pnpm test && pnpm test:packaging && pnpm build",
     "preview": "vite preview",

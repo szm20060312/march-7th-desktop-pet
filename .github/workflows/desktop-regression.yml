@@ -8,6 +8,8 @@ on:
       - '.github/workflows/desktop-regression.yml'
       - 'march-7th-app/**'
       - 'docs/development/app/regression/**'
+      - 'docs/development/app/distribution-candidate/**'
+      - 'docs/development/app/DISTRIBUTION-READINESS.md'
   workflow_dispatch:
 
 permissions:
@@ -90,16 +92,16 @@ jobs:
         env:
           MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
         run: node scripts/diagnose-frontend-ignore.mjs after-identity-fixture
-      - name: Build Windows executable
+      - name: Build Windows executable and unsigned NSIS candidate
         if: runner.os == 'Windows'
         env:
           MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
-        run: pnpm tauri build --ci --target x86_64-pc-windows-msvc --no-bundle -- --locked
-      - name: Build macOS app
+        run: pnpm tauri build --ci --no-sign --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+      - name: Build macOS app and unsigned DMG candidate
         if: runner.os == 'macOS'
         env:
           MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
-        run: pnpm tauri build --ci --target aarch64-apple-darwin --bundles app -- --locked
+        run: pnpm tauri build --ci --no-sign --target aarch64-apple-darwin --bundles app,dmg -- --locked
       - name: Preserve macOS bundle permissions in a zip
         if: runner.os == 'macOS'
         shell: bash
@@ -126,3 +128,49 @@ jobs:
           path: regression-output/
           if-no-files-found: error
           retention-days: 30
+      - name: Collect native dependency license metadata
+        run: |
+          pnpm licenses list --json > ../npm-licenses.json
+          cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > ../cargo-metadata.json
+          node scripts/dependency-licenses.mjs ${{ matrix.target }} ../npm-licenses.json ../cargo-metadata.json ../dependency-license-inventory.json
+      - name: Prepare unsigned Windows installer candidate
+        if: runner.os == 'Windows'
+        run: node scripts/distribution-candidate.mjs prepare x86_64-pc-windows-msvc src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis src-tauri/target/x86_64-pc-windows-msvc/release/march-7th-app.exe ../dependency-license-inventory.json ../distribution-output
+      - name: Prepare unsigned macOS DMG candidate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/March 7th.app"
+          executable_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")
+          executable="$bundle/Contents/MacOS/$executable_name"
+          test -f "$executable" && test -x "$executable"
+          node scripts/distribution-candidate.mjs prepare aarch64-apple-darwin src-tauri/target/aarch64-apple-darwin/release/bundle/dmg "$executable" ../dependency-license-inventory.json ../distribution-output
+      - name: Verify and upload installer candidate
+        run: node scripts/distribution-candidate.mjs verify-one ../distribution-output
+      - uses: actions/upload-artifact@v7
+        with:
+          name: march-7th-unsigned-candidate-${{ matrix.platform }}-${{ github.sha }}
+          path: distribution-output/
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-candidate-pair:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: march-7th-unsigned-candidate-windows-x64-${{ github.sha }}
+          path: distribution-windows
+      - uses: actions/download-artifact@v8
+        with:
+          name: march-7th-unsigned-candidate-macos-arm64-${{ github.sha }}
+          path: distribution-mac
+      - name: Verify both candidates came from one full commit
+        run: node march-7th-app/scripts/distribution-candidate.mjs verify-pair distribution-windows distribution-mac ${{ github.sha }}
