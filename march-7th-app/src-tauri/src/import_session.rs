@@ -1,7 +1,9 @@
 //! Frozen, one-use import previews for the settings window.
+#[cfg(test)]
+use crate::data_directory::DataDirectory;
 use crate::data_directory::{
     backup_codec::{self, DecodedBackup, Preview},
-    DataDirectory, ImportFiles,
+    ImportFiles,
 };
 use serde::Serialize;
 use std::{
@@ -35,6 +37,12 @@ enum Selection {
         files: ImportFiles,
         preview: Box<Preview>,
     },
+    Preparing {
+        session: (u64, u64),
+        ticket: u64,
+        files: ImportFiles,
+        preview: Box<Preview>,
+    },
 }
 
 #[derive(Default)]
@@ -46,8 +54,15 @@ pub(crate) struct ImportSession {
 impl ImportSession {
     /// A new selection immediately invalidates the prior preview and any late callback.
     pub fn begin_selection(&mut self, session: (u64, u64)) -> Result<u64, &'static str> {
+        if matches!(self.selection, Some(Selection::Preparing { .. })) {
+            return Err("backupBusy");
+        }
         self.selection = None;
-        self.next = self.next.checked_add(1).ok_or("backupUnavailable")?;
+        self.next = self
+            .next
+            .checked_add(1)
+            .filter(|id| *id < (1_u64 << 53))
+            .ok_or("backupUnavailable")?;
         self.selection = Some(Selection::Loading {
             session,
             ticket: self.next,
@@ -95,12 +110,11 @@ impl ImportSession {
         Ok(response)
     }
 
-    pub fn confirm(
+    pub fn begin_confirmation(
         &mut self,
         ticket: u64,
         current: (u64, u64),
-        directory: &DataDirectory,
-    ) -> Result<ImportConfirmation, &'static str> {
+    ) -> Result<ImportFiles, &'static str> {
         let Some(Selection::Ready {
             session,
             ticket: active,
@@ -117,14 +131,74 @@ impl ImportSession {
             self.selection = None;
             return Err("backupStale");
         }
-        // B2 consumes its argument. Keep the verified candidate until a successful
-        // pending transaction so a failed write can be retried without file I/O.
-        let transaction_id = directory.prepare_import(files.clone())?;
-        self.selection = None;
-        Ok(ImportConfirmation {
-            transaction_id,
-            restart_required: true,
-        })
+        let candidate = files.clone();
+        let Some(Selection::Ready {
+            session,
+            ticket,
+            files,
+            preview,
+        }) = self.selection.take()
+        else {
+            unreachable!()
+        };
+        self.selection = Some(Selection::Preparing {
+            session,
+            ticket,
+            files,
+            preview,
+        });
+        Ok(candidate)
+    }
+
+    pub fn finish_confirmation(
+        &mut self,
+        ticket: u64,
+        result: Result<String, &'static str>,
+    ) -> Result<ImportConfirmation, &'static str> {
+        let Some(Selection::Preparing { ticket: active, .. }) = self.selection.as_ref() else {
+            return Err("backupStale");
+        };
+        if *active != ticket {
+            return Err("backupStale");
+        }
+        match result {
+            Ok(transaction_id) => {
+                self.selection = None;
+                Ok(ImportConfirmation {
+                    transaction_id,
+                    restart_required: true,
+                })
+            }
+            Err(code) => {
+                let Some(Selection::Preparing {
+                    session,
+                    ticket,
+                    files,
+                    preview,
+                }) = self.selection.take()
+                else {
+                    unreachable!()
+                };
+                self.selection = Some(Selection::Ready {
+                    session,
+                    ticket,
+                    files,
+                    preview,
+                });
+                Err(code)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn confirm(
+        &mut self,
+        ticket: u64,
+        current: (u64, u64),
+        directory: &DataDirectory,
+    ) -> Result<ImportConfirmation, &'static str> {
+        let files = self.begin_confirmation(ticket, current)?;
+        self.finish_confirmation(ticket, directory.prepare_import(files))
     }
 
     pub fn cancel(&mut self) {

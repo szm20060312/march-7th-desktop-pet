@@ -96,7 +96,7 @@ fn running<R: Runtime>(ui: &Ui<R>) -> bool {
 }
 
 pub fn stop<R: Runtime>(app: &AppHandle<R>) {
-    crate::local_backup::invalidate(app);
+    crate::local_backup::invalidate_destroyed(app);
     let Some(ui) = app.try_state::<Ui<R>>() else {
         return;
     };
@@ -375,7 +375,7 @@ fn created<R: Runtime>(
                                 );
                             }
                         } else if s.settings.destroyed(token) {
-                            crate::local_backup::invalidate(&app);
+                            crate::local_backup::invalidate_destroyed(&app);
                             s.settings_settle = None;
                         }
                     });
