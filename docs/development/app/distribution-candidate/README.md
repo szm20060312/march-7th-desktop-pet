@@ -8,7 +8,7 @@
 2. 各自解压到新目录。记录 `BUILD-INFO.json` 的 `sourceCommit`、`target`、`buildRunUrl`、安装包及包内程序的 `bytes`/`sha256`。`SHA256SUMS.txt` 校验下载后的文件；来源仍需对照 Actions 运行。
 3. 在有 Node.js 的检查机运行 `node march-7th-app/scripts/distribution-candidate.mjs verify-pair <Windows包目录> <Mac包目录> <完整提交>`；脚本复算包文件、文档与依赖清单的哈希，并拒绝不同提交或版本。没有 Node.js 时，可用 `Get-FileHash -Algorithm SHA256`（Windows）或 `shasum -a 256 -c SHA256SUMS.txt`（Mac）逐项核对。
 
-生成脚本在原生构建机中读取实际程序的 `--build-info`，将它与完整提交、版本、target 对照；还从 NSIS 解包或只读挂载 DMG，核对包内程序与本次构建程序逐字节相同。Windows 核对 x64 PE，Mac 核对 arm64 Mach-O、可执行权限与 `.app` 标识。`BUILD-INFO.json` 记录这些构建时检查的结果；下载后哈希验证本身不重新执行包内检查。`DEPENDENCY-LICENSES.json` 是该原生运行器装入的 npm 依赖及 Cargo 解析图的版本和许可证表达式清单，不能替代许可证义务审核。
+生成脚本在原生构建机中读取实际程序的 `--build-info`，将它与完整提交、版本、target 对照；还从 NSIS 解包或只读挂载 DMG，核对包内程序与本次构建程序。Mac 程序须逐字节相同；Windows NSIS 打包只允许 Tauri 将唯一类型标记 `__TAURI_BUNDLE_TYPE_VAR_UNK` 改为 `__TAURI_BUNDLE_TYPE_VAR_NSS`，其余字节及长度必须一致。Windows 核对 x64 PE，Mac 核对 arm64 Mach-O、可执行权限与 `.app` 标识。`BUILD-INFO.json` 记录实际包内程序的哈希及构建时检查结果；下载后哈希验证本身不重新执行包内检查。`DEPENDENCY-LICENSES.json` 是该原生运行器装入的 npm 依赖及 Cargo 解析图的版本和许可证表达式清单，不能替代许可证义务审核。
 
 ## 安装边界
 

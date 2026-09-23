@@ -1,5 +1,7 @@
 # G4 双角色与互动边界
 
+本页记录角色实现与原阶段验证。后续集成候选 `4cb11dd` 的 Windows/macOS CI 与原生包核对已通过；两平台点击、切换、动作和短句的实机及所有者最终验收仍未完成，M2 未关闭。见 [当前验证记录](ARCHITECTURE-VALIDATION.md)。
+
 ## 当前已实现
 
 - `src/characters/catalog.json` 是两角色唯一的编译期数据源，信封结构为 `{ defaultId, characters }`。三月七使用稳定 ID `march-7th`，雷电将军使用稳定 ID `raiden-shogun`；`march-7th.ts` 只保留兼容导出，不复制配置。

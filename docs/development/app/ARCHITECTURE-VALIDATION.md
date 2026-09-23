@@ -56,5 +56,6 @@ node scripts/check-architecture.mjs
 ## 2026-09-23 后续候选证据（不回填历史验收）
 
 - G7 导入界面提交 `4963d2c5c80c1b4444ca412b0c2192d4082f3143` 的普通 CI 和 [双平台原生构建运行 35821477338](https://github.com/szm20060312/march-7th-desktop-pet/actions/runs/35821477338) 均成功；这只是该旧开发栈提交的自动证据，不代表主线集成后的 Mac Spaces、原生文件框或真实回读已通过。
-- 当前本地 M5 技术候选的源码基线 `a1b301f`：前端 199 项、Rust 214 单元＋28 集成、打包脚本 22 项与目录锁 2 项，以及类型、架构、Vite、fmt、严格 Clippy 通过。当前文档补充会产生新的最终提交，必须重新核对该提交的构建身份；上述数量不冒充最终提交的原生 CI。
-- 用户尚未测试 03af006 旧包。最终候选应生成同一新提交的 Windows/Mac 包后集中验收，旧包、浏览器 QA、源代码审查和 CI 不能代填两平台的透明、交互、窗口找回、睡眠、导入/升级及长期运行观察。M0/M1/M4/M5 的产品门槛仍开放，详情见 [M5 技术候选](M5-TECHNICAL-CANDIDATE.md)。
+- 此前本地 M5 功能源码基线 `a1b301f`：前端 199 项、Rust 214 单元＋28 集成、当时打包脚本 22 项与目录锁 2 项，以及类型、架构、Vite、fmt、严格 Clippy 通过。此处是历史本地结果，不冒充后续提交的原生 CI。
+- [草稿 PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27) 的功能提交 `4cb11dd29cfa152571a743833ba7a09ea9e939b4`：[应用 CI](https://github.com/szm20060312/march-7th-desktop-pet/actions/runs/35852834996) 和[原生回归/候选构建 CI](https://github.com/szm20060312/march-7th-desktop-pet/actions/runs/35852829974) 均在 Windows/macOS 成功，后者的两平台候选配对也成功。已下载四份产物并核对提交身份、文件哈希、Windows PE x64、Mac Mach-O ARM64 与执行权限。该 PR 仍未合入 `main`；后续文档提交的构建结果要按其自己的完整 SHA 再核对。
+- 用户尚未实测旧 `03af006` 包；当前应对 `4cb11dd` 同提交包集中验收。旧包、浏览器 QA、源代码审查和 CI 不能代填两平台的透明、交互、窗口找回、睡眠、导入/升级及长期运行观察。M0/M1/M2/M3/M4/M5 的产品门槛仍开放，详情见 [M5 技术候选](M5-TECHNICAL-CANDIDATE.md)。

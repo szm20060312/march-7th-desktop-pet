@@ -73,7 +73,7 @@ flowchart TD
 
 Rust `desktop/` 负责托盘、交互/穿透模式和位置；`coordinates.rs` 统一 macOS 源/目标缩放边界并保留 Windows 全局物理坐标，`geometry.rs` 做单个目标工作区内的纯坐标计算，`state.rs` 管理生命周期及500 ms单待保存值，`store.rs` 是版本化配置的唯一写入者，`mod.rs` 连接原生效果与单个后台工作线程。配置只保存工作区相对逻辑位置；模式/隐藏状态不持久化。正常退出先异步保存，UI 不等待后台；2秒原生拓扑检查与DPI回调负责恢复可达性。所有原生调用均在释放状态锁后执行。
 
-配置损坏或未来版本当次运行只读；保存通过同目录临时文件、有效旧配置备份与原子替换，失败不报告成功。前端不读取或写入配置，也不承担桌面恢复定时器。详见 [G2-PLACEMENT.md](G2-PLACEMENT.md)。G1 已有双平台自动证据；本轮 G2 的本地 Windows 自动检查不能替代当前提交的双平台 CI、独立审查和 GUI 验收。
+配置损坏或未来版本当次运行只读；保存通过同目录临时文件、有效旧配置备份与原子替换，失败不报告成功。前端不读取或写入配置，也不承担桌面恢复定时器。详见 [G2-PLACEMENT.md](G2-PLACEMENT.md)。G2 原阶段的本地 Windows 自动检查已由集成候选 `4cb11dd` 的双平台 CI 补充；独立审查范围及 GUI 验收仍须另行记录。
 
 ## 后续模块设计与待接入边界
 
@@ -91,7 +91,7 @@ Rust `desktop/` 负责托盘、交互/穿透模式和位置；`coordinates.rs` �
 
 `native.rs` 以 chrono Local/进程 Instant 注入时间，提供 get_reminders 和固定联合 reminder_command，发送 reminders-changed 与一次性 reminder-response。main 仅订阅一次回应事件并路由至当前角色呈现控制器；未初始化、已销毁时不排队，get/快照/命令回复不触发角色动作。lib 显式组合角色、提醒服务/界面、desktop setup 与退出，仍只有一个 app_context。退出不在 UI join，取消未执行队列；已开始写允许完成但不发布迟到状态/事件。此前前端 reminder-service 计时设想已替代，不能再建第二个业务计时器。
 
-初始三项全关。Vite 现在实际构建 `settings.html` 与 `reminder.html`；设置使用独立草稿，回复和最新快照都确认匹配且无 runtimeError 才报告保存成功；unsaved 明确区分本次已应用与未落盘。后台更新不覆盖未提交字段。提醒仅呈现当前 presentation，完成行留在本批次原位置，新条目追加，新 ID 重建。原生按需窗口、托盘、最小事件权限与 ready 命令已接通；autoHandled、ready 或窗口 show 成功都不证明真人看到。接入接口与待验收边界见 [G6-REMINDERS.md](G6-REMINDERS.md)，规则以 [REMINDER-SPEC.md](REMINDER-SPEC.md) 为准。本地自动测试与后续双平台 CI/GUI/真实反馈分开记录。
+初始三项全关。Vite 现在实际构建 `settings.html` 与 `reminder.html`；设置使用独立草稿，回复和最新快照都确认匹配且无 runtimeError 才报告保存成功；unsaved 明确区分本次已应用与未落盘。后台更新不覆盖未提交字段。提醒仅呈现当前 presentation，完成行留在本批次原位置，新条目追加，新 ID 重建。原生按需窗口、托盘、最小事件权限与 ready 命令已接通；autoHandled、ready 或窗口 show 成功都不证明真人看到。接入接口与待验收边界见 [G6-REMINDERS.md](G6-REMINDERS.md)，规则以 [REMINDER-SPEC.md](REMINDER-SPEC.md) 为准。`4cb11dd` 双平台 CI 已通过，但 GUI/真实反馈仍须分开记录。
 
 ### UI 与桌面能力
 
