@@ -42,7 +42,7 @@ impl Store {
     }
 }
 // v1 is the first format. No invented migration path; all schema validation stays here/model.
-fn decode(bytes: &[u8]) -> Result<Data, Error> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<Data, Error> {
     let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|_| Error::new("invalidFile"))?;
     let version = value
