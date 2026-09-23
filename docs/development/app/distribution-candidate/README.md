@@ -17,4 +17,4 @@
 - 不在已有日用数据上做升级/回退/卸载实验。使用隔离系统用户、虚拟机或可恢复快照，先保存旧包与数据备份。旧版可能不支持新数据格式；升级失败时按已验证备份恢复，不能假定安装旧程序会自动回滚数据。
 - 默认卸载只检查应用、快捷方式与用户配置各自去向；不执行递归删除用户目录的脚本。当前项目没有自动更新。
 
-按 [CHECKLIST.md](CHECKLIST.md) 做真实设备测试，并分别填写 [RESULT-TEMPLATE.md](RESULT-TEMPLATE.md)。打包成功、静态身份一致不表示安装、启动、卸载、数据恢复或长期常驻通过。公开门槛与素材缺口见 [分发准备合同](../DISTRIBUTION-READINESS.md)。
+按 [CHECKLIST.md](CHECKLIST.md) 做真实设备测试，并分别填写 [RESULT-TEMPLATE.md](RESULT-TEMPLATE.md)。打包成功、静态身份一致不表示安装、启动、卸载、数据恢复或长期常驻通过。公开门槛与素材缺口见包内[分发准备合同](DISTRIBUTION-READINESS.md)。

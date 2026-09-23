@@ -10,7 +10,13 @@ const targets = {
   "x86_64-pc-windows-msvc": { platform: "windows-x64", extension: ".exe", kind: "nsis" },
   "aarch64-apple-darwin": { platform: "macos-arm64", extension: ".dmg", kind: "dmg" },
 };
-const docs = ["README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md"];
+const documents = [
+  { name: "README.md", source: directory => path.join(directory, "README.md") },
+  { name: "CHECKLIST.md", source: directory => path.join(directory, "CHECKLIST.md") },
+  { name: "RESULT-TEMPLATE.md", source: directory => path.join(directory, "RESULT-TEMPLATE.md") },
+  { name: "DISTRIBUTION-READINESS.md", source: directory => path.resolve(directory, "../DISTRIBUTION-READINESS.md") },
+  { name: "REGRESSION-CHECKLIST.md", source: directory => path.resolve(directory, "../regression/CHECKLIST.md") },
+];
 const fullCommit = /^[a-f0-9]{40}$/;
 const versionPattern = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -69,7 +75,12 @@ export function prepareDistribution({ target, payloadPath, builtExecutablePath, 
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (inventory.schemaVersion !== 1 || inventory.sourceCommit !== commit || inventory.target !== target
     || !Array.isArray(inventory.npm) || !Array.isArray(inventory.cargo)) throw new Error("Dependency inventory identity does not match candidate");
-  for (const name of docs) if (!statSync(path.join(docsDirectory, name)).isFile() || !statSync(path.join(docsDirectory, name)).size) throw new Error(`Missing candidate document ${name}`);
+  const documentInputs = documents.map(document => {
+    const source = document.source(docsDirectory);
+    if (!statSync(source).isFile() || !statSync(source).size) throw new Error(`Missing candidate document ${document.name}`);
+    const bytes = readFileSync(source);
+    return { ...fileRecord(document.name, bytes), bytesContent: bytes };
+  });
 
   const candidateName = `March-7th-UNSIGNED-CANDIDATE-${spec.platform}-${commit}${spec.extension}`;
   const manifest = {
@@ -85,13 +96,14 @@ export function prepareDistribution({ target, payloadPath, builtExecutablePath, 
       binaryBuildInfo: Object.fromEntries(["schemaVersion", "appVersion", "target", "sourceCommit", "sourceState"].map(key => [key, buildInfo[key]])),
     },
     bundleIdentifier, dependencyInventory: fileRecord("DEPENDENCY-LICENSES.json", inventoryBytes),
+    documents: documentInputs.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 })),
   };
   mkdirSync(outputDirectory);
   copyFileSync(payloadPath, path.join(outputDirectory, candidateName));
   const sums = [manifest.package];
-  for (const name of docs) {
-    copyFileSync(path.join(docsDirectory, name), path.join(outputDirectory, name));
-    sums.push(fileRecord(name, readFileSync(path.join(outputDirectory, name))));
+  for (const document of documentInputs) {
+    writeFileSync(path.join(outputDirectory, document.name), document.bytesContent);
+    sums.push(fileRecord(document.name, document.bytesContent));
   }
   copyFileSync(licenseInventoryPath, path.join(outputDirectory, "DEPENDENCY-LICENSES.json"));
   sums.push(manifest.dependencyInventory);
@@ -113,7 +125,10 @@ export function verifyDistributionPacket(directory) {
   const spec = targets[manifest.target];
   if (manifest.package?.name !== `March-7th-UNSIGNED-CANDIDATE-${spec.platform}-${manifest.sourceCommit}${spec.extension}`
     || manifest.dependencyInventory?.name !== "DEPENDENCY-LICENSES.json") throw new Error("Invalid candidate file names");
-  const expectedNames = [manifest.package.name, ...docs, "DEPENDENCY-LICENSES.json", "BUILD-INFO.json"];
+  const documentNames = documents.map(document => document.name);
+  if (!Array.isArray(manifest.documents) || manifest.documents.length !== documentNames.length
+    || manifest.documents.some((document, index) => document.name !== documentNames[index])) throw new Error("Invalid candidate document manifest");
+  const expectedNames = [manifest.package.name, ...documentNames, "DEPENDENCY-LICENSES.json", "BUILD-INFO.json"];
   if (sums.length !== expectedNames.length) throw new Error("Invalid candidate checksum list");
   for (let i = 0; i < sums.length; i++) {
     const match = /^([a-f0-9]{64})  (.+)$/.exec(sums[i]);
@@ -121,6 +136,9 @@ export function verifyDistributionPacket(directory) {
     const bytes = readFileSync(path.join(directory, expectedNames[i]));
     if (digest(bytes) !== match[1]) throw new Error(`Candidate hash mismatch: ${expectedNames[i]}`);
     if (i === 0 && (bytes.length !== manifest.package.bytes || digest(bytes) !== manifest.package.sha256)) throw new Error("Candidate package size or hash mismatch");
+    const documentIndex = documentNames.indexOf(expectedNames[i]);
+    if (documentIndex !== -1 && (bytes.length !== manifest.documents[documentIndex].bytes
+      || digest(bytes) !== manifest.documents[documentIndex].sha256)) throw new Error(`Candidate document size or hash mismatch: ${expectedNames[i]}`);
     if (expectedNames[i] === "DEPENDENCY-LICENSES.json") {
       if (bytes.length !== manifest.dependencyInventory.bytes || digest(bytes) !== manifest.dependencyInventory.sha256) throw new Error("Dependency inventory size or hash mismatch");
       const inventory = JSON.parse(bytes.toString("utf8"));

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertMacExecutableMode, prepareDistribution, verifyDistributionPacket, verifyCandidatePair } from "./distribution-candidate.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -30,9 +31,15 @@ function fixture(t, target) {
   const payloadPath = path.join(root, windows ? "app-setup.exe" : "app.dmg");
   const builtExecutablePath = path.join(root, windows ? "build.exe" : "build");
   const packagedExecutablePath = path.join(root, windows ? "extracted.exe" : "mounted");
-  const docsDirectory = path.join(root, "docs");
-  mkdirSync(docsDirectory);
-  for (const name of ["README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md"]) writeFileSync(path.join(docsDirectory, name), name);
+  const docsRoot = path.join(root, "docs");
+  const docsDirectory = path.join(docsRoot, "distribution-candidate");
+  mkdirSync(docsDirectory, { recursive: true });
+  mkdirSync(path.join(docsRoot, "regression"));
+  writeFileSync(path.join(docsDirectory, "README.md"), "[contract](DISTRIBUTION-READINESS.md)");
+  writeFileSync(path.join(docsDirectory, "CHECKLIST.md"), "[regression](REGRESSION-CHECKLIST.md)");
+  writeFileSync(path.join(docsDirectory, "RESULT-TEMPLATE.md"), "Result template");
+  writeFileSync(path.join(docsRoot, "DISTRIBUTION-READINESS.md"), "Distribution limits");
+  writeFileSync(path.join(docsRoot, "regression/CHECKLIST.md"), "Desktop regression checklist");
   writeFileSync(payloadPath, windows ? nativeBytes(target) : Buffer.from("fixture DMG bytes"));
   writeFileSync(builtExecutablePath, nativeBytes(target));
   writeFileSync(packagedExecutablePath, nativeBytes(target));
@@ -74,6 +81,20 @@ test("records full identity, size and hash for installer and its verified embedd
     assert.deepEqual(manifest.packagedExecutable.binaryBuildInfo, options.buildInfo);
     assert.equal(manifest.dependencyInventory.name, "DEPENDENCY-LICENSES.json");
     assert.equal(manifest.dependencyInventory.sha256, hash(readFileSync(options.licenseInventoryPath)));
+    assert.deepEqual(manifest.documents.map(document => document.name), [
+      "README.md", "CHECKLIST.md", "RESULT-TEMPLATE.md", "DISTRIBUTION-READINESS.md", "REGRESSION-CHECKLIST.md",
+    ]);
+    for (const document of manifest.documents) {
+      const bytes = readFileSync(path.join(options.outputDirectory, document.name));
+      assert.equal(bytes.length, document.bytes);
+      assert.equal(hash(bytes), document.sha256);
+    }
+    for (const name of ["README.md", "CHECKLIST.md"]) {
+      const markdown = readFileSync(path.join(options.outputDirectory, name), "utf8");
+      for (const [, link] of markdown.matchAll(/\]\(([^)]+\.md)\)/g)) {
+        assert.equal(existsSync(path.resolve(options.outputDirectory, link)), true, `Broken packet link: ${link}`);
+      }
+    }
     assert.equal(verifyDistributionPacket(options.outputDirectory).sourceCommit, commit);
   }
 });
@@ -107,6 +128,29 @@ test("rejects dependency inventory from another commit or target", t => {
   writeFileSync(options.licenseInventoryPath, JSON.stringify({ schemaVersion: 1, sourceCommit: "b".repeat(40), target: options.target, npm: [], cargo: [] }));
   assert.throws(() => prepareDistribution(options), /inventory/);
   assert.equal(existsSync(options.outputDirectory), false);
+});
+
+test("missing distribution or regression document cannot produce an incomplete packet", t => {
+  const options = fixture(t, "x86_64-pc-windows-msvc");
+  rmSync(path.join(options.docsDirectory, "../DISTRIBUTION-READINESS.md"));
+  assert.throws(() => prepareDistribution(options), /Missing candidate document|ENOENT/);
+  assert.equal(existsSync(options.outputDirectory), false);
+});
+
+test("the real candidate documents keep all local Markdown links inside the packet", t => {
+  const options = fixture(t, "x86_64-pc-windows-msvc");
+  const docsDirectory = fileURLToPath(new URL("../../docs/development/app/distribution-candidate/", import.meta.url));
+  const manifest = prepareDistribution({ ...options, docsDirectory });
+  for (const document of manifest.documents) {
+    const markdown = readFileSync(path.join(options.outputDirectory, document.name), "utf8");
+    for (const [, href] of markdown.matchAll(/\]\(([^)]+)\)/g)) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#")) continue;
+      const local = href.split("#", 1)[0];
+      if (local.endsWith(".md")) assert.equal(existsSync(path.resolve(options.outputDirectory, local)), true, `Broken ${document.name} link: ${href}`);
+    }
+  }
+  writeFileSync(path.join(options.outputDirectory, "DISTRIBUTION-READINESS.md"), "changed");
+  assert.throws(() => verifyDistributionPacket(options.outputDirectory), /hash|size/);
 });
 
 test("will not overwrite an existing candidate directory", t => {
