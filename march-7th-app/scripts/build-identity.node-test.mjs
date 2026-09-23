@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, statSync, existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,9 +102,10 @@ test("exports, unrelated parent repositories and unavailable Git never invent pr
   writeFileSync(driver, `#[path = ${JSON.stringify(path.join(directory, "src-tauri/build_identity_support.rs"))}] mod support; fn main() { support::embed(); }`);
   const probe = path.join(root, `probe${process.platform === "win32" ? ".exe" : ""}`);
   exec("rustc", ["--edition=2021", driver, "-o", probe], root);
-  const output = exec(probe, [], directory, { ...process.env, PATH: "", CARGO_MANIFEST_DIR: path.join(directory, "src-tauri"), TARGET: "x86_64-pc-windows-msvc" });
+  const output = exec(probe, [], directory, { ...process.env, PATH: "", CARGO_MANIFEST_DIR: path.join(directory, "src-tauri"), TARGET: "x86_64-pc-windows-msvc", MARCH_BUILD_INPUT_DIAGNOSTICS: "1" });
   assert.match(output, /MARCH_SOURCE_STATE=unknown/);
   assert.match(output, /MARCH_SOURCE_COMMIT=\r?\n/);
+  assert.doesNotMatch(output, /build-input-diagnostic/);
 });
 
 test("automatic Tauri platform overrides cannot leave a cached clean identity", t => {
@@ -138,4 +139,44 @@ test("automatic Tauri platform overrides cannot leave a cached clean identity", 
   const builtAt = statSync(executable).mtimeMs;
   build(directory, target);
   assert.equal(statSync(executable).mtimeMs, builtAt);
+});
+
+test("opt-in source diagnostics report only bounded fixed scopes and categories without changing identity", t => {
+  const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
+  exec("cargo", ["generate-lockfile", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory); initialize(root);
+  const run = flag => {
+    const result = spawnSync("cargo", ["build", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], {
+      cwd: directory, encoding: "utf8", timeout: 120_000,
+      env: { ...process.env, CARGO_TARGET_DIR: target, MARCH_BUILD_INPUT_DIAGNOSTICS: flag },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const diagnostics = result.stderr.split(/\r?\n/).filter(line => line.includes("build-input-diagnostic"));
+    const identity = exec(path.join(target, "debug", `identity-fixture${process.platform === "win32" ? ".exe" : ""}`), [], directory);
+    return { diagnostics, identity };
+  };
+  assert.deepEqual(run("1").diagnostics, [], "clean input needs no diagnostic queries/output");
+  writeFileSync(path.join(directory, "src/example.ts"), "// tracked change\n");
+  writeFileSync(path.join(directory, "src/ignored.ts"), "private ignored contents\n");
+  for (let i = 0; i < 40; i++) writeFileSync(path.join(directory, `src/PRIVATE-NAME-${i}.ts`), "private untracked contents\n");
+  writeFileSync(path.join(directory, "src-tauri/Cargo.toml"), '[package]\nname="identity-fixture"\nversion="0.2.0"\nedition="2021"\n# tracked diagnostic fixture\n');
+  writeFileSync(path.join(root, "PRIVATE-OUTSIDE.txt"), "outside scope\n");
+  const disabled = run("");
+  assert.match(disabled.identity, /\|modified$/);
+  assert.deepEqual(disabled.diagnostics, []);
+  const enabled = run("1"); // Only the opt-in changes: Cargo must rerun.
+  assert.equal(enabled.identity, disabled.identity);
+  assert.equal(enabled.diagnostics.length, 2, "one bounded row per changed scope, not per filename");
+  assert.ok(enabled.diagnostics.some(line => line.endsWith("build-input-diagnostic scope=frontend-source categories=tracked,untracked,ignored")));
+  assert.ok(enabled.diagnostics.some(line => line.endsWith("build-input-diagnostic scope=native-manifest categories=tracked")));
+  for (const line of enabled.diagnostics) {
+    assert.ok(line.length < 180);
+    assert.equal(line.includes(root), false);
+    assert.equal(line.includes("PRIVATE-"), false);
+    assert.equal(line.includes("contents"), false);
+    assert.equal(line.includes("example.ts"), false);
+    assert.equal(line.includes("Cargo.toml"), false);
+  }
+  const disabledAgain = run("true"); // Any value other than exact 1 is off.
+  assert.equal(disabledAgain.identity, disabled.identity);
+  assert.deepEqual(disabledAgain.diagnostics, []);
 });
