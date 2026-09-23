@@ -254,6 +254,65 @@ fn short_sleep_does_not_discard_elapsed_wall_time_when_monotonic_stalls() {
 }
 
 #[test]
+fn pause_during_new_clock_anomaly_preserves_interrupted_state() {
+    let mut engine = started(120_000);
+    assert!(
+        !engine
+            .step(Command::Pause, time(1_180_000, 100))
+            .unwrap()
+            .completed_now
+    );
+    assert!(matches!(
+        engine.data.session,
+        Session::Interrupted {
+            remaining_ms: 120_000,
+            ..
+        }
+    ));
+    engine.step(Command::Pause, time(1_180_001, 101)).unwrap();
+    assert!(matches!(engine.data.session, Session::Interrupted { .. }));
+}
+
+#[test]
+fn duplicate_resume_during_new_clock_anomaly_does_not_confirm_it() {
+    let mut engine = started(120_000);
+    engine.step(Command::Resume, time(1_180_000, 100)).unwrap();
+    assert!(matches!(
+        engine.data.session,
+        Session::Interrupted {
+            remaining_ms: 120_000,
+            ..
+        }
+    ));
+    engine.step(Command::Resume, time(1_180_001, 101)).unwrap();
+    assert!(matches!(engine.data.session, Session::Running { .. }));
+}
+
+#[test]
+fn explicit_termination_during_clock_anomaly_keeps_requested_outcome() {
+    for (command, outcome) in [
+        (Command::EndEarly, Outcome::EndedEarly),
+        (Command::Abandon, Outcome::Abandoned),
+    ] {
+        let mut engine = started(120_000);
+        assert!(
+            !engine
+                .step(command, time(1_180_000, 100))
+                .unwrap()
+                .completed_now
+        );
+        assert!(matches!(
+            engine.data.session,
+            Session::Finished {
+                outcome: actual,
+                feedback: Feedback::None,
+                ..
+            } if actual == outcome
+        ));
+    }
+}
+
+#[test]
 fn small_clock_sample_jitter_does_not_accumulate_as_extra_session_time() {
     let mut engine = started(120_000);
     engine.step(Command::Tick, time(1_010_500, 10_100)).unwrap();
