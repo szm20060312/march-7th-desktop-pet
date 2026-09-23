@@ -4,6 +4,19 @@ mod state;
 mod store;
 pub(crate) use store::imported_has_placement;
 pub(crate) use store::validate_import as validate_imported_desktop;
+#[allow(dead_code)] // B3b will construct this after qualifying the live window.
+pub(crate) enum ExportPlacement {
+    Captured(geometry::Placement),
+    NeverSaved,
+    Unavailable,
+}
+pub(crate) fn export_placement(state: ExportPlacement) -> Result<Option<Vec<u8>>, &'static str> {
+    match state {
+        ExportPlacement::Captured(placement) => store::export_placement(&placement).map(Some),
+        ExportPlacement::NeverSaved => Ok(None),
+        ExportPlacement::Unavailable => Err("exportDesktopUnavailable"),
+    }
+}
 
 use crate::data_directory::{DataDirectory, DataFile};
 use geometry::{Monitor, Placement};
