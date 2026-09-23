@@ -4,6 +4,7 @@ mod characters;
 pub mod data_directory;
 mod data_lock;
 mod desktop;
+mod local_backup;
 mod platform;
 mod reminders;
 
@@ -42,6 +43,8 @@ fn app_context() -> tauri::Context<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = desktop::configure(tauri::Builder::default())
+        .manage(std::sync::Mutex::new(local_backup::ExportGate::default()))
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let characters = characters::setup(app)?;
             let reminders = reminders::setup(app)?;
@@ -55,7 +58,8 @@ pub fn run() {
             reminders::native::get_reminders,
             reminders::native::reminder_command,
             reminders::ui::reminder_ui_ready,
-            reminders::ui::hide_reminder_settings
+            reminders::ui::hide_reminder_settings,
+            local_backup::export_local_backup
         ])
         .build(app_context())
         .expect("error while building March 7th");

@@ -96,6 +96,7 @@ fn running<R: Runtime>(ui: &Ui<R>) -> bool {
 }
 
 pub fn stop<R: Runtime>(app: &AppHandle<R>) {
+    crate::local_backup::invalidate(app);
     let Some(ui) = app.try_state::<Ui<R>>() else {
         return;
     };
@@ -225,6 +226,7 @@ pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) 
         let id = {
             let mut s = ui.state.lock().unwrap();
             if window.label() == "settings" {
+                crate::local_backup::invalidate(app);
                 s.settings.close();
                 s.settings_reflow = false;
                 s.settings_settle = None;
@@ -372,8 +374,8 @@ fn created<R: Runtime>(
                                     "reminder window destroyed; pending remains recoverable",
                                 );
                             }
-                        } else if s.settings.token == token {
-                            s.settings.close();
+                        } else if s.settings.destroyed(token) {
+                            crate::local_backup::invalidate(&app);
                             s.settings_settle = None;
                         }
                     });
@@ -714,9 +716,11 @@ fn settle_settings<R: Runtime>(
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
-            ui.state.lock().unwrap().settings.open = false;
         }
-        ui.state.lock().unwrap().settings_reflow = false;
+        let mut state = ui.state.lock().unwrap();
+        if state.settings.presented(generation) {
+            state.settings_reflow = false;
+        }
     }
     Ok(())
 }
@@ -736,6 +740,7 @@ pub async fn hide_reminder_settings<R: Runtime>(
                 return Err(Error::new("stopped"));
             }
             {
+                crate::local_backup::invalidate(&handle);
                 let mut s = ui.state.lock().unwrap();
                 s.settings.close();
                 s.settings_reflow = false;
@@ -753,6 +758,14 @@ pub async fn hide_reminder_settings<R: Runtime>(
     })
     .await
     .map_err(|_| Error::new("workerUnavailable"))?
+}
+pub(crate) fn settings_export_session<R: Runtime>(app: &AppHandle<R>) -> Option<(u64, u64)> {
+    let ui = app.try_state::<Ui<R>>()?;
+    if !running(&ui) {
+        return None;
+    }
+    let state = ui.state.lock().unwrap();
+    state.settings.export_session(state.settings_reflow)
 }
 
 #[tauri::command]

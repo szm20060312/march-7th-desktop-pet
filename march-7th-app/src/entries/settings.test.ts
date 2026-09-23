@@ -70,3 +70,38 @@ describe("real settings entry / adapter / controller error ownership", () => {
     native.invoke.mockImplementation(async name => { if (name === "get_reminders") throw Error("read"); return fresh(); }); await import("./settings"); await flush(); expect(dom.get("settings-notice").textContent).toContain("读取或操作失败");
   });
 });
+
+describe("local backup entry stays separate from reminder drafts", () => {
+  it("disables repeat export and preserves an unsaved reminder draft", async () => {
+    let finish!: (value: unknown) => void;
+    native.invoke.mockImplementation(name => name === "export_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); edit(37);
+    dom.get("export-backup").dispatch("click"); dom.get("export-backup").dispatch("click"); await flush();
+    expect(native.invoke.mock.calls.filter(([name]) => name === "export_local_backup")).toHaveLength(1);
+    expect(dom.get("export-backup").disabled).toBe(true);
+    finish("saved"); await flush();
+    expect(dom.get("backup-status").textContent).toContain("保存成功");
+    expect(dom.get("snooze-minutes").value).toBe("37");
+    expect(dom.get("settings-notice").textContent).toBe("");
+  });
+  it("keeps old dialog responses out of a reopened window", async () => {
+    let finish!: (value: unknown) => void;
+    native.invoke.mockImplementation(name => name === "export_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("export-backup").dispatch("click"); await flush();
+    dom.get("close-settings").dispatch("click"); await flush();
+    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    const before = dom.get("backup-status").textContent;
+    finish("saved"); await flush();
+    expect(dom.get("backup-status").textContent).toBe(before);
+    expect(dom.get("export-backup").disabled).toBe(false);
+  });
+  it("distinguishes cancellation and existing file without touching reminder status", async () => {
+    native.invoke.mockImplementation(name => name === "export_local_backup" ? Promise.resolve("cancelled") : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("export-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-status").textContent).toContain("已取消");
+    native.invoke.mockImplementation(name => name === "export_local_backup" ? Promise.reject({ code: "backupAlreadyExists" }) : Promise.resolve(fresh()));
+    dom.get("export-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-status").textContent).toContain("已存在");
+    expect(dom.get("settings-notice").textContent).toBe("");
+  });
+});

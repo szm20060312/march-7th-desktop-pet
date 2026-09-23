@@ -5,6 +5,7 @@ pub struct SettingsUi {
     pub creating: bool,
     pub open: bool,
     pub generation: u64,
+    displayed_generation: Option<u64>,
     stopped: bool,
 }
 impl SettingsUi {
@@ -14,6 +15,7 @@ impl SettingsUi {
         }
         self.generation += 1;
         self.open = true;
+        self.displayed_generation = None;
         if exists || self.creating {
             return None;
         }
@@ -24,6 +26,7 @@ impl SettingsUi {
     pub fn close(&mut self) {
         self.open = false;
         self.generation += 1;
+        self.displayed_generation = None;
     }
     pub fn created(&mut self, token: u64) -> bool {
         if self.stopped || token != self.token {
@@ -34,6 +37,31 @@ impl SettingsUi {
     }
     pub fn may_show(&self, generation: u64) -> bool {
         !self.stopped && self.open && !self.creating && generation == self.generation
+    }
+    /// Called only after the native window has shown or finished a visible reflow.
+    pub fn presented(&mut self, generation: u64) -> bool {
+        if self.stopped || self.creating || generation != self.generation {
+            return false;
+        }
+        self.open = false;
+        self.displayed_generation = Some(generation);
+        true
+    }
+    pub fn export_session(&self, reflow: bool) -> Option<(u64, u64)> {
+        (!self.stopped
+            && !self.creating
+            && !self.open
+            && !reflow
+            && self.displayed_generation == Some(self.generation))
+        .then_some((self.token, self.generation))
+    }
+    pub fn destroyed(&mut self, token: u64) -> bool {
+        if self.stopped || token != self.token {
+            return false;
+        }
+        self.creating = false;
+        self.close();
+        true
     }
     pub fn stop(&mut self) {
         self.stopped = true;
@@ -194,6 +222,40 @@ mod tests {
         assert!(!ui.created(token));
         assert!(ui.request_open(false).is_none());
         assert!(!ui.may_show(ui.generation));
+    }
+    #[test]
+    fn shown_settings_can_export_after_open_intent_clears_but_old_generation_cannot() {
+        let mut ui = SettingsUi::default();
+        let token = ui.request_open(false).unwrap();
+        let generation = ui.generation;
+        assert!(ui.created(token));
+        assert!(ui.may_show(generation));
+        assert_eq!(ui.export_session(false), None);
+        assert!(ui.presented(generation)); // native show and focus completed
+        assert!(!ui.open);
+        assert_eq!(ui.export_session(false), Some((token, generation)));
+        assert_eq!(ui.export_session(true), None); // display reflow is unsettled
+        ui.close();
+        assert_eq!(ui.export_session(false), None);
+        ui.request_open(true);
+        assert_eq!(ui.export_session(false), None);
+        assert!(ui.presented(ui.generation));
+        assert_ne!(ui.export_session(false), Some((token, generation)));
+    }
+    #[test]
+    fn destroyed_window_cancels_only_matching_settings_session() {
+        let mut ui = SettingsUi::default();
+        let old = ui.request_open(false).unwrap();
+        assert!(ui.created(old));
+        assert!(ui.presented(ui.generation));
+        assert!(ui.destroyed(old));
+        assert_eq!(ui.export_session(false), None);
+        let new = ui.request_open(false).unwrap();
+        assert_ne!(new, old);
+        assert!(!ui.destroyed(old));
+        assert!(ui.created(new));
+        assert!(ui.presented(ui.generation));
+        assert_eq!(ui.export_session(false), Some((new, ui.generation)));
     }
     #[test]
     fn failed_native_show_cannot_claim_visible_or_reopen_without_new_intent() {
