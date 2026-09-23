@@ -1,17 +1,24 @@
 use super::geometry::Placement;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{fs, io, path::PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub version: u32,
-    pub placement: Placement,
+    #[serde(deserialize_with = "required_optional_placement")]
+    pub placement: Option<Placement>,
+}
+fn required_optional_placement<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Placement>, D::Error> {
+    Option::deserialize(deserializer)
 }
 impl Config {
     pub fn new(placement: Placement) -> Self {
         Self {
             version: 1,
-            placement,
+            placement: Some(placement),
         }
     }
 }
@@ -27,7 +34,7 @@ impl Store {
         };
         match fs::read(&store.path) {
             Ok(bytes) => match parse(&bytes) {
-                Ok(config) => (store, Some(config.placement), None),
+                Ok(config) => (store, config.placement, None),
                 Err(error) => {
                     store.writable = false;
                     (store, None, Some(error))
@@ -81,7 +88,19 @@ fn parse(bytes: &[u8]) -> Result<Config, String> {
             header.version
         ));
     }
-    serde_json::from_slice(bytes).map_err(json_error)
+    let config: Config = serde_json::from_slice(bytes).map_err(json_error)?;
+    if config
+        .placement
+        .as_ref()
+        .is_some_and(|p| !p.x.is_finite() || !p.y.is_finite())
+    {
+        return Err("invalid desktop placement".into());
+    }
+    Ok(config)
+}
+
+pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
+    parse(bytes).map(|_| ())
 }
 
 #[cfg(test)]
@@ -139,6 +158,7 @@ mod tests {
             "{broken",
             r#"{"version":2,"future":"keep"}"#,
             r#"{"version":1}"#,
+            r#"{"version":1,"placement":{"monitor_name":null,"x":1,"y":2,"future":"keep"}}"#,
         ] {
             let temp = Temp::new();
             fs::write(temp.file(), raw).unwrap();
@@ -150,6 +170,16 @@ mod tests {
             assert_eq!(fs::read_to_string(temp.file()).unwrap(), raw);
         }
     }
+    #[test]
+    fn explicit_absent_placement_is_valid_without_creating_a_fake_position() {
+        let temp = Temp::new();
+        fs::write(temp.file(), ABSENT_FOR_TEST).unwrap();
+        let (store, placement, error) = Store::load(temp.file());
+        assert!(store.writable);
+        assert!(placement.is_none());
+        assert!(error.is_none());
+    }
+    const ABSENT_FOR_TEST: &[u8] = br#"{"version":1,"placement":null}"#;
     #[test]
     fn replacement_retains_previous_valid_config_as_backup() {
         let temp = Temp::new();

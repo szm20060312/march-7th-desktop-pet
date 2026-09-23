@@ -1755,8 +1755,10 @@ name = "march-7th-app"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
 ]
