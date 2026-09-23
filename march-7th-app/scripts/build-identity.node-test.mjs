@@ -19,6 +19,8 @@ function app(root) {
   const directory = path.join(root, "app");
   mkdirSync(path.join(directory, "src-tauri/src"), { recursive: true });
   mkdirSync(path.join(directory, "src"));
+  mkdirSync(path.join(directory, "scripts"));
+  copyFileSync(fileURLToPath(new URL("./diagnose-frontend-ignore.mjs", import.meta.url)), path.join(directory, "scripts/diagnose-frontend-ignore.mjs"));
   writeFileSync(path.join(directory, "src/example.ts"), "// original\n");
   writeFileSync(path.join(directory, "index.html"), "original\n");
   writeFileSync(path.join(directory, "src-tauri/Cargo.toml"), '[package]\nname="identity-fixture"\nversion="0.2.0"\nedition="2021"\n');
@@ -110,7 +112,7 @@ test("exports, unrelated parent repositories and unavailable Git never invent pr
 
 test("automatic Tauri platform overrides cannot leave a cached clean identity", t => {
   const root = fixture(t); const directory = app(root); const target = path.join(root, "target");
-  mkdirSync(path.join(directory, "scripts"));
+  mkdirSync(path.join(directory, "scripts"), { recursive: true });
   const packetScript = path.join(directory, "scripts/prepare-regression.mjs");
   copyFileSync(fileURLToPath(new URL("./prepare-regression.mjs", import.meta.url)), packetScript);
   exec("cargo", ["generate-lockfile", "--offline", "--manifest-path", "src-tauri/Cargo.toml"], directory); initialize(root);
@@ -152,7 +154,8 @@ test("opt-in source diagnostics report only bounded fixed scopes and categories 
     assert.equal(result.status, 0, result.stderr);
     const diagnostics = result.stderr.split(/\r?\n/).filter(line => line.includes("build-input-diagnostic"));
     const identity = exec(path.join(target, "debug", `identity-fixture${process.platform === "win32" ? ".exe" : ""}`), [], directory);
-    return { diagnostics, identity };
+    const ignored = result.stderr.split(/\r?\n/).filter(line => line.includes("ignored-input"));
+    return { diagnostics, ignored, identity };
   };
   assert.deepEqual(run("1").diagnostics, [], "clean input needs no diagnostic queries/output");
   writeFileSync(path.join(directory, "src/example.ts"), "// tracked change\n");
@@ -163,8 +166,11 @@ test("opt-in source diagnostics report only bounded fixed scopes and categories 
   const disabled = run("");
   assert.match(disabled.identity, /\|modified$/);
   assert.deepEqual(disabled.diagnostics, []);
+  assert.deepEqual(disabled.ignored, []);
   const enabled = run("1"); // Only the opt-in changes: Cargo must rerun.
   assert.equal(enabled.identity, disabled.identity);
+  assert.equal(enabled.ignored.length, 1);
+  assert.ok(enabled.ignored[0].endsWith("ignored-input phase=identity-sample state=ok total=one groups=root-rules:other:file:one overflow=no"));
   assert.equal(enabled.diagnostics.length, 2, "one bounded row per changed scope, not per filename");
   assert.ok(enabled.diagnostics.some(line => line.endsWith("build-input-diagnostic scope=frontend-source categories=tracked,untracked,ignored")));
   assert.ok(enabled.diagnostics.some(line => line.endsWith("build-input-diagnostic scope=native-manifest categories=tracked")));
@@ -179,4 +185,17 @@ test("opt-in source diagnostics report only bounded fixed scopes and categories 
   const disabledAgain = run("true"); // Any value other than exact 1 is off.
   assert.equal(disabledAgain.identity, disabled.identity);
   assert.deepEqual(disabledAgain.diagnostics, []);
+  assert.deepEqual(disabledAgain.ignored, []);
+  writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), 'console.log("PRIVATE-NAME /private/path raw-config");');
+  const unsafeChild = run("1");
+  assert.equal(unsafeChild.identity, disabled.identity);
+  assert.equal(unsafeChild.ignored.length, 1);
+  assert.ok(unsafeChild.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
+  for (const script of ['console.log("PRIVATE".repeat(1000));', 'console.log("ignored-input phase=identity-sample\\nstate=ok total=zero groups=none overflow=no");', 'setInterval(() => {}, 60000);']) {
+    writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), script);
+    const bounded = run("1");
+    assert.equal(bounded.identity, disabled.identity);
+    assert.equal(bounded.ignored.length, 1);
+    assert.ok(bounded.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
+  }
 });

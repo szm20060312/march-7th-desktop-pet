@@ -1,6 +1,14 @@
 // Keep this list aligned with G7-BUILD-IDENTITY.md. The same scope drives Git
 // status and Cargo watches; never watch the app root (it contains build caches).
-use std::{env, path::Path, process::Command};
+use std::{
+    env,
+    io::Read,
+    path::Path,
+    process::{Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
 // Project convention: keep both automatic desktop overrides present, even if
 // empty. Missing optional paths cannot be watched without perpetual rebuilds.
@@ -111,6 +119,117 @@ fn diagnose_scopes(root: &Path, scopes: &[(String, &str)]) {
     }
 }
 
+fn safe_ignored_summary(line: &str) -> bool {
+    let fields = line.split_ascii_whitespace().collect::<Vec<_>>();
+    if line.len() > 1024
+        || line.contains('\n')
+        || line.contains('\r')
+        || fields.len() != 6
+        || fields[0] != "ignored-input"
+        || fields[1] != "phase=identity-sample"
+    {
+        return false;
+    }
+    if fields[2] == "state=unavailable" {
+        return fields[3..] == ["total=unknown", "groups=unknown", "overflow=no"];
+    }
+    if fields[2] != "state=ok"
+        || !["total=zero", "total=one", "total=few", "total=many"].contains(&fields[3])
+        || !["overflow=no", "overflow=yes"].contains(&fields[5])
+    {
+        return false;
+    }
+    if fields[4] == "groups=none" {
+        return fields[3] == "total=zero" && fields[5] == "overflow=no";
+    }
+    let Some(groups) = fields[4].strip_prefix("groups=") else {
+        return false;
+    };
+    let groups = groups.split(',').collect::<Vec<_>>();
+    groups.len() <= 8
+        && groups.iter().all(|group| {
+            let parts = group.split(':').collect::<Vec<_>>();
+            parts.len() == 4
+                && [
+                    "root-rules",
+                    "app-rules",
+                    "nested-rules",
+                    "internal-external-rules",
+                ]
+                .contains(&parts[0])
+                && [
+                    "dependency-directory",
+                    "build-output",
+                    "logs",
+                    "local-config",
+                    "editor-metadata",
+                    "other",
+                ]
+                .contains(&parts[1])
+                && ["file", "directory", "link", "other"].contains(&parts[2])
+                && ["one", "few", "many"].contains(&parts[3])
+        })
+}
+
+fn diagnose_ignored_frontend(root: &Path) {
+    let script = root.join("scripts/diagnose-frontend-ignore.mjs");
+    watch(&script);
+    let summary = bounded_ignored_query(root, &script);
+    let line = summary.as_deref().map(str::trim).filter(|line| safe_ignored_summary(line))
+        .unwrap_or("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no");
+    println!("cargo:warning={line}");
+}
+
+fn bounded_ignored_query(root: &Path, script: &Path) -> Option<String> {
+    let mut child = Command::new("node")
+        .current_dir(root)
+        .arg(script)
+        .arg("identity-sample")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let (sender, receiver) = mpsc::channel();
+    // Keep at most one bounded line even if a broken process prints forever.
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stdout.take(1025).read_to_end(&mut bytes).map(|_| bytes);
+        let _ = sender.send(result);
+    });
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
+                let bytes = receiver
+                    .recv_timeout(Duration::from_millis(500))
+                    .ok()?
+                    .ok()?;
+                return (bytes.len() <= 1024)
+                    .then(|| String::from_utf8(bytes).ok())
+                    .flatten();
+            }
+            Ok(Some(_)) => return None,
+            Ok(None) if started.elapsed() < Duration::from_secs(20) => {
+                thread::sleep(Duration::from_millis(20))
+            }
+            _ => {
+                let _ = child.kill();
+                // Even a failed termination must not turn an optional diagnostic
+                // into an unbounded wait. The build process will exit normally.
+                for _ in 0..25 {
+                    if !matches!(child.try_wait(), Ok(None)) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+                return None;
+            }
+        }
+    }
+}
+
 pub fn embed() {
     let manifest = env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory");
     let root = Path::new(&manifest)
@@ -213,8 +332,11 @@ pub fn embed() {
         ))
     })();
     let (commit, state) = source.unwrap_or_else(|| (String::new(), "unknown"));
-    if state == "modified" && env::var("MARCH_BUILD_INPUT_DIAGNOSTICS").as_deref() == Ok("1") {
-        diagnose_scopes(root, &scope);
+    if env::var("MARCH_BUILD_INPUT_DIAGNOSTICS").as_deref() == Ok("1") {
+        if state == "modified" {
+            diagnose_scopes(root, &scope);
+        }
+        diagnose_ignored_frontend(root);
     }
     println!(
         "cargo:rustc-env=MARCH_BUILD_TARGET={}",
