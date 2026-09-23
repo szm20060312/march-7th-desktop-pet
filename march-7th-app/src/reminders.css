@@ -1,0 +1,55 @@
+:root { font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif; color: #302d29; background: #faf8f3; font-synthesis: none; --paper: #faf8f3; --ink: #302d29; --muted: #6d685f; --line: #ded9d0; --accent: #526b5c; --hover: #ece8df; --field: #fffefa; --warning: #805529; color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; font-size: 14px; line-height: 1.55; }
+main { padding: 22px 24px 0; }
+header { margin-bottom: 18px; }
+h1 { font-size: 22px; line-height: 1.35; font-weight: 650; margin: 4px 0 8px; }
+p { margin: 0; }
+.eyebrow { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.intro, .hint, .status { color: var(--muted); font-size: 12px; }
+.intro { max-width: 32em; }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+legend { padding: 0 0 7px; font-weight: 600; }
+.setting-row { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); }
+label { cursor: pointer; }
+.toggle-label, .interval-label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.interval-label { font-size: 12px; color: var(--muted); }
+input, select, button { font: inherit; color: var(--ink); }
+input:not([type=checkbox]), select { border: 1px solid var(--line); background: var(--field); border-radius: 4px; padding: 5px 7px; }
+input[type=number] { width: 70px; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0 3px 0 0; }
+.hours-heading, .snooze-setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.daily-hours { display: flex; gap: 10px; align-items: center; margin-top: 9px; }
+.daily-hours label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.daily-hours input { width: 112px; }
+#hours-hint { margin-top: 6px; }
+.pause-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 18px; }
+.pause-row strong { font-size: 13px; font-weight: 550; }
+.status { margin-top: 13px; }
+.notice { color: var(--warning); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+.notice:empty { display: none; }
+footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 0; border-top: 1px solid var(--line); margin-top: 14px; background: var(--paper); }
+.settings-page footer { position: sticky; bottom: 0; }
+button { border: 1px solid var(--line); border-radius: 5px; background: var(--field); padding: 7px 13px; min-height: 34px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
+button:hover:not(:disabled) { background: var(--hover); border-color: var(--muted); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:disabled, input:disabled, select:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: #405849; }
+[hidden] { display: none !important; }
+.reminder-page { height: 100vh; height: 100dvh; overflow: hidden; }
+.reminder-page main { height: 100%; padding: 16px 18px 0; display: flex; flex-direction: column; }
+.reminder-page header { flex: none; margin-bottom: 10px; }
+.reminder-content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.reminder-page h1 { font-size: 18px; margin-bottom: 0; }
+.reminder-rows { display: flex; flex-direction: column; }
+.reminder-row { display: flex; align-items: center; justify-content: space-between; min-height: 45px; border-top: 1px solid var(--line); gap: 12px; }
+.reminder-row button { min-width: 66px; padding: 4px 9px; min-height: 30px; font-size: 12px; }
+.reminder-row[data-done=true] span { color: var(--muted); }
+.reminder-page footer { flex: none; margin-top: 10px; padding: 10px 0 13px; }
+.reminder-page #reminder-empty { padding: 12px 0; }
+@media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
+/* Exceptionally small native work areas need scrolling around the entire view. */
+@media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 300px; } .settings-page footer { position: static; } }
+@media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }

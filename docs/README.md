@@ -38,6 +38,7 @@ docs/
 - [M0 实际构建与产物校验记录](development/app/M0-BUILD-REPORT.md)
 - [双角色实现与同提交测试包记录](development/app/G4-BUILD-REPORT.md)
 - [提醒后端实现与同提交自动验证记录](development/app/G5-BUILD-REPORT.md)
+- [提醒界面与双平台测试包记录](development/app/G6-BUILD-REPORT.md)
 - [双平台回归清单](development/app/regression/CHECKLIST.md)
 - [回归结果模板](development/app/regression/RESULT-TEMPLATE.md)
 - [本次架构整理范围](development/app/IMPLEMENTATION-ARCHITECTURE.md)

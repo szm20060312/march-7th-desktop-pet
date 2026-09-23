@@ -97,6 +97,23 @@ async function poll(value: ReturnType<typeof sample>, at: number) {
 function paint(at: number) { now = at; frame(at); return sprite.dataset.frame; }
 
 describe("desktop pet behavior at the entry point", () => {
+  it("subscribes once to native reminder responses and routes them to the current character", async () => {
+    await boot();
+    const listeners = native.listen.mock.calls.filter(call => call[0] === "reminder-response");
+    expect(listeners).toHaveLength(1);
+    const respond = listeners[0][1];
+    respond({ payload: { revision: 1, type: "complete", id: "water" } });
+    expect(["好啦，继续慢慢来。", "照顾好自己呀。"]).toContain(message.textContent);
+    const timerCount = timers.size; respond({ payload: { revision: 1, type: "complete", id: "water" } }); expect(timers.size).toBe(timerCount);
+    native.listen.mock.calls.find(call => call[0] === "selected-character-changed")![1]({ payload: { selectedCharacterId: "raiden-shogun", revision: 2, persistence: "saved" } }); await flush();
+    respond({ payload: { revision: 3, type: "snoozeAll" } }); expect(["不急，依你的节奏。", "待你方便，再作提醒。"]).toContain(message.textContent);
+    windowTarget.dispatch("pagehide"); const text = message.textContent; respond({ payload: { revision: 4, type: "complete", id: "eyes" } }); expect(message.textContent).toBe(text);
+  });
+  it("does not queue reminder responses received before a character is ready", async () => {
+    let resolve!: (value: unknown) => void; native.getSelection.mockReturnValue(new Promise(r => { resolve = r; }));
+    await boot(); native.listen.mock.calls.find(call => call[0] === "reminder-response")![1]({ payload: { revision: 1, type: "snoozeAll" } });
+    resolve({ selectedCharacterId: "march-7th", revision: 1, persistence: "saved" }); await flush(); expect(message.hidden).toBe(true);
+  });
   it("keeps a restart instruction visible when the initial listener cannot be established", async () => {
     native.listen.mockRejectedValue(Error("listener unavailable"));
     vi.spyOn(console, "error").mockImplementation(() => {});

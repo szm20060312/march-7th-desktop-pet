@@ -72,11 +72,13 @@ fn emit_change<R: Runtime>(app: &AppHandle<R>, change: Change) {
     };
     // All native emissions and ExitRequested handling execute on the main thread.
     // Recheck here, not just when the worker queues this callback.
-    if native.service.snapshot().stopped {
+    let latest = native.service.snapshot();
+    if latest.stopped {
         return;
     }
     let revision = change.snapshot.revision;
-    if app.emit("reminders-changed", change.snapshot).is_err() {
+    super::ui::reconcile(app);
+    if app.emit("reminders-changed", latest).is_err() {
         eprintln!("Reminder snapshot event unavailable");
     }
     if let Some(response) = change.response {
@@ -95,6 +97,9 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
 }
 #[tauri::command]
 pub fn get_reminders<R: Runtime>(app: AppHandle<R>) -> Result<Snapshot, Error> {
+    snapshot(&app)
+}
+pub(crate) fn snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<Snapshot, Error> {
     app.try_state::<NativeReminders>()
         .map(|n| n.service.snapshot())
         .ok_or(Error::new("workerUnavailable"))
@@ -102,9 +107,32 @@ pub fn get_reminders<R: Runtime>(app: AppHandle<R>) -> Result<Snapshot, Error> {
 #[tauri::command]
 pub async fn reminder_command<R: Runtime>(
     app: AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
     command: CommandInput,
 ) -> Result<Snapshot, Error> {
     let command = command.0?;
+    if !command_allowed(window.label(), &command) {
+        return Err(Error::new("invalidWindow"));
+    }
+    dispatch(&app, command).await
+}
+fn command_allowed(label: &str, command: &Command) -> bool {
+    match label {
+        "settings" => matches!(
+            command,
+            Command::UpdateSettings { .. } | Command::SetPaused { .. }
+        ),
+        "reminder" => matches!(
+            command,
+            Command::Complete { .. } | Command::SnoozeAll {} | Command::Dismiss { .. }
+        ),
+        _ => false,
+    }
+}
+pub(crate) async fn dispatch<R: Runtime>(
+    app: &AppHandle<R>,
+    command: Command,
+) -> Result<Snapshot, Error> {
     let receiver = app
         .try_state::<NativeReminders>()
         .ok_or(Error::new("workerUnavailable"))?
@@ -122,6 +150,29 @@ pub async fn reminder_command<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pages_only_receive_their_own_reminder_operations() {
+        assert!(command_allowed(
+            "settings",
+            &Command::SetPaused { paused: true }
+        ));
+        assert!(!command_allowed(
+            "reminder",
+            &Command::SetPaused { paused: true }
+        ));
+        assert!(command_allowed(
+            "reminder",
+            &Command::Dismiss { presentation_id: 1 }
+        ));
+        assert!(!command_allowed(
+            "settings",
+            &Command::Dismiss { presentation_id: 1 }
+        ));
+        for label in ["main", "settings", "reminder", "unknown"] {
+            assert!(!command_allowed(label, &Command::ShowPending {}));
+        }
+        assert!(!command_allowed("main", &Command::SnoozeAll {}));
+    }
     #[test]
     fn fixround1_nested_all_day_command_rejects_extra_fields() {
         let mut settings =
