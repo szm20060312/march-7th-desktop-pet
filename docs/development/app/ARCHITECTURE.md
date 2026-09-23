@@ -2,7 +2,7 @@
 
 本文描述本次重构后的实际代码边界，并单独标出未来设计。产品选择见 [长期计划](PRODUCT-PLAN.md)，执行范围见 [本次执行计划](IMPLEMENTATION-ARCHITECTURE.md)。
 
-2026-09-22 更新：当前 Rust 已实现鼠标采样、G1/G2 原生托盘控制、交互/穿透模式和版本化位置存储，以及 G4 内置角色选择服务、G5 原生提醒后端；提醒气泡与设置仍待 G6。G1/G2 的自动验证与实机验收分开记录，当前分支仍待实机验收，不能把历史 v0.2.0 基线结果视为本提交通过。
+2026-09-22 更新：当前 Rust 已实现鼠标采样、G1/G2 原生托盘控制、交互/穿透模式和版本化位置存储，以及 G4 内置角色选择服务、G5 原生提醒后端。G6 Task1 已增加真实设置页、提醒页、类型适配与角色回应订阅；原生窗口、托盘和呈现握手处理仍待 Task2。G1/G2 的自动验证与实机验收分开记录，不能把历史 v0.2.0 基线结果视为本提交通过。
 
 实际测试结果和未验证项见 [架构验证记录](ARCHITECTURE-VALIDATION.md)。
 
@@ -33,6 +33,11 @@ flowchart TD
 | 路径（相对 `march-7th-app/src`） | 可以做 | 不可以做 |
 |---|---|---|
 | `main.ts` | 选定配置、构造适配器、启动、注册清理 | 保存业务状态、写动画规则 |
+| `entries/settings.ts`、`entries/reminder.ts` | 各自装配真实页面与生命周期 | URL 总路由、业务计时、原生窗口策略 |
+| `domain/reminder.ts` | Rust 提醒 DTO、固定 ID 与草稿复制 | 到期计算、业务状态迁移、IO |
+| `application/reminder-settings.ts`、`reminder-presentation.ts` | 草稿和保存反馈、稳定条目呈现、窄宿主端口 | 提醒计时、配置文件写入、乐观完成 |
+| `adapters/tauri-reminders.ts`、`reminder-dto.ts` | IPC 校验、revision 围栏、回应去重、ready 接口 | 复制 Rust 业务规则 |
+| `adapters/dom-reminder-*.ts` | 原生表单、文本、稳定按钮节点 | 持久化、自动启用或提交 |
 | `domain/animation.ts` | 纯坐标和图集帧计算、公共值类型 | DOM、Tauri、计时器、文件读写 |
 | `domain/character.ts` | 当前动画所需的角色契约 | 依赖某个角色 ID 或 UI |
 | `domain/pet-model.ts` | 接收采样和时间，输出动画帧 | 自行获取时间、异步 IO、调用原生窗口 |
@@ -74,15 +79,15 @@ Rust `desktop/` 负责托盘、交互/穿透模式和位置；`coordinates.rs` �
 
 单击/双击识别放在独立 DOM 输入适配器，动画状态机只接收明确动作事件。拖动优先于点击互动，互动结束回到注视或待机。用户意图和动画状态分开，不能靠 CSS 动画结束来认定提醒完成。提醒完成/稍后的短句入口只是有类型的呈现能力，没有创建提醒或更改提醒状态。
 
-### 提醒状态归属（G5 原生后端已实现，G6 呈现待接入）
+### 提醒状态归属（G5 后端与 G6 原生呈现已实现，实机待验收）
 
 `src-tauri/src/reminders/model.rs` 独占 settings、三项 progress、pause、quiet、snoozePending 与会话 presentation，只消费显式命令及 UTC/本地分钟/单调时间样本。pending 和软件展示处理标记分别保存；到期不累计周期，手动查看不完成事项。单项启用/间隔实际变化只重置该项，稍后覆盖新到期，手动视图处理普通自动意图，期满前保留明确稍后意图；期满且允许展示后就在同一手动视图消费，不因关闭再自动重弹。
 
 `store.rs` 校验 `reminders.json` v1 的固定 ID、范围及交叉状态，复用共享 atomic_file::replace，保存前验证旧内容。`service.rs` 一条专属线程独占规则和 IO，短锁只交换快照/队列；无变化不逐秒保存/发事件，写失败保留已应用状态并明确 unsaved。损坏/未来配置保护原件并禁自动提醒，配置不能绕过只读保护。v1 为首个格式，真实升级迁移和导出导入留 G7。
 
-`native.rs` 以 chrono Local/进程 Instant 注入时间，提供 get_reminders 和固定联合 reminder_command，发送 reminders-changed 与一次性 reminder-response。反馈以后以事件为准，不能由回复和事件各触发一次。lib 组合现有 setup/退出，未改变角色/desktop 文件或单一 app_context。退出不在 UI join，取消未执行队列；已开始写允许完成但不发布迟到状态/事件。此前前端 reminder-service 计时设想已替代，不能再建第二个业务计时器。
+`native.rs` 以 chrono Local/进程 Instant 注入时间，提供 get_reminders 和固定联合 reminder_command，发送 reminders-changed 与一次性 reminder-response。main 仅订阅一次回应事件并路由至当前角色呈现控制器；未初始化、已销毁时不排队，get/快照/命令回复不触发角色动作。lib 显式组合角色、提醒服务/界面、desktop setup 与退出，仍只有一个 app_context。退出不在 UI join，取消未执行队列；已开始写允许完成但不发布迟到状态/事件。此前前端 reminder-service 计时设想已替代，不能再建第二个业务计时器。
 
-初始三项全关。当前 presentation 是后端意图，尚无提醒气泡、设置或固定查看按钮，autoHandled 不证明真人看到。完整 schema、错误码、回拨补偿、手动查看裁定及 G6 接入协议见 [REMINDER-SPEC.md](REMINDER-SPEC.md)。本地自动测试与后续双平台 CI/GUI/真实反馈分开记录。
+初始三项全关。Vite 现在实际构建 `settings.html` 与 `reminder.html`；设置使用独立草稿，回复和最新快照都确认匹配且无 runtimeError 才报告保存成功；unsaved 明确区分本次已应用与未落盘。后台更新不覆盖未提交字段。提醒仅呈现当前 presentation，完成行留在本批次原位置，新条目追加，新 ID 重建。原生按需窗口、托盘、最小事件权限与 ready 命令已接通；autoHandled、ready 或窗口 show 成功都不证明真人看到。接入接口与待验收边界见 [G6-REMINDERS.md](G6-REMINDERS.md)，规则以 [REMINDER-SPEC.md](REMINDER-SPEC.md) 为准。本地自动测试与后续双平台 CI/GUI/真实反馈分开记录。
 
 ### UI 与桌面能力
 
@@ -133,3 +138,15 @@ pnpm tauri dev
 首次退出请求立即停止接收角色请求，排队但未执行的选择不再保存；退出时尚未提交的原子写允许完成，但不再提交选择、回复成功或更新托盘/前端；退出前已提交的回复可能稍后送达，前端销毁保护继续丢弃迟到输入，也不拖住 desktop 退出线程。若进程先结束，磁盘保持替换前或替换后的完整版本；这不是“退出前所有点击都保存”的保证。测试覆盖阻塞 IO 时快照仍可读取、退出可推进、队列取消与迟到提交抑制。
 
 前端验证 `selectedCharacterId/revision/persistence`，映射到呈现控制器的 `characterId`，忽略旧 revision。图集读取失败保留旧实例，短错误显示 4 秒并保留诊断日志，不伪造 Rust 回退；在托盘再次选择相同角色产生新 revision，可重新尝试加载。监听及首次读取迟到时均尊重 dispose。此自动检查边界不等同 Windows/macOS 实机验收。
+
+### G6 原生提醒协调
+
+`reminders/ui.rs` 只负责两个具体窗口与托盘菜单，`ui_policy.rs` 管理展示/建窗/退出围栏，`ui_geometry.rs` 根据真实外框和工作区计算位置/可缩小视口。model/store/service 不持有 Tauri 窗口。desktop 只有限开放已验证的 macOS 目标屏坐标换算和 Monitor 构造，未引入通用窗口框架。
+
+首次全关不创建两页 WebView；配置中的 settings/reminder 为 create=false、visible=false、focus=false。Windows 的锁定 Tauri API 禁止在同步事件回调建 WebView，因此后台异步创建隐藏窗口，完成后回主线程协调。每次实际提醒窗口创建分配安全整数 windowToken 并注入页面；ready 同时校验调用窗口、当前 token、presentationId 和停止状态，提前于建窗完成的有效 ready 可保留。连续两次实际几何观测一致且当前页面 ready 后才 show。新 ID、销毁、重载和退出废弃旧定位/显示资格；迟到隐藏建窗使用 destroy 清理，不走正常的关闭转隐藏路径。
+
+服务通知在释放服务锁后排到主线程；协调器读取最新 Snapshot，避免旧通知重开已收起视图。回应事件保留原动作 revision，只发一次。100 ms 有界排队观察仅检查原生几何/显示状态，不计算到期或另发提醒；连续失败停止该次展示并保留业务 pending，托盘可显式重新查看。已显示的同 ID 不反复 show 或跟随角色跳动，工作区变化不可达时重新约束。
+
+main/reminder 显式 acceptFirstMouse=true，reminder 始终 focusable=false、鼠标接收独立于角色穿透；只有用户从托盘打开设置才调用 set_focus。设置页面使用限定 settings 调用方的 hide_reminder_settings，先取消待执行显示再隐藏；不授予任意窗口 hide、文件或系统执行权限。手动打开设置发送 reminder-settings-opened，首次页面仍自行读取真实快照。原生关闭气泡只提交当前 presentation 的 Dismiss，不完成业务项。
+
+此为实现和策略测试边界。真实 Mac 非活动首次点击/拖动、不抢焦点、Windows 原生按钮、透明、混合 DPI、睡眠/重启和长期资源表现必须单独验收。

@@ -22,7 +22,7 @@ function walk(dir) {
 }
 function layer(file) {
   const relative = path.relative(root, file).replaceAll("\\", "/");
-  return relative === "main.ts" ? "entry" : relative.split("/")[0];
+  return ["main.ts", "entries/settings.ts", "entries/reminder.ts"].includes(relative) ? "entry" : relative.split("/")[0];
 }
 for (const file of walk(root).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts") && !name.endsWith(".d.ts"))) {
   const current = layer(file);
