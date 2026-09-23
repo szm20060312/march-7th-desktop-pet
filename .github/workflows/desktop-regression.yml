@@ -80,6 +80,8 @@ jobs:
         env:
           MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
         run: node scripts/diagnose-frontend-ignore.mjs after-clippy
+      - name: Verify actual cross-process directory locks and exit recovery
+        run: node --test scripts/data-directory.node-test.mjs
       - name: Verify build provenance and incremental Cargo invalidation
         id: identity_fixtures
         run: node --test scripts/build-identity.node-test.mjs scripts/diagnose-frontend-ignore.node-test.mjs

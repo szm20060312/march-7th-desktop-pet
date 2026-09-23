@@ -2,6 +2,7 @@ mod model;
 pub(crate) mod native;
 mod service;
 mod store;
+pub(crate) use store::validate_import as validate_imported_reminders;
 pub(crate) mod ui;
 mod ui_geometry;
 mod ui_policy;

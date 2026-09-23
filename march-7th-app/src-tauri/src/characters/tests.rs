@@ -29,6 +29,18 @@ fn catalog() -> Catalog {
     Catalog::builtin().unwrap()
 }
 #[test]
+fn unavailable_directory_keeps_character_selection_session_only() {
+    use crate::data_directory::{acquire, DataFile};
+    let directory = acquire(None).unwrap();
+    let service = Service::start(directory.path(DataFile::Characters), |_| {}).unwrap();
+    assert_eq!(service.snapshot().persistence, Persistence::SessionOnly);
+    let id = catalog().characters[1].id.clone();
+    let selected = service.select(id.clone()).unwrap().recv().unwrap().unwrap();
+    assert_eq!(selected.selected_character_id, id);
+    assert_eq!(selected.persistence, Persistence::SessionOnly);
+    service.stop();
+}
+#[test]
 fn default_unknown_and_explicit_normalization() {
     let temp = Temp::new();
     let catalog = catalog();
@@ -53,6 +65,7 @@ fn corrupt_future_and_read_errors_are_session_only_without_content_leaks() {
     for raw in [
         "private broken content",
         r#"{"version":99,"private":"secret"}"#,
+        r#"{"version":1,"selectedCharacterId":"march-7th","future":"keep"}"#,
     ] {
         fs::write(temp.file(), raw).unwrap();
         let (mut store, initial) = Store::load(Some(temp.file()), &catalog);

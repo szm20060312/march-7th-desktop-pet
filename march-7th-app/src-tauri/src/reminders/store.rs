@@ -56,6 +56,9 @@ fn decode(bytes: &[u8]) -> Result<Data, Error> {
     data.validate().map_err(|_| Error::new("invalidFile"))?;
     Ok(data)
 }
+pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), Error> {
+    decode(bytes).map(|_| ())
+}
 impl Storage for Store {
     fn load(&mut self) -> (Data, Persistence) {
         let result = self
@@ -117,6 +120,17 @@ impl Storage for Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unavailable_directory_keeps_reminders_disabled_and_read_only() {
+        use crate::data_directory::{acquire, DataFile};
+        let directory = acquire(None).unwrap();
+        let mut store = Store::new(directory.path(DataFile::Reminders));
+        let (data, persistence) = store.load();
+        assert!(data.settings.items.iter().all(|item| !item.enabled));
+        assert_eq!(persistence.status, SaveStatus::ReadOnly);
+        assert_eq!(persistence.code, Some("directoryUnavailable"));
+        assert_eq!(store.save(&data), persistence);
+    }
     #[test]
     fn fixround1_all_day_unknown_fields_protect_real_file_on_load_and_save() {
         let temp = Temp::new();

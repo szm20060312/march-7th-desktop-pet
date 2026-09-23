@@ -1,4 +1,5 @@
 use super::{Catalog, Service, Snapshot};
+use crate::data_directory::{DataDirectory, DataFile};
 use tauri::{
     menu::{CheckMenuItem, MenuEvent, MenuItem, Submenu},
     App, AppHandle, Emitter, Manager, Runtime,
@@ -13,11 +14,7 @@ const PREFIX: &str = "character:";
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::error::Error>> {
     let catalog = Catalog::builtin()?;
     let handle = app.handle().clone();
-    let path = app
-        .path()
-        .app_config_dir()
-        .ok()
-        .map(|p| p.join("character-preferences.json"));
+    let path = app.state::<DataDirectory>().path(DataFile::Characters);
     let service = Service::start(path, move |_| {
         let handle = handle.clone();
         let queued = handle.clone();

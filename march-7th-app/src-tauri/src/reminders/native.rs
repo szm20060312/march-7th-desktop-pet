@@ -3,6 +3,7 @@ use super::{
     service::{Change, Service, Snapshot},
     store::Store,
 };
+use crate::data_directory::{DataDirectory, DataFile};
 use chrono::{Local, Timelike};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::Instant;
@@ -30,11 +31,7 @@ struct ResponseEvent {
     response: Response,
 }
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
-    let path = app
-        .path()
-        .app_config_dir()
-        .ok()
-        .map(|p| p.join("reminders.json"));
+    let path = app.state::<DataDirectory>().path(DataFile::Reminders);
     let handle = app.handle().clone();
     let started = Instant::now();
     let service = Service::start(
