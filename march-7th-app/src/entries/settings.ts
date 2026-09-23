@@ -67,10 +67,10 @@ const focusConnection = connectFocus({
 });
 const unbindFocus = focusView.bind(focusControls);
 const focusTicker = setInterval(() => focusControls.tick(), 1000);
-const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: async () => { backup.close(); focusConnection.close(); focusControls.close(); await hideSettingsWindow(); } });
+const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: async () => { await hideSettingsWindow(); backup.close(); focusConnection.close(); focusControls.close(); } });
 const connection = connectReminders({
   select: controller.receive,
-  opened(intent) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.reopen(); if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
+  opened(intent) { if (!intent.alreadyVisible) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.reopen(); } if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
   reportError(error) {
     console.error("Reminder settings connection failed", error);
     // Command feedback belongs to the controller's submitting session. The

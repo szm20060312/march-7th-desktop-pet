@@ -9,11 +9,11 @@ export interface ReminderTransport {
 }
 const nativeTransport: ReminderTransport = { invoke, listen: (name, callback) => listen<unknown>(name, event => callback(event.payload)) };
 export type ReminderConnectionError = { stage: "listen" | "snapshot" | "event" | "command"; recovery: "restart" | "retry"; cause: unknown };
-export type SettingsOpenIntent = { generation: number; target: "focus" | "settings" };
+export type SettingsOpenIntent = { generation: number; target: "focus" | "settings"; alreadyVisible: boolean };
 export function parseSettingsOpenIntent(value: unknown): SettingsOpenIntent {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw Error("Invalid settings open event");
   const fields = value as Record<string, unknown>;
-  if (Object.keys(fields).length !== 2 || !Number.isSafeInteger(fields.generation) || (fields.generation as number) < 1 || !["focus", "settings"].includes(String(fields.target))) throw Error("Invalid settings open event");
+  if (Object.keys(fields).length !== 3 || !Number.isSafeInteger(fields.generation) || (fields.generation as number) < 1 || !["focus", "settings"].includes(String(fields.target)) || typeof fields.alreadyVisible !== "boolean") throw Error("Invalid settings open event");
   return fields as SettingsOpenIntent;
 }
 export function connectReminders(options: {

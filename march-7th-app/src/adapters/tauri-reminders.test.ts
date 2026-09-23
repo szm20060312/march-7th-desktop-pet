@@ -14,13 +14,13 @@ function host() {
 }
 describe("reminder native boundary", () => {
   it("accepts only targeted settings-open generations and ignores delayed older opens", async () => {
-    expect(parseSettingsOpenIntent({ generation: 4, target: "focus" })).toEqual({ generation: 4, target: "focus" });
-    for (const bad of [null, { generation: 0, target: "focus" }, { generation: 1, target: "other" }, { generation: 1, target: "focus", path: "private" }]) expect(() => parseSettingsOpenIntent(bad)).toThrow();
+    expect(parseSettingsOpenIntent({ generation: 4, target: "focus", alreadyVisible: true })).toEqual({ generation: 4, target: "focus", alreadyVisible: true });
+    for (const bad of [null, { generation: 0, target: "focus", alreadyVisible: false }, { generation: 1, target: "other", alreadyVisible: false }, { generation: 1, target: "focus", path: "private" }, { generation: 1, target: "focus", alreadyVisible: "yes" }]) expect(() => parseSettingsOpenIntent(bad)).toThrow();
     const h = host(); const opened = vi.fn(); const c = connectReminders({ select: vi.fn(), opened, reportError: vi.fn(), transport: h }); await flush();
-    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus" });
-    h.events.get("reminder-settings-opened")!({ generation: 2, target: "settings" });
-    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus" });
-    expect(opened.mock.calls.map(([intent]) => intent)).toEqual([{ generation: 1, target: "focus" }, { generation: 2, target: "settings" }]);
+    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus", alreadyVisible: false });
+    h.events.get("reminder-settings-opened")!({ generation: 2, target: "settings", alreadyVisible: true });
+    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus", alreadyVisible: false });
+    expect(opened.mock.calls.map(([intent]) => intent)).toEqual([{ generation: 1, target: "focus", alreadyVisible: false }, { generation: 2, target: "settings", alreadyVisible: true }]);
     c.dispose();
   });
   it("validates required fields, complete unique identities and scalar bounds; canonicalizes ID order", () => {

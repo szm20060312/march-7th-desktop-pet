@@ -54,7 +54,7 @@ describe("real settings entry / adapter / controller error ownership", () => {
     native.invoke.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
     edit(30); save(); await flush(); expect(dom.get("save-settings").textContent).toBe("正在保存…");
     dom.get("close-settings").dispatch("click"); await flush(); expect(native.invoke).toHaveBeenCalledWith("hide_reminder_settings");
-    native.invoke.mockResolvedValueOnce(fresh(3)); events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush(); edit(50);
+    native.invoke.mockResolvedValueOnce(fresh(3)); events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings", alreadyVisible: false } }); await flush(); edit(50);
     if (nextState === "saved") { const saved = fresh(4); saved.settings.snoozeMinutes = 50; native.invoke.mockResolvedValueOnce(saved); save(); await flush(); expect(dom.get("settings-notice").textContent).toBe("设置已保存。"); }
     const notice = dom.get("settings-notice").textContent; const status = dom.get("settings-status").textContent;
     rejectOld(Error("late operation")); await flush();
@@ -73,6 +73,38 @@ describe("real settings entry / adapter / controller error ownership", () => {
 
 describe("local backup entry stays separate from reminder drafts", () => {
   const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, focus: { status: "paused", defaultedFromV1: false }, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
+  it("locates focus in an already visible settings window without losing reminder draft", async () => {
+    await import("./settings"); await flush(); edit(37);
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: true } }); await flush();
+    expect(dom.get("snooze-minutes").value).toBe("37");
+    expect(dom.get("settings-status").textContent).toContain("草稿");
+  });
+  it("locates focus without clearing an open backup preview", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: true } }); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    expect(dom.get("import-focus").textContent).toBe("已暂停");
+    expect(dom.get("confirm-import").disabled).toBe(false);
+  });
+  it("leaves an in-flight backup selection intact when locating focus in the visible window", async () => {
+    let finish!: (value: unknown) => void;
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? new Promise(yes => { finish = yes; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("export-backup").disabled).toBe(true);
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: true } }); await flush();
+    finish(preview); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    expect(dom.get("confirm-import").disabled).toBe(false);
+  });
+  it("retains a backup preview when native hide rejects", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "hide_reminder_settings" ? Promise.reject({ code: "hideFailed" }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    dom.get("close-settings").dispatch("click"); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    expect(dom.get("confirm-import").disabled).toBe(false);
+  });
   it("previews limited coverage, confirms only on explicit action, and preserves reminder draft", async () => {
     native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "confirm_local_backup" ? Promise.resolve({ transactionId: "abc", restartRequired: true }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); edit(37);
@@ -106,7 +138,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
     expect(dom.get("export-backup").disabled).toBe(true);
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings", alreadyVisible: false } }); await flush();
     finish(preview); await flush();
     expect(dom.get("backup-preview").hidden).toBe(true);
     expect(dom.get("confirm-import").disabled).toBe(true);
@@ -165,7 +197,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     native.invoke.mockImplementation(name => name === "export_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); dom.get("export-backup").dispatch("click"); await flush();
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings", alreadyVisible: false } }); await flush();
     const before = dom.get("backup-status").textContent;
     finish("saved"); await flush();
     expect(dom.get("backup-status").textContent).toBe(before);
@@ -184,6 +216,16 @@ describe("local backup entry stays separate from reminder drafts", () => {
 
 describe("focus settings entry uses the committed Rust state", () => {
   const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 1, session }, error: null, stopped: false }, completedNow: false, error: null });
+  it("keeps focus and reminder edits usable after native hide fails", async () => {
+    native.invoke.mockImplementation(name => name === "get_focus" ? Promise.resolve(focus(1, { status: "idle" })) : name === "hide_reminder_settings" ? Promise.reject({ code: "hideFailed" }) : name === "focus_command" ? Promise.resolve({ revision: 2, data: { version: 1, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } }, error: null, stopped: false }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); edit(37);
+    dom.get("close-settings").dispatch("click"); await flush();
+    expect(dom.get("snooze-minutes").value).toBe("37");
+    expect(dom.get("settings-notice").textContent).toContain("无法关闭");
+    dom.get("focus-start").dispatch("click"); await flush();
+    expect(native.invoke).toHaveBeenCalledWith("focus_command", { command: { type: "start", durationMs: 1_500_000 } });
+    expect(dom.get("focus-state").textContent).toBe("专注进行中");
+  });
   it("ignores an initial focus read failure after close and a successful reopened read", async () => {
     let failOld!: (reason: unknown) => void;
     const current = focus(3, { status: "idle" });
@@ -192,7 +234,7 @@ describe("focus settings entry uses the committed Rust state", () => {
     }) : Promise.resolve(fresh()));
     await import("./settings"); await flush();
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: false } }); await flush();
     expect(dom.get("focus-state").textContent).toBe("尚未开始");
     failOld(Error("old read")); await flush();
     expect(dom.get("focus-notice").textContent).toBe("");
@@ -200,14 +242,14 @@ describe("focus settings entry uses the committed Rust state", () => {
   it("finds focus from a newly opened window and again from an already open window, ignoring stale intent", async () => {
     const scroll = vi.fn(); (dom.get("focus-section") as ElementDouble & { scrollIntoView: typeof scroll }).scrollIntoView = scroll;
     await import("./settings"); await flush();
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: false } }); await flush();
     expect(scroll).toHaveBeenCalledWith({ block: "start" });
     scroll.mockClear();
-    events.get("reminder-settings-opened")!({ payload: { generation: 2, target: "settings" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 2, target: "settings", alreadyVisible: true } }); await flush();
     expect(scroll).not.toHaveBeenCalled();
-    events.get("reminder-settings-opened")!({ payload: { generation: 3, target: "focus" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 3, target: "focus", alreadyVisible: true } }); await flush();
     expect(scroll).toHaveBeenCalledTimes(1);
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: false } }); await flush();
     expect(scroll).toHaveBeenCalledTimes(1);
   });
   it("starts, pauses, resumes, ends early, and never invokes mutating view for display", async () => {
@@ -244,7 +286,7 @@ describe("focus settings entry uses the committed Rust state", () => {
     await import("./settings"); await flush();
     dom.get("focus-pause").dispatch("click"); await flush();
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings", alreadyVisible: false } }); await flush();
     const newer = focus(2, { status: "paused", duration_ms: 1_500_000, remaining_ms: 900_000 });
     events.get("focus-changed")!({ payload: newer }); await flush();
     reject({ code: "writeFailed" }); await flush();

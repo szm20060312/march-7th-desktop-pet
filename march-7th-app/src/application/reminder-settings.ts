@@ -66,7 +66,7 @@ export function createReminderSettingsController(ports: {
       finally { if (!disposed && token === session) { pauseBusy = false; render(); } }
     },
     reopen(latest?: ReminderSnapshot) { if (disposed) return; if (latest) receive(latest); reset(); },
-    async close() { if (disposed) return; reset(); try { await ports.close(); } catch { if (!disposed) { notice = "无法关闭窗口，请重试。"; render(); } } },
+    async close() { if (disposed) return; try { await ports.close(); if (!disposed) reset(); } catch { if (!disposed) { notice = "无法关闭窗口，请重试。"; render(); } } },
     error(message: string) { if (!disposed) { notice = message; render(); } },
     dispose() { disposed = true; session++; },
   };

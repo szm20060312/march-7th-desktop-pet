@@ -48,6 +48,13 @@ describe("reminder settings draft", () => {
     h.c.reopen(fresh(10)); const newDraft = fresh().settings; newDraft.snoozeMinutes = 50; h.c.edit(newDraft); const old = fresh(2); old.settings = draft; resolve(old); await saving;
     expect(h.state().draft?.snoozeMinutes).toBe(50); expect(h.state().notice).not.toContain("已保存");
   });
+  it("keeps an unsaved draft when native hide rejects", async () => {
+    const h = setup(); const draft = fresh().settings; draft.snoozeMinutes = 37; h.c.edit(draft);
+    h.close.mockRejectedValue(Error("hideFailed")); await h.c.close();
+    expect(h.state().draft?.snoozeMinutes).toBe(37);
+    expect(h.state().dirty).toBe(true);
+    expect(h.state().notice).toContain("无法关闭");
+  });
   it("rejects invalid intervals and equal daily times without submitting", async () => {
     const h = setup(); const draft = fresh().settings; draft.activeHours = { kind: "daily", start: 0, end: 0 }; h.c.edit(draft); await h.c.save(); expect(h.state().notice).toContain("全天");
     draft.activeHours = { kind: "allDay" }; draft.items[0].intervalMinutes = NaN; h.c.edit(draft); await h.c.save(); expect(h.command).not.toHaveBeenCalled();

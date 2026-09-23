@@ -30,6 +30,7 @@ struct State {
     reminder_attempts: u16,
     settings: SettingsUi,
     settings_focus_target: bool,
+    settings_was_visible: bool,
     settings_settle: Option<(u64, Observation, Placement)>,
     settings_attempts: u16,
     settings_reflow: bool,
@@ -102,10 +103,15 @@ fn running<R: Runtime>(ui: &Ui<R>) -> bool {
     !ui.stopped.load(Ordering::Acquire)
 }
 
-fn settings_open_payload(generation: u64, focus_target: bool) -> serde_json::Value {
+fn settings_open_payload(
+    generation: u64,
+    focus_target: bool,
+    already_visible: bool,
+) -> serde_json::Value {
     serde_json::json!({
         "generation": generation,
         "target": if focus_target { "focus" } else { "settings" },
+        "alreadyVisible": already_visible,
     })
 }
 
@@ -168,10 +174,20 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
     ui.state.lock().unwrap().error = None;
     match operation {
         "focus-settings" | "reminder-settings" => {
-            let exists = app.get_webview_window("settings").is_some();
+            let existing = app.get_webview_window("settings");
+            let already_visible = match existing.as_ref().map(WebviewWindow::is_visible) {
+                Some(Ok(visible)) => visible,
+                Some(Err(error)) => {
+                    fail(app, "settingsFailed", error);
+                    return true;
+                }
+                None => false,
+            };
+            let exists = existing.is_some();
             let token = {
                 let mut s = ui.state.lock().unwrap();
                 s.settings_focus_target = operation == "focus-settings";
+                s.settings_was_visible = already_visible;
                 s.settings_settle = None;
                 s.settings_attempts = 0;
                 s.settings.request_open(exists)
@@ -238,18 +254,23 @@ pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) 
         // Refresh before capturing the ID. An older auto dismissal can never
         // dismiss a newer manual view, even with queued service notifications.
         refresh(app);
+        if window.label() == "settings" {
+            match window.hide() {
+                Ok(()) => {
+                    crate::local_backup::invalidate(app);
+                    let mut s = ui.state.lock().unwrap();
+                    s.settings.close();
+                    s.settings_reflow = false;
+                    s.settings_settle = None;
+                }
+                Err(error) => fail(app, "hideFailed", error),
+            }
+            return true;
+        }
         let id = {
             let mut s = ui.state.lock().unwrap();
-            if window.label() == "settings" {
-                crate::local_backup::invalidate(app);
-                s.settings.close();
-                s.settings_reflow = false;
-                s.settings_settle = None;
-                None
-            } else {
-                s.reminder_settle = None;
-                s.reminder.dismiss()
-            }
+            s.reminder_settle = None;
+            s.reminder.dismiss()
         };
         if let Err(error) = window.hide() {
             fail(app, "hideFailed", error);
@@ -726,11 +747,14 @@ fn settle_settings<R: Runtime>(
     if stable && running(&ui) {
         if ui.state.lock().unwrap().settings.may_show(generation) {
             // The only focus call belongs to an explicit tray open, never reflow.
-            let focus_target = ui.state.lock().unwrap().settings_focus_target;
+            let (focus_target, already_visible) = {
+                let state = ui.state.lock().unwrap();
+                (state.settings_focus_target, state.settings_was_visible)
+            };
             window
                 .emit(
                     "reminder-settings-opened",
-                    settings_open_payload(generation, focus_target),
+                    settings_open_payload(generation, focus_target, already_visible),
                 )
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
@@ -758,14 +782,13 @@ pub async fn hide_reminder_settings<R: Runtime>(
             if !running(&ui) {
                 return Err(Error::new("stopped"));
             }
-            {
-                crate::local_backup::invalidate(&handle);
-                let mut s = ui.state.lock().unwrap();
-                s.settings.close();
-                s.settings_reflow = false;
-                s.settings_settle = None;
-            }
-            window.hide().map_err(|_| Error::new("hideFailed"))
+            window.hide().map_err(|_| Error::new("hideFailed"))?;
+            crate::local_backup::invalidate(&handle);
+            let mut s = ui.state.lock().unwrap();
+            s.settings.close();
+            s.settings_reflow = false;
+            s.settings_settle = None;
+            Ok(())
         })();
         let _ = send.send(result);
     })
@@ -839,14 +862,14 @@ fn require_window(actual: &str, expected: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn settings_open_intent_carries_generation_and_focus_target_only() {
+    fn settings_open_intent_carries_generation_target_and_visibility_only() {
         assert_eq!(
-            super::settings_open_payload(7, true),
-            serde_json::json!({"generation": 7, "target": "focus"})
+            super::settings_open_payload(7, true, true),
+            serde_json::json!({"generation": 7, "target": "focus", "alreadyVisible": true})
         );
         assert_eq!(
-            super::settings_open_payload(8, false),
-            serde_json::json!({"generation": 8, "target": "settings"})
+            super::settings_open_payload(8, false, false),
+            serde_json::json!({"generation": 8, "target": "settings", "alreadyVisible": false})
         );
     }
     #[test]
