@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
 pub const MIN_DURATION_MS: u64 = 60_000;
 pub const MAX_DURATION_MS: u64 = 4 * 60 * 60_000;
 pub const MAX_TRUSTED_GAP_MS: u64 = 24 * 60 * 60_000;
@@ -33,6 +33,7 @@ impl Time {
 pub struct Data {
     pub version: u8,
     pub session: Session,
+    pub task: Option<Task>,
 }
 
 impl Default for Data {
@@ -40,6 +41,7 @@ impl Default for Data {
         Self {
             version: VERSION,
             session: Session::Idle {},
+            task: None,
         }
     }
 }
@@ -48,6 +50,13 @@ impl Data {
     pub fn validate(&self) -> Result<(), Error> {
         if self.version != VERSION {
             return Err(Error::new("unsupportedVersion"));
+        }
+        if let Some(task) = &self.task {
+            if matches!(self.session, Session::Idle {})
+                || normalize_task_name(&task.name)?.as_deref() != Some(&task.name)
+            {
+                return Err(Error::new("invalidState"));
+            }
         }
         let duration = match self.session {
             Session::Idle {} => return Ok(()),
@@ -139,10 +148,13 @@ pub enum Feedback {
     Dismissed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Tick,
     Start { duration_ms: u64 },
+    StartWithTask { duration_ms: u64, task_name: String },
+    CompleteTask,
+    AbandonTask,
     Pause,
     Resume,
     EndEarly,
@@ -155,6 +167,7 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Transition {
     pub completed_now: bool,
+    pub task_response: Option<TaskStatus>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -238,6 +251,23 @@ impl Engine {
     pub fn step(&mut self, command: Command, now: Time) -> Result<Transition, Error> {
         now.validate()?;
         self.data.validate()?;
+        let command = match command {
+            Command::StartWithTask {
+                duration_ms,
+                task_name,
+            } => {
+                let name = normalize_task_name(&task_name)?;
+                let mut next = self.clone();
+                let result = next.step(Command::Start { duration_ms }, now)?;
+                next.data.task = name.map(|name| Task {
+                    name,
+                    status: TaskStatus::Active,
+                });
+                *self = next;
+                return Ok(result);
+            }
+            command => command,
+        };
         if let Command::Start { duration_ms } = command {
             if !(MIN_DURATION_MS..=MAX_DURATION_MS).contains(&duration_ms) {
                 return Err(Error::new("invalidDuration"));
@@ -265,7 +295,22 @@ impl Engine {
         } else {
             command
         };
-        next.apply(command, now)?;
+        if matches!(command, Command::CompleteTask | Command::AbandonTask) {
+            let desired = if command == Command::CompleteTask {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Abandoned
+            };
+            let task = next.data.task.as_mut().ok_or(Error::new("noTask"))?;
+            if task.status == TaskStatus::Active {
+                task.status = desired;
+                result.task_response = Some(desired);
+            } else if task.status != desired {
+                return Err(Error::new("taskResolved"));
+            }
+        } else {
+            next.apply(command, now)?;
+        }
         next.data.validate()?;
         *self = next;
         Ok(result)
@@ -330,6 +375,7 @@ impl Engine {
                 if !valid_deadline(now.utc_ms, duration_ms) {
                     return Err(Error::new("invalidTime"));
                 }
+                self.data.task = None;
                 self.monotonic_anchor_ms = Some(now.monotonic_ms);
                 Session::Running {
                     duration_ms,
@@ -447,4 +493,32 @@ fn valid_deadline(anchor_utc_ms: i64, remaining_ms: u64) -> bool {
             .ok()
             .and_then(|remaining| anchor_utc_ms.checked_add(remaining))
             .is_some_and(|deadline| deadline <= MAX_UTC)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Task {
+    pub name: String,
+    pub status: TaskStatus,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskStatus {
+    Active,
+    Completed,
+    Abandoned,
+}
+pub fn normalize_task_name(name: &str) -> Result<Option<String>, Error> {
+    // Reject control characters even at the edges; trim must not silently hide them.
+    if name.chars().any(char::is_control) {
+        return Err(Error::new("invalidTaskName"));
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if name.chars().count() > 80 || name.len() > 256 {
+        return Err(Error::new("invalidTaskName"));
+    }
+    Ok(Some(name.to_owned()))
 }

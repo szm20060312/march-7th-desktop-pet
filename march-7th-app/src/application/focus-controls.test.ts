@@ -3,7 +3,7 @@ import { createFocusControls } from "./focus-controls";
 import type { FocusSession, FocusSnapshot } from "../domain/focus";
 
 const snapshot = (revision: number, session: FocusSession): FocusSnapshot =>
-  ({ revision, data: { version: 1, session }, error: null, stopped: false });
+  ({ revision, data: { version: 2, task: null, session }, error: null, stopped: false });
 const idle = snapshot(1, { status: "idle" });
 const running = snapshot(2, { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: 100 });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };

@@ -75,7 +75,8 @@ fn failed_write_keeps_engine_snapshot_and_export_bytes() {
 #[test]
 fn restore_is_durable_without_live_completion_and_repeated_pause_is_idempotent() {
     let data = Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: MIN_DURATION_MS,
@@ -221,7 +222,8 @@ fn stop_during_save_rejects_inflight_and_queued_replies_without_late_publication
 #[test]
 fn failed_restore_keeps_the_original_session_until_a_successful_retry() {
     let data = Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: MIN_DURATION_MS,
@@ -330,8 +332,9 @@ fn actual_v2_service_commit_roundtrips_four_file_backup_and_import_activates_onl
     .unwrap();
     receive.recv_timeout(Duration::from_secs(5)).unwrap();
     let saved = service
-        .command(Command::Start {
+        .command(Command::StartWithTask {
             duration_ms: MIN_DURATION_MS,
+            task_name: "本地私有任务".into(),
         })
         .unwrap()
         .recv_timeout(Duration::from_secs(5))
@@ -349,6 +352,10 @@ fn actual_v2_service_commit_roundtrips_four_file_backup_and_import_activates_onl
     let decoded =
         backup_codec::decode(&backup_codec::encode(files.clone(), 1000).unwrap()).unwrap();
     assert_eq!(decoded.files.focus, focus);
+    assert_eq!(decoded.preview.focus.task_status, "active");
+    assert!(!serde_json::to_string(&decoded.preview)
+        .unwrap()
+        .contains("本地私有任务"));
     assert_eq!(decoded.files.characters, files.characters);
     assert_eq!(decoded.files.reminders, files.reminders);
     assert_eq!(decoded.files.desktop, files.desktop);
@@ -473,7 +480,8 @@ fn stopping_during_initial_read_does_not_sample_clock_or_publish_or_save() {
 #[test]
 fn completion_signal_only_follows_a_successful_live_commit_never_restore_or_retry() {
     let running = Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: MIN_DURATION_MS,
@@ -513,7 +521,8 @@ fn live_completion_event_is_committed_once_and_suppressed_if_stop_wins_during_io
         let (release, release_receive) = mpsc::channel();
         let (events, receive) = mpsc::channel();
         let running = Data {
-            version: 1,
+            version: crate::focus::model::VERSION,
+            task: None,
             session: Session::Running {
                 duration_ms: MIN_DURATION_MS,
                 remaining_ms: MIN_DURATION_MS,
@@ -613,7 +622,8 @@ fn automatic_save_failure_reports_an_error_without_publishing_uncommitted_progre
     let samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let sampled = samples.clone();
     let (store, fail) = memory(Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: 100,
@@ -700,7 +710,8 @@ fn stopping_during_background_failed_save_suppresses_late_error_notification() {
     let current = Arc::new(AtomicU64::new(0));
     let clock = current.clone();
     let running = Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: 100,
@@ -843,7 +854,8 @@ fn checkpoint_wait_is_bounded_by_one_minute_and_remaining_time_with_exact_comple
 #[test]
 fn short_remaining_deadline_is_not_delayed_by_invalid_commands_or_spurious_wakes() {
     let data = Data {
-        version: 1,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: 150,
@@ -930,4 +942,58 @@ fn checkpoint_gaps_restore_elapsed_time_and_detect_untrusted_sleep_without_repla
     assert!(restored.completed_now);
     assert!(!restored.pump(Command::Tick, time(310_000)).unwrap());
     assert!(!restored.completed_now);
+}
+#[test]
+fn m5b_failed_task_write_preserves_snapshot_and_retry_emits_once_then_restart_is_silent() {
+    use crate::focus::model::TaskStatus;
+    let (store, fail) = memory(Data::default());
+    let mut core = Core::load(store);
+    core.pump(
+        Command::StartWithTask {
+            duration_ms: MIN_DURATION_MS,
+            task_name: "私有任务".into(),
+        },
+        time(0),
+    )
+    .unwrap();
+    let before = core.snapshot.clone();
+    let bytes = core.bytes.clone();
+    fail.store(true, Ordering::SeqCst);
+    assert_eq!(
+        core.pump(Command::CompleteTask, time(1)).unwrap_err().code,
+        "writeFailed"
+    );
+    assert_eq!(core.snapshot, before);
+    assert_eq!(core.bytes, bytes);
+    assert!(core.task_response.is_none());
+    fail.store(false, Ordering::SeqCst);
+    core.pump(Command::CompleteTask, time(1)).unwrap();
+    assert_eq!(core.task_response, Some(TaskStatus::Completed));
+    core.pump(Command::CompleteTask, time(1)).unwrap();
+    assert!(core.task_response.is_none());
+    let (store, _) = memory(core.snapshot.data.unwrap());
+    let mut restored = Core::load(store);
+    restored.pump(Command::Tick, time(2)).unwrap();
+    assert!(restored.task_response.is_none());
+}
+#[test]
+fn m5b_idle_v1_upgrade_is_committed_and_failure_keeps_original_bytes() {
+    let old = br#"{"version":1,"session":{"status":"idle"}}"#.to_vec();
+    let fail = Arc::new(AtomicBool::new(true));
+    let mut core = Core::load(Memory {
+        bytes: old.clone(),
+        fail: fail.clone(),
+    });
+    assert_eq!(
+        core.pump(Command::Tick, time(0)).unwrap_err().code,
+        "writeFailed"
+    );
+    assert_eq!(core.bytes, old);
+    fail.store(false, Ordering::SeqCst);
+    core.pump(Command::Tick, time(0)).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&core.bytes).unwrap()["version"],
+        2
+    );
+    assert!(core.task_response.is_none());
 }

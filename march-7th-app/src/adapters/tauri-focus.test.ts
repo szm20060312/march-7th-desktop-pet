@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { connectFocus, parseFocusChange } from "./tauri-focus";
 
-const snapshot = (revision: number) => ({ revision, data: { version: 1, session: { status: "idle" } }, error: null, stopped: false });
+const snapshot = (revision: number) => ({ revision, data: { version: 2, task: null, session: { status: "idle" } }, error: null, stopped: false });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 it("subscribes before read, ignores older replies, and never polls mutating view", async () => {
@@ -19,12 +19,12 @@ it("subscribes before read, ignores older replies, and never polls mutating view
 });
 
 it("rejects malformed native state and preserves the last accepted snapshot", () => {
-  expect(() => parseFocusChange({ snapshot: { ...snapshot(2), data: { version: 1, session: { status: "running", duration_ms: 1000, remaining_ms: 500, anchor_utc_ms: 1 } } }, completedNow: false, error: null })).toThrow();
+  expect(() => parseFocusChange({ snapshot: { ...snapshot(2), data: { version: 2, task: null, session: { status: "running", duration_ms: 1000, remaining_ms: 500, anchor_utc_ms: 1 } } }, completedNow: false, error: null })).toThrow();
   expect(() => parseFocusChange({ snapshot: snapshot(2), completedNow: "yes", error: null })).toThrow();
 });
 
 it("accepts Rust snake_case session fields and keeps readback completion non-proactive", () => {
-  const change = parseFocusChange({ snapshot: { ...snapshot(7), data: { version: 1, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 450_000, anchor_utc_ms: 100 } } }, completedNow: false, error: null });
+  const change = parseFocusChange({ snapshot: { ...snapshot(7), data: { version: 2, task: null, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 450_000, anchor_utc_ms: 100 } } }, completedNow: false, error: null });
   expect(change.snapshot.data?.session).toEqual({ status: "running", duration_ms: 1_500_000, remaining_ms: 450_000, anchor_utc_ms: 100 });
   expect(change.completedNow).toBe(false);
 });

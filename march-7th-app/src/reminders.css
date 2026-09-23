@@ -83,3 +83,9 @@ button.primary:hover:not(:disabled) { background: #405849; }
 /* Exceptionally small native work areas need scrolling around the entire view. */
 @media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 0; } .settings-page footer { position: static; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }
+
+.focus-task-entry { display: grid; gap: 7px; margin-top: 16px; }
+.focus-task-entry input { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px 10px; color: inherit; background: var(--field); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.focus-task-state { overflow-wrap: anywhere; margin-bottom: 8px; }
+.focus-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.focus-task-entry[hidden] { display: none; }

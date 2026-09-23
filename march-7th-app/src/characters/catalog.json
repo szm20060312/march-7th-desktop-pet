@@ -24,7 +24,9 @@
         "doubleClick": ["嘿，精神满满！", "准备好出发啦！"],
         "reminderCompleted": ["好啦，继续慢慢来。", "照顾好自己呀。"],
         "reminderSnoozed": ["好，等你方便的时候。", "那咱先安静一会儿。"],
-        "focusCompleted": ["完成啦，歇一会儿吧", "辛苦啦，伸个懒腰吧"]
+        "focusCompleted": ["完成啦，歇一会儿吧", "辛苦啦，伸个懒腰吧"],
+        "taskCompleted": ["这件事完成啦，辛苦啦", "做完一件事，慢慢来"],
+        "taskAbandoned": ["先放下也没关系", "换个节奏，我还在"]
       }
     },
     {
@@ -50,7 +52,9 @@
         "doubleClick": ["精神尚可。", "稍作舒展，也好。"],
         "reminderCompleted": ["做得好，继续吧。", "片刻休整，亦有益处。"],
         "reminderSnoozed": ["不急，依你的节奏。", "待你方便，再作提醒。"],
-        "focusCompleted": ["此刻，宜稍作休息", "专注已毕，且缓一缓"]
+        "focusCompleted": ["此刻，宜稍作休息", "专注已毕，且缓一缓"],
+        "taskCompleted": ["此事已毕，且从容", "有所完成，便值得停留"],
+        "taskAbandoned": ["暂且放下，无须勉强", "此刻停步，亦是选择"]
       }
     }
   ]

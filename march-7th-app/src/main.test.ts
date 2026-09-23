@@ -237,3 +237,12 @@ it("focus response is live-only, deduplicated across character changes and dispo
   respond({payload:{revision:6}});expect(message.textContent).toBe("此刻，宜稍作休息");
   windowTarget.dispatch("pagehide");const end=message.textContent;respond({payload:{revision:7}});expect(message.textContent).toBe(end);
 });
+it("task replies use the currently selected character and never replay on selection or after disposal", async () => {
+  await boot(); const respond=native.listen.mock.calls.find(c=>c[0]==="task-response")![1];
+  respond({payload:{revision:8,status:"completed"}});expect(message.textContent).toBe("这件事完成啦，辛苦啦");
+  native.listen.mock.calls.find(c=>c[0]==="selected-character-changed")![1]({payload:{selectedCharacterId:"raiden-shogun",revision:2,persistence:"saved"}});await flush();
+  const old=message.textContent;respond({payload:{revision:8,status:"completed"}});expect(message.textContent).toBe(old);
+  respond({payload:{revision:9,status:"abandoned"}});expect(message.textContent).toBe("暂且放下，无须勉强");
+  windowTarget.dispatch("pagehide");const disposedText=message.textContent;respond({payload:{revision:10,status:"completed"}});expect(message.textContent).toBe(disposedText);
+  expect(native.invoke.mock.calls.filter(c=>c[0]==="focus_command")).toEqual([]);
+});

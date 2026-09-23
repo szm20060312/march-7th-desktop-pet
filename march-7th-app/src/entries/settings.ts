@@ -30,6 +30,7 @@ function renderPreview(preview: BackupPreview) {
   const quiet = preview.reminders.quietUntilUtcMs === null ? "无安静期" : `安静至 ${new Date(preview.reminders.quietUntilUtcMs).toLocaleString()}`;
   previewFields["reminder-state"].textContent = `${preview.reminders.paused ? "已暂停" : "运行中"} · ${quiet} · 稍后 ${preview.reminders.snoozeMinutes} 分钟${preview.reminders.snoozePending ? " · 有稍后待提示" : ""}`;
   previewFields.focus.textContent = preview.focus.defaultedFromV1 ? "旧版 v1 备份：将恢复为空专注会话" : ({ idle: "无专注会话", running: "进行中", paused: "已暂停", interrupted: "待确认中断", finished: "已结束" } as const)[preview.focus.status];
+  previewFields.focus.textContent += ` · ${{none:"无当前任务",active:"有当前任务",completed:"当前任务已完成",abandoned:"当前任务已放弃"}[preview.focus.taskStatus]}`;
 }
 const backup = createLocalBackupController({
   exportNow: exportLocalBackup,
@@ -61,7 +62,7 @@ const focusControls = createFocusControls({ render: focusView.render, command: c
 const focusConnection = connectFocus({
   select: focusControls.receive,
   reportError(error) {
-    console.error("Focus settings connection failed", error);
+    console.error("Focus settings connection failed", error.stage);
     if (error.stage !== "command") focusControls.error(error.stage === "listen" ? { code: "workerUnavailable" } : error.cause);
   },
 });

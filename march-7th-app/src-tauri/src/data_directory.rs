@@ -540,10 +540,7 @@ fn decode_focus(bytes: &[u8]) -> Result<crate::focus::model::Data, &'static str>
     if bytes.len() > MAX_FOCUS_BYTES {
         return Err("dataSetTooLarge");
     }
-    let data: crate::focus::model::Data =
-        serde_json::from_slice(bytes).map_err(|_| "dataSetInvalid")?;
-    data.validate().map_err(|_| "dataSetInvalid")?;
-    Ok(data)
+    crate::focus::store::decode(bytes).map_err(|_| "dataSetInvalid")
 }
 fn read_store(path: &Path) -> Result<Vec<u8>, &'static str> {
     let metadata = fs::symlink_metadata(path).map_err(|_| "dataSetInvalid")?;

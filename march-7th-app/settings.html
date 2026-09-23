@@ -15,12 +15,23 @@
         <p id="focus-state" class="focus-state" role="status" aria-live="polite">正在读取专注状态</p>
         <div class="focus-setup"><label for="focus-duration">时长</label><span><input id="focus-duration" type="number" min="1" max="240" step="1" inputmode="numeric" value="25" aria-describedby="focus-duration-hint" /> 分钟</span></div>
         <p id="focus-duration-hint" class="hint">预置 25 分钟，可改为 1–240 分钟；只作为计时设置。</p>
+        <div id="focus-task-entry" class="focus-task-entry">
+          <label for="focus-task-name">当前一件事 <span class="hint">（可选）</span></label>
+          <input id="focus-task-name" type="text" autocomplete="off" spellcheck="false" placeholder="留空，只计时" aria-describedby="focus-task-hint" />
+          <p id="focus-task-hint" class="hint">最多 80 个字符；仅保存在本机及主动导出的备份中。</p>
+        </div>
+        <p id="focus-task-state" class="focus-task-state" role="status" aria-live="polite">本次只计时</p>
+        <div class="focus-task-actions">
+          <button id="focus-task-complete" type="button" hidden disabled>这件事已完成</button>
+          <button id="focus-task-abandon" type="button" hidden disabled>放弃这件事</button>
+        </div>
+        <p class="hint">任务结果与计时分开；处理这件事后，计时仍可继续。</p>
         <div class="focus-actions">
           <button id="focus-start" class="primary" type="button" disabled>开始专注</button>
           <button id="focus-pause" class="primary" type="button" hidden disabled>暂停</button>
           <button id="focus-resume" class="primary" type="button" hidden disabled>继续</button>
           <button id="focus-end" type="button" hidden disabled>提前结束</button>
-          <button id="focus-abandon" type="button" hidden disabled>放弃</button>
+          <button id="focus-abandon" type="button" hidden disabled>放弃计时</button>
           <button id="focus-dismiss" type="button" hidden disabled>收起结果</button>
         </div>
         <p id="focus-pending" class="hint">正在读取待处理提醒…</p>

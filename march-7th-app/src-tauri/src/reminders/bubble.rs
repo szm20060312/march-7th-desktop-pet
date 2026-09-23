@@ -180,13 +180,15 @@ mod tests {
             snapshot: crate::focus::service::Snapshot {
                 revision: 5,
                 data: Some(crate::focus::model::Data {
-                    version: 1,
+                    version: 2,
+                    task: None,
                     session,
                 }),
                 error: None,
                 stopped: false,
             },
             completed_now: true,
+            task_response: None,
             error: None,
         }
     }

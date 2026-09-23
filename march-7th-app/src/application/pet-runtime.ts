@@ -10,6 +10,8 @@ const actions: Readonly<Record<ResponseContext, OneShotAction>> = {
   reminderCompleted: "jump",
   reminderSnoozed: "wave",
   focusCompleted: "wave",
+  taskCompleted: "wave",
+  taskAbandoned: "wave",
 };
 
 /** One lifecycle per call. stop() is idempotent and fences late native results. */

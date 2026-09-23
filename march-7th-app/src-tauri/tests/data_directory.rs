@@ -527,7 +527,7 @@ fn v2_migration_preserves_legacy_flat_bytes_and_adds_idle_focus_in_selected_set(
     let data: serde_json::Value = serde_json::from_slice(&fs::read(focus).unwrap()).unwrap();
     assert_eq!(
         data,
-        serde_json::json!({"version":1,"session":{"status":"idle"}})
+        serde_json::json!({"version":2,"session":{"status":"idle"},"task":null})
     );
     assert!(!temp.0.join("focus.json").exists());
     assert_eq!(fs::read(selected).unwrap(), old.reminders);

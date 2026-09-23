@@ -108,3 +108,17 @@ export function connectFocusResponses(options: { respond(): void; reportError(er
   }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, error => { if (!disposed) options.reportError(error); });
   return () => { disposed = true; stop?.(); };
 }
+export function connectTaskResponses(options: { respond(status: "completed" | "abandoned"): void; reportError(error: unknown): void; transport?: ReminderTransport }): () => void {
+  let disposed = false; let stop: (() => void) | undefined; let seen = 0;
+  void (options.transport ?? nativeTransport).listen("task-response", value => {
+    if (disposed) return;
+    try {
+      if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length !== 2) throw Error("Invalid task response");
+      const { revision, status } = value as Record<string, unknown>;
+      if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1 || (status !== "completed" && status !== "abandoned")) throw Error("Invalid task response");
+      if (revision <= seen) return;
+      seen = revision; options.respond(status);
+    } catch { options.reportError(Error("Invalid task response")); }
+  }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, () => { if (!disposed) options.reportError(Error("Task response unavailable")); });
+  return () => { disposed = true; stop?.(); };
+}

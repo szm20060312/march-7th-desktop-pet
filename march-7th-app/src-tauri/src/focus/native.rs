@@ -17,7 +17,11 @@ enum Operation {
     Start {
         #[serde(rename = "durationMs")]
         duration_ms: u64,
+        #[serde(default, rename = "taskName")]
+        task_name: Option<String>,
     },
+    CompleteTask {},
+    AbandonTask {},
     Pause {},
     Resume {},
     EndEarly {},
@@ -37,7 +41,15 @@ impl<'de> Deserialize<'de> for CommandInput {
 impl From<Operation> for Command {
     fn from(operation: Operation) -> Self {
         match operation {
-            Operation::Start { duration_ms } => Self::Start { duration_ms },
+            Operation::Start {
+                duration_ms,
+                task_name,
+            } => Self::StartWithTask {
+                duration_ms,
+                task_name: task_name.unwrap_or_default(),
+            },
+            Operation::CompleteTask {} => Self::CompleteTask,
+            Operation::AbandonTask {} => Self::AbandonTask,
             Operation::Pause {} => Self::Pause,
             Operation::Resume {} => Self::Resume,
             Operation::EndEarly {} => Self::EndEarly,
@@ -45,6 +57,26 @@ impl From<Operation> for Command {
             Operation::View {} => Self::Tick,
             Operation::DismissFeedback {} => Self::DismissFeedback,
         }
+    }
+}
+// No task text crosses into the character window, including on error or restoration.
+fn task_response(
+    change: &Change,
+    current: &Snapshot,
+    timely: bool,
+    visible: bool,
+) -> Option<serde_json::Value> {
+    if !timely
+        || !visible
+        || current.stopped
+        || change.error.is_some()
+        || current.revision != change.snapshot.revision
+    {
+        return None;
+    }
+    match change.task_response? {
+        super::model::TaskStatus::Active => None,
+        status => Some(serde_json::json!({"revision":change.snapshot.revision,"status":status})),
     }
 }
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
@@ -69,15 +101,17 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Err
                 if let Some(native) = queued.try_state::<NativeFocus>() {
                     let snapshot = native.service.snapshot();
                     if !snapshot.stopped {
-                        crate::reminders::ui::focus_changed(
-                            &queued,
-                            &change,
-                            queued_at.elapsed().as_secs() < 10
-                                && (0..10_000).contains(
-                                    &(chrono::Utc::now().timestamp_millis() - queued_utc),
-                                ),
-                        );
-                        let _ = queued.emit("focus-changed", change);
+                        let timely = queued_at.elapsed().as_secs() < 10
+                            && (0..10_000)
+                                .contains(&(chrono::Utc::now().timestamp_millis() - queued_utc));
+                        crate::reminders::ui::focus_changed(&queued, &change, timely);
+                        let visible = queued
+                            .get_webview_window("main")
+                            .is_some_and(|w| w.is_visible().unwrap_or(false));
+                        if let Some(response) = task_response(&change, &snapshot, timely, visible) {
+                            let _ = queued.emit_to("main", "task-response", response);
+                        }
+                        let _ = queued.emit_to("settings", "focus-changed", change);
                     }
                 }
             });
@@ -104,7 +138,7 @@ pub(crate) fn export_bytes<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<u8>, Er
         .export_bytes()
 }
 fn allowed(label: &str) -> Result<(), Error> {
-    if matches!(label, "main" | "settings") {
+    if label == "settings" {
         Ok(())
     } else {
         Err(Error {
@@ -151,6 +185,43 @@ pub async fn focus_command<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_projection_is_content_free_and_suppresses_stale_hidden_restored_and_failed_edges() {
+        use super::super::model::{Data, TaskStatus};
+        let data=super::super::store::decode(br#"{"version":2,"session":{"status":"paused","duration_ms":60000,"remaining_ms":30000},"task":{"name":"PRIVATE_TASK","status":"completed"}}"#).unwrap();
+        let snapshot = Snapshot {
+            revision: 8,
+            data: Some(data),
+            error: None,
+            stopped: false,
+        };
+        let mut change = Change {
+            snapshot: snapshot.clone(),
+            completed_now: false,
+            task_response: Some(TaskStatus::Completed),
+            error: None,
+        };
+        let response = task_response(&change, &snapshot, true, true).unwrap();
+        assert_eq!(
+            response,
+            serde_json::json!({"revision":8,"status":"completed"})
+        );
+        assert!(!response.to_string().contains("PRIVATE_TASK"));
+        assert!(task_response(&change, &snapshot, false, true).is_none());
+        assert!(task_response(&change, &snapshot, true, false).is_none());
+        let newer = Snapshot {
+            revision: 9,
+            data: Some(Data::default()),
+            ..snapshot.clone()
+        };
+        assert!(task_response(&change, &newer, true, true).is_none());
+        change.error = Some("writeFailed");
+        assert!(task_response(&change, &snapshot, true, true).is_none());
+        change.error = None;
+        change.task_response = None;
+        assert!(task_response(&change, &snapshot, true, true).is_none());
+    }
     #[test]
     fn ipc_rejects_unknown_fields_commands_and_unrelated_windows() {
         for json in [
@@ -174,7 +245,7 @@ mod tests {
                 .0
                 .is_ok()
         );
-        assert!(allowed("main").is_ok());
+        assert_eq!(allowed("main").unwrap_err().code, "invalidWindow");
         assert!(allowed("settings").is_ok());
         assert_eq!(allowed("reminder").unwrap_err().code, "invalidWindow");
     }

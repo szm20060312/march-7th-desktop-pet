@@ -36,11 +36,13 @@ impl Snapshot {
 pub struct Change {
     pub snapshot: Snapshot,
     pub completed_now: bool,
+    pub task_response: Option<super::model::TaskStatus>,
     /// A transient worker error; never part of the durable snapshot or export.
     pub error: Option<&'static str>,
 }
 struct Core<S: Storage> {
     completed_now: bool,
+    task_response: Option<super::model::TaskStatus>,
     store: S,
     engine: Option<Engine>,
     snapshot: Snapshot,
@@ -63,6 +65,7 @@ impl<S: Storage> Core<S> {
         Self {
             store,
             completed_now: false,
+            task_response: None,
             engine: None,
             snapshot,
             bytes: result.unwrap_or_default(),
@@ -89,7 +92,11 @@ impl<S: Storage> Core<S> {
             None => Engine::restore(self.loaded.clone()?, time)?,
         };
         let transition = next.step(command, time)?;
-        let data_changed = self.snapshot.data.as_ref() != Some(&next.data);
+        let data_changed = self.snapshot.data.as_ref() != Some(&next.data)
+            || serde_json::from_slice::<serde_json::Value>(&self.bytes)
+                .ok()
+                .and_then(|v| v.get("version").and_then(|v| v.as_u64()))
+                == Some(1);
         let changed = data_changed || self.snapshot.error.is_some();
         if changed {
             if self.snapshot.revision >= MAX_SAFE {
@@ -110,6 +117,7 @@ impl<S: Storage> Core<S> {
             self.snapshot.revision += 1;
         }
         self.completed_now = transition.completed_now;
+        self.task_response = transition.task_response;
         self.engine = Some(next);
         Ok(changed)
     }
@@ -163,6 +171,7 @@ impl Service {
         Change {
             snapshot: state.snapshot.clone(),
             completed_now: false,
+            task_response: None,
             error: state.error,
         }
     }
@@ -230,6 +239,7 @@ fn publish<S: Storage>(shared: &Shared, core: &Core<S>, notify: &impl Fn(Change)
     notify(Change {
         snapshot: core.snapshot.clone(),
         completed_now: core.completed_now,
+        task_response: core.task_response,
         error: None,
     });
     true
@@ -246,6 +256,7 @@ fn report_error(shared: &Shared, error: Error, notify: &impl Fn(Change)) {
     notify(Change {
         snapshot,
         completed_now: false,
+        task_response: None,
         error: Some(error.code),
     });
 }
@@ -316,7 +327,12 @@ fn run_worker<S: Storage>(
         }
         let sampled_at = Instant::now();
         let result = clock().and_then(|time| {
-            core.pump(request.as_ref().map_or(Command::Tick, |r| r.command), time)
+            core.pump(
+                request
+                    .as_ref()
+                    .map_or(Command::Tick, |r| r.command.clone()),
+                time,
+            )
         });
         if result.is_ok() {
             // Anchor the wait before sampling/IO, so slow saves do not extend a session.

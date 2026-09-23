@@ -4,8 +4,8 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 const minute = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 1440;
 function validPreview(value: unknown): boolean {
   if (!record(value) || !Number.isSafeInteger(value.createdAtUtcMs) || typeof value.selectedCharacterId !== "string" || typeof value.hasDesktopPlacement !== "boolean" || !record(value.reminders) || !record(value.focus)) return false;
-  if (!["idle", "running", "paused", "interrupted", "finished"].includes(String(value.focus.status)) || typeof value.focus.defaultedFromV1 !== "boolean" || Object.keys(value.focus).length !== 2) return false;
-  if (value.focus.defaultedFromV1 && value.focus.status !== "idle") return false;
+  if (!["idle", "running", "paused", "interrupted", "finished"].includes(String(value.focus.status)) || typeof value.focus.defaultedFromV1 !== "boolean" || Object.keys(value.focus).length !== 3 || !["none", "active", "completed", "abandoned"].includes(String(value.focus.taskStatus))) return false;
+  if (value.focus.defaultedFromV1 && value.focus.status !== "idle" || value.focus.status === "idle" && value.focus.taskStatus !== "none") return false;
   const reminder = value.reminders;
   if (!Array.isArray(reminder.items) || reminder.items.length !== 3 || !record(reminder.activeHours) || !minute(reminder.snoozeMinutes) || !Number.isSafeInteger(reminder.pendingCount) || typeof reminder.paused !== "boolean" || typeof reminder.snoozePending !== "boolean") return false;
   if (reminder.quietUntilUtcMs !== null && !Number.isSafeInteger(reminder.quietUntilUtcMs)) return false;

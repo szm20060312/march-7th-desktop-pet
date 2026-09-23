@@ -2,10 +2,13 @@ import type { FocusAction, FocusViewState } from "../application/focus-controls"
 export function createDomFocusControls(root: Document) {
   const get = <T extends HTMLElement>(id: string) => { const element = root.getElementById(id); if (!element) throw Error(`Missing focus element ${id}`); return element as T; };
   const duration = get<HTMLInputElement>("focus-duration");
+  const taskName = get<HTMLInputElement>("focus-task-name");
+  const taskStatus = get<HTMLElement>("focus-task-state");
   const status = get<HTMLElement>("focus-state");
   const time = get<HTMLElement>("focus-time");
   const notice = get<HTMLElement>("focus-notice");
   const controls = {
+    completeTask: get<HTMLButtonElement>("focus-task-complete"), abandonTask: get<HTMLButtonElement>("focus-task-abandon"),
     start: get<HTMLButtonElement>("focus-start"), pause: get<HTMLButtonElement>("focus-pause"),
     resume: get<HTMLButtonElement>("focus-resume"), endEarly: get<HTMLButtonElement>("focus-end"),
     abandon: get<HTMLButtonElement>("focus-abandon"), dismissFeedback: get<HTMLButtonElement>("focus-dismiss"),
@@ -18,7 +21,13 @@ export function createDomFocusControls(root: Document) {
       const blocked = !session || !!state.snapshot?.error || !!state.snapshot?.stopped;
       if (duration.value !== String(state.durationMinutes)) duration.value = Number.isFinite(state.durationMinutes) ? String(state.durationMinutes) : "";
       duration.disabled = blocked || state.busy || !["idle", "finished"].includes(session?.status ?? "");
+      const task = state.snapshot?.data?.task;
+      taskName.disabled = duration.disabled;
+      get<HTMLElement>("focus-task-entry").hidden = !["idle", "finished"].includes(session?.status ?? "");
+      if (taskName.value !== state.taskName) taskName.value = state.taskName;
+      taskStatus.textContent = task ? `${task.name} · ${{active:"进行中",completed:"已完成",abandoned:"已放弃"}[task.status]}` : "本次只计时";
       const visible = {
+        completeTask: task?.status === "active", abandonTask: task?.status === "active",
         start: session?.status === "idle" || session?.status === "finished",
         pause: session?.status === "running",
         resume: session?.status === "paused" || session?.status === "interrupted",
@@ -41,13 +50,15 @@ export function createDomFocusControls(root: Document) {
       time.textContent = state.displayRemainingMs === null ? "— — : — —" : format(state.displayRemainingMs);
       notice.textContent = state.notice;
     },
-    bind(actions: { setDuration(value: number): void; act(type: FocusAction): Promise<void> }) {
+    bind(actions: { setDuration(value: number): void; setTaskName(value: string): void; act(type: FocusAction): Promise<void> }) {
       const edit = () => actions.setDuration(duration.valueAsNumber);
       duration.addEventListener("input", edit);
+      const editTask = () => actions.setTaskName(taskName.value);
+      taskName.addEventListener("input", editTask);
       const listeners = (Object.entries(controls) as [FocusAction, HTMLButtonElement][]).map(([action, button]) => {
         const click = () => { void actions.act(action); }; button.addEventListener("click", click); return () => button.removeEventListener("click", click);
       });
-      return () => { duration.removeEventListener("input", edit); listeners.forEach(stop => stop()); };
+      return () => { taskName.removeEventListener("input", editTask); duration.removeEventListener("input", edit); listeners.forEach(stop => stop()); };
     },
   };
 }

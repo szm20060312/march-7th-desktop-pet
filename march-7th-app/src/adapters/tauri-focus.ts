@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { FocusChange, FocusCommand, FocusSession, FocusSnapshot } from "../domain/focus";
+import { normalizeTaskName } from "../domain/focus";
+import type { CurrentTask, FocusChange, FocusCommand, FocusSession, FocusSnapshot } from "../domain/focus";
 
 export interface FocusTransport {
   invoke(name: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -29,8 +30,16 @@ function parseSession(value: unknown): FocusSession {
 export function parseFocusSnapshot(value: unknown): FocusSnapshot {
   if (!record(value) || !safe(value.revision) || !code(value.error) || typeof value.stopped !== "boolean") throw Error("Invalid focus snapshot");
   if (value.data === null) return value as FocusSnapshot;
-  if (!record(value.data) || value.data.version !== 1) throw Error("Invalid focus data");
-  return { revision: value.revision, data: { version: 1, session: parseSession(value.data.session) }, error: value.error, stopped: value.stopped };
+  if (!record(value.data) || value.data.version !== 2) throw Error("Invalid focus data");
+  const rawTask = value.data.task;
+  let task: CurrentTask | null = null;
+  if (rawTask !== null) {
+    if (!record(rawTask) || Object.keys(rawTask).length !== 2 || typeof rawTask.name !== "string" || !rawTask.name || normalizeTaskName(rawTask.name) !== rawTask.name || !["active", "completed", "abandoned"].includes(String(rawTask.status))) throw Error("Invalid focus task");
+    task = rawTask as CurrentTask;
+  }
+  const session = parseSession(value.data.session);
+  if (session.status === "idle" && task) throw Error("Invalid focus task");
+  return { revision: value.revision, data: { version: 2, session, task }, error: value.error, stopped: value.stopped };
 }
 export function parseFocusChange(value: unknown): FocusChange {
   if (!record(value) || typeof value.completedNow !== "boolean" || !code(value.error)) throw Error("Invalid focus change");

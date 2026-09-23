@@ -46,22 +46,40 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Data, Error> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| Error {
         code: "invalidFile",
     })?;
-    match value.get("version").and_then(|v| v.as_u64()) {
-        Some(1) => (),
+    let data: Data = match value.get("version").and_then(|v| v.as_u64()) {
+        Some(1) => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Legacy {
+                version: u8,
+                session: super::model::Session,
+            }
+            let old: Legacy = serde_json::from_slice(bytes).map_err(|_| Error {
+                code: "invalidFile",
+            })?;
+            debug_assert_eq!(old.version, 1);
+            Data {
+                version: super::model::VERSION,
+                session: old.session,
+                task: None,
+            }
+        }
+        Some(2) if value.get("task").is_some() => {
+            serde_json::from_slice(bytes).map_err(|_| Error {
+                code: "invalidFile",
+            })?
+        }
+        Some(2) | None => {
+            return Err(Error {
+                code: "invalidFile",
+            })
+        }
         Some(_) => {
             return Err(Error {
                 code: "unsupportedVersion",
             })
         }
-        None => {
-            return Err(Error {
-                code: "invalidFile",
-            })
-        }
-    }
-    let data: Data = serde_json::from_value(value).map_err(|_| Error {
-        code: "invalidFile",
-    })?;
+    };
     data.validate()?;
     Ok(data)
 }

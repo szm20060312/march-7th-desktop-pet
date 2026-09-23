@@ -1,7 +1,8 @@
+import { normalizeTaskName } from "../domain/focus";
 import type { FocusChange, FocusCommand, FocusSnapshot } from "../domain/focus";
 
 export type FocusAction = FocusCommand["type"];
-export type FocusViewState = { snapshot: FocusSnapshot | null; durationMinutes: number; displayRemainingMs: number | null; busy: boolean; notice: string };
+export type FocusViewState = { snapshot: FocusSnapshot | null; durationMinutes: number; taskName: string; displayRemainingMs: number | null; busy: boolean; notice: string };
 const errorCode = (error: unknown) => typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
 const errorMessage = (error: unknown) => {
   switch (errorCode(error)) {
@@ -9,6 +10,8 @@ const errorMessage = (error: unknown) => {
     case "writeFailed": case "directoryUnavailable": return "专注记录未写入，操作未确认；请检查本机存储后重试。";
     case "stopped": case "workerUnavailable": return "专注服务暂不可用，请重启应用。";
     case "queueFull": return "操作较多，请稍候再试；状态未确认。";
+    case "invalidTaskName": return "任务名最多 80 个字符、256 字节，不能含控制字符。";
+    case "noTask": case "taskResolved": return "这件事的状态已变化，请查看当前结果。";
     case "invalidDuration": return "时长须为 1–240 分钟。";
     case "alreadyActive": case "invalidTransition": return "专注状态已变化，请按当前状态重新操作。";
     default: return "操作未确认，请重试；当前状态以专注服务为准。";
@@ -20,6 +23,7 @@ export function createFocusControls(ports: { command(command: FocusCommand): Pro
   const monotonicNow = ports.monotonicNow ?? now;
   let snapshot: FocusSnapshot | null = null;
   let durationMinutes = 25;
+  let taskName = "";
   let receivedAt = 0;
   let visualRemaining = 0;
   let notice = "";
@@ -40,7 +44,7 @@ export function createFocusControls(ports: { command(command: FocusCommand): Pro
     if (!session || !(session.status === "running" || session.status === "paused" || session.status === "interrupted")) return null;
     return session.status === "running" ? Math.max(0, visualRemaining - Math.max(0, monotonicNow() - receivedAt)) : session.remaining_ms;
   };
-  const render = () => { if (!disposed && visible) ports.render({ snapshot, durationMinutes, displayRemainingMs: displayRemainingMs(), busy, notice }); };
+  const render = () => { if (!disposed && visible) ports.render({ snapshot, durationMinutes, taskName, displayRemainingMs: displayRemainingMs(), busy, notice }); };
   render();
   return {
     receive(change: FocusChange) {
@@ -52,23 +56,28 @@ export function createFocusControls(ports: { command(command: FocusCommand): Pro
       else if (diagnostic || stateChanged) { notice = ""; diagnostic = false; }
       render();
     },
+    setTaskName(value: string) { if (disposed || busy) return; taskName = value; notice = ""; render(); },
     setDuration(value: number) { if (disposed || busy) return; durationMinutes = value; notice = ""; diagnostic = false; render(); },
     async act(type: FocusAction) {
       if (disposed || !visible || busy || !snapshot || snapshot.stopped || snapshot.error || !snapshot.data) return;
       const session = snapshot.data.session;
       const allowed = type === "start" ? ["idle", "finished"].includes(session.status)
+        : type === "completeTask" || type === "abandonTask" ? snapshot.data.task?.status === "active"
         : type === "pause" ? session.status === "running"
         : type === "resume" ? ["paused", "interrupted"].includes(session.status)
         : type === "endEarly" || type === "abandon" ? ["running", "paused", "interrupted"].includes(session.status)
         : session.status === "finished" && session.outcome === "natural" && session.feedback === "pending";
       if (!allowed) return;
       if (type === "start" && (!Number.isSafeInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 240)) { notice = "时长须为 1–240 分钟。"; render(); return; }
+      let normalized = "";
+      if (type === "start") { try { normalized = normalizeTaskName(taskName); } catch { notice = errorMessage({code:"invalidTaskName"}); render(); return; } }
       const token = generation;
-      const command: FocusCommand = type === "start" ? { type, durationMs: durationMinutes * 60_000 } : { type };
+      const command: FocusCommand = type === "start" ? { type, durationMs: durationMinutes * 60_000, ...(normalized ? {taskName: normalized} : {}) } : { type };
       busy = true; notice = ""; diagnostic = false; render();
       try {
         const result = await ports.command(command);
         if (disposed || token !== generation) return;
+        if (type === "start") taskName = "";
         if (!snapshot || result.revision > snapshot.revision) { snapshot = result; rebaseDisplay(); }
       } catch (error) { if (!disposed && token === generation) { notice = errorMessage(error); diagnostic = false; } }
       finally { if (!disposed && token === generation) { busy = false; render(); } }

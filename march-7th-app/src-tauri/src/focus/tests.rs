@@ -459,7 +459,8 @@ fn invalid_serialized_combinations_and_deadline_overflow_are_rejected() {
     assert_eq!(engine, before);
 
     let invalid = Data {
-        version: VERSION,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Finished {
             duration_ms: MIN_DURATION_MS,
             outcome: Outcome::Abandoned,
@@ -468,7 +469,8 @@ fn invalid_serialized_combinations_and_deadline_overflow_are_rejected() {
     };
     assert_eq!(invalid.validate().unwrap_err().code, "invalidState");
     let invalid = Data {
-        version: VERSION,
+        version: crate::focus::model::VERSION,
+        task: None,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
             remaining_ms: MIN_DURATION_MS,
@@ -516,7 +518,7 @@ fn transitions_are_atomic_and_versioned_state_is_rejected() {
     assert_eq!(engine, before);
 
     let mut value = serde_json::to_value(&engine.data).unwrap();
-    value["version"] = serde_json::json!(2);
+    value["version"] = serde_json::json!(3);
     let future: Data = serde_json::from_value(value).unwrap();
     assert_eq!(future.validate().unwrap_err().code, "unsupportedVersion");
     assert_eq!(
@@ -525,4 +527,158 @@ fn transitions_are_atomic_and_versioned_state_is_rejected() {
             .code,
         "unsupportedVersion"
     );
+}
+#[test]
+fn m5b_v1_migrates_without_losing_finished_feedback() {
+    let old = br#"{"version":1,"session":{"status":"finished","duration_ms":60000,"outcome":"natural","feedback":"pending"}}"#;
+    let data = super::store::decode(old).unwrap();
+    let value = serde_json::to_value(data).unwrap();
+    assert_eq!(value["version"], 2);
+    assert_eq!(value["task"], serde_json::Value::Null);
+    assert_eq!(value["session"]["feedback"], "pending");
+}
+#[test]
+fn m5b_task_name_boundaries_and_mutual_exclusion() {
+    use super::model::{normalize_task_name, TaskStatus};
+    assert_eq!(
+        normalize_task_name("  阅读  ").unwrap().as_deref(),
+        Some("阅读")
+    );
+    assert_eq!(normalize_task_name("　 ").unwrap(), None);
+    for name in [
+        "x".repeat(81),
+        "😀".repeat(65),
+        "a\nb".into(),
+        "\t".into(),
+        "\u{85}".into(),
+    ] {
+        assert_eq!(
+            normalize_task_name(&name).unwrap_err().code,
+            "invalidTaskName"
+        );
+    }
+    for name in ["中".repeat(80), "😀".repeat(64), "a".repeat(80)] {
+        assert!(normalize_task_name(&name).unwrap().is_some());
+    }
+    for (command, status, opposite) in [
+        (
+            Command::CompleteTask,
+            TaskStatus::Completed,
+            Command::AbandonTask,
+        ),
+        (
+            Command::AbandonTask,
+            TaskStatus::Abandoned,
+            Command::CompleteTask,
+        ),
+    ] {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine.step(command.clone(), time(0, 0)).unwrap_err().code,
+            "noTask"
+        );
+        engine
+            .step(
+                Command::StartWithTask {
+                    duration_ms: MIN_DURATION_MS,
+                    task_name: "  读书  ".into(),
+                },
+                time(0, 0),
+            )
+            .unwrap();
+        let result = engine.step(command.clone(), time(1, 1)).unwrap();
+        assert_eq!(result.task_response, Some(status));
+        assert!(!result.completed_now);
+        assert!(matches!(engine.data.session, Session::Running { .. }));
+        assert_eq!(engine.data.task.as_ref().unwrap().name, "读书");
+        assert_eq!(
+            engine.step(command, time(1, 1)).unwrap().task_response,
+            None
+        );
+        let previous = engine.clone();
+        assert_eq!(
+            engine.step(opposite, time(1, 1)).unwrap_err().code,
+            "taskResolved"
+        );
+        assert_eq!(engine, previous);
+        engine.step(Command::Pause, time(1, 1)).unwrap();
+        engine.step(Command::Resume, time(1, 1)).unwrap();
+        engine
+            .step(Command::Tick, time(MIN_DURATION_MS as i64, MIN_DURATION_MS))
+            .unwrap();
+        assert_eq!(engine.data.task.as_ref().unwrap().status, status);
+        engine
+            .step(
+                Command::Start {
+                    duration_ms: MIN_DURATION_MS,
+                },
+                time(MIN_DURATION_MS as i64, MIN_DURATION_MS),
+            )
+            .unwrap();
+        assert!(engine.data.task.is_none());
+    }
+}
+#[test]
+fn m5b_natural_end_does_not_complete_task_and_restore_never_replays_it() {
+    use super::model::TaskStatus;
+    let mut engine = Engine::new();
+    engine
+        .step(
+            Command::StartWithTask {
+                duration_ms: MIN_DURATION_MS,
+                task_name: "一件事".into(),
+            },
+            time(0, 0),
+        )
+        .unwrap();
+    let result = engine
+        .step(Command::Tick, time(MIN_DURATION_MS as i64, MIN_DURATION_MS))
+        .unwrap();
+    assert!(result.completed_now);
+    assert!(result.task_response.is_none());
+    assert_eq!(
+        engine.data.task.as_ref().unwrap().status,
+        TaskStatus::Active
+    );
+    let mut restored = Engine::restore(engine.data, time(MIN_DURATION_MS as i64, 0)).unwrap();
+    assert_eq!(
+        restored
+            .step(Command::CompleteTask, time(MIN_DURATION_MS as i64, 0))
+            .unwrap()
+            .task_response,
+        Some(TaskStatus::Completed)
+    );
+    let mut restarted = Engine::restore(restored.data, time(MIN_DURATION_MS as i64, 0)).unwrap();
+    assert!(restarted
+        .step(Command::Tick, time(MIN_DURATION_MS as i64, 0))
+        .unwrap()
+        .task_response
+        .is_none());
+}
+#[test]
+fn m5b_decode_v1_running_and_v2_are_strict_and_bounded() {
+    let old=br#"{"version":1,"session":{"status":"running","duration_ms":60000,"remaining_ms":32000,"anchor_utc_ms":12000}}"#;
+    let data = super::store::decode(old).unwrap();
+    assert_eq!(data.version, 2);
+    assert!(data.task.is_none());
+    assert_eq!(
+        data.session,
+        Session::Running {
+            duration_ms: 60000,
+            remaining_ms: 32000,
+            anchor_utc_ms: 12000
+        }
+    );
+    for bad in [
+        br#"{"version":1,"task":null,"session":{"status":"idle"}}"#.as_slice(),
+        br#"{"version":2,"session":{"status":"idle"}}"#,
+        br#"{"version":3,"session":{"status":"idle"},"task":null}"#,
+    ] {
+        assert!(super::store::decode(bad).is_err());
+    }
+    let mut bytes = serde_json::to_vec(&data).unwrap();
+    bytes.resize(4096, b' ');
+    assert!(super::store::decode(&bytes).is_ok());
+    bytes.push(b' ');
+    assert!(super::store::decode(&bytes).is_err());
 }

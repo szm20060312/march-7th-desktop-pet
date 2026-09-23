@@ -3,7 +3,7 @@ export type BackupPreview = {
   createdAtUtcMs: number;
   selectedCharacterId: string;
   hasDesktopPlacement: boolean;
-  focus: { status: "idle" | "running" | "paused" | "interrupted" | "finished"; defaultedFromV1: boolean };
+  focus: { status: "idle" | "running" | "paused" | "interrupted" | "finished"; defaultedFromV1: boolean; taskStatus: "none" | "active" | "completed" | "abandoned" };
   reminders: {
     items: { id: "water" | "move" | "eyes"; enabled: boolean; intervalMinutes: number }[];
     activeHours: { kind: "allDay" } | { kind: "daily"; start: number; end: number };

@@ -72,7 +72,7 @@ describe("real settings entry / adapter / controller error ownership", () => {
 });
 
 describe("local backup entry stays separate from reminder drafts", () => {
-  const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, focus: { status: "paused", defaultedFromV1: false }, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
+  const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, focus: { status: "paused", defaultedFromV1: false, taskStatus: "none" }, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
   it("locates focus in an already visible settings window without losing reminder draft", async () => {
     await import("./settings"); await flush(); edit(37);
     events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: true } }); await flush();
@@ -85,7 +85,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     expect(dom.get("backup-preview").hidden).toBe(false);
     events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus", alreadyVisible: true } }); await flush();
     expect(dom.get("backup-preview").hidden).toBe(false);
-    expect(dom.get("import-focus").textContent).toBe("已暂停");
+    expect(dom.get("import-focus").textContent).toBe("已暂停 · 无当前任务");
     expect(dom.get("confirm-import").disabled).toBe(false);
   });
   it("leaves an in-flight backup selection intact when locating focus in the visible window", async () => {
@@ -107,8 +107,8 @@ describe("local backup entry stays separate from reminder drafts", () => {
   });
   it.each([false, true])("preserves the reopened draft, preview and focus after old hide completes (reject=%s)", async reject => {
     let finish!: () => void; let fail!: (reason: unknown) => void;
-    const focus = { snapshot: { revision: 1, data: { version: 1, session: { status: "idle" } }, error: null, stopped: false }, completedNow: false, error: null };
-    native.invoke.mockImplementation(name => name === "hide_reminder_settings" ? new Promise<void>((yes, no) => { finish = yes; fail = no; }) : name === "select_local_backup" ? Promise.resolve(preview) : name === "get_focus" ? Promise.resolve(focus) : name === "focus_command" ? Promise.resolve({ ...focus.snapshot, revision: 2, data: { version: 1, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } } }) : Promise.resolve(fresh()));
+    const focus = { snapshot: { revision: 1, data: { version: 2, task: null, session: { status: "idle" } }, error: null, stopped: false }, completedNow: false, error: null };
+    native.invoke.mockImplementation(name => name === "hide_reminder_settings" ? new Promise<void>((yes, no) => { finish = yes; fail = no; }) : name === "select_local_backup" ? Promise.resolve(preview) : name === "get_focus" ? Promise.resolve(focus) : name === "focus_command" ? Promise.resolve({ ...focus.snapshot, revision: 2, data: { version: 2, task: null, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } } }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); edit(37);
     dom.get("close-settings").dispatch("click"); await flush();
     events.get("reminder-settings-opened")!({ payload: { generation: 2, target: "focus", alreadyVisible: false } }); await flush();
@@ -129,7 +129,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     expect(dom.get("backup-preview").hidden).toBe(false);
     expect(dom.get("import-character").textContent).toContain("雷电将军");
     expect(dom.get("import-pending").textContent).toContain("待处理 2 项");
-    expect(dom.get("import-focus").textContent).toBe("已暂停");
+    expect(dom.get("import-focus").textContent).toBe("已暂停 · 无当前任务");
     expect(native.invoke.mock.calls.some(([name]) => name === "confirm_local_backup")).toBe(false);
     dom.get("confirm-import").dispatch("click"); await flush();
     expect(native.invoke).toHaveBeenCalledWith("confirm_local_backup", { ticket: 7 });
@@ -137,14 +137,14 @@ describe("local backup entry stays separate from reminder drafts", () => {
     expect(dom.get("snooze-minutes").value).toBe("37");
   });
   it("explains a v1 backup will restore an empty focus session without private fields", async () => {
-    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "idle", defaultedFromV1: true } } }) : Promise.resolve(fresh()));
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "idle", defaultedFromV1: true, taskStatus: "none" } } }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
     expect(dom.get("import-focus").textContent).toContain("旧版 v1");
     expect(dom.get("import-focus").textContent).toContain("空专注会话");
     expect(dom.get("import-focus").textContent).not.toContain("anchor");
   });
   it("rejects a preview that leaks internal focus clock fields", async () => {
-    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "running", defaultedFromV1: false, anchor_utc_ms: 100 } } }) : Promise.resolve(fresh()));
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "running", defaultedFromV1: false, taskStatus: "none", anchor_utc_ms: 100 } } }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
     expect(dom.get("backup-preview").hidden).toBe(true);
     expect(dom.get("backup-status").textContent).toContain("无法预览");
@@ -232,9 +232,9 @@ describe("local backup entry stays separate from reminder drafts", () => {
 });
 
 describe("focus settings entry uses the committed Rust state", () => {
-  const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 1, session }, error: null, stopped: false }, completedNow: false, error: null });
+  const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 2, task: null, session }, error: null, stopped: false }, completedNow: false, error: null });
   it("keeps focus and reminder edits usable after native hide fails", async () => {
-    native.invoke.mockImplementation(name => name === "get_focus" ? Promise.resolve(focus(1, { status: "idle" })) : name === "hide_reminder_settings" ? Promise.reject({ code: "hideFailed" }) : name === "focus_command" ? Promise.resolve({ revision: 2, data: { version: 1, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } }, error: null, stopped: false }) : Promise.resolve(fresh()));
+    native.invoke.mockImplementation(name => name === "get_focus" ? Promise.resolve(focus(1, { status: "idle" })) : name === "hide_reminder_settings" ? Promise.reject({ code: "hideFailed" }) : name === "focus_command" ? Promise.resolve({ revision: 2, data: { version: 2, task: null, session: { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() } }, error: null, stopped: false }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); edit(37);
     dom.get("close-settings").dispatch("click"); await flush();
     expect(dom.get("snooze-minutes").value).toBe("37");
@@ -310,4 +310,13 @@ describe("focus settings entry uses the committed Rust state", () => {
     expect(dom.get("focus-state").textContent).toBe("已暂停");
     expect(dom.get("focus-notice").textContent).toBe("");
   });
+});
+it("keeps task-name-bearing native failures out of diagnostics", async () => {
+  native.invoke.mockImplementation(async name => {
+    if(name === "get_focus") throw {code:"readFailed", privateName:"NEVER_LOG_TASK"};
+    return fresh();
+  });
+  await import("./settings");await flush();
+  expect(console.error).toHaveBeenCalledWith("Focus settings connection failed", "snapshot");
+  expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("NEVER_LOG_TASK");
 });

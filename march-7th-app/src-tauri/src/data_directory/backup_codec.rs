@@ -59,6 +59,7 @@ pub struct Preview {
 pub struct FocusPreview {
     pub status: &'static str,
     pub defaulted_from_v1: bool,
+    pub task_status: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -205,6 +206,12 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedBackup, &'static str> {
             Session::Finished { .. } => "finished",
         },
         defaulted_from_v1: document.schema_version == 1,
+        task_status: match focus_data.task.map(|task| task.status) {
+            None => "none",
+            Some(crate::focus::model::TaskStatus::Active) => "active",
+            Some(crate::focus::model::TaskStatus::Completed) => "completed",
+            Some(crate::focus::model::TaskStatus::Abandoned) => "abandoned",
+        },
     };
     Ok(DecodedBackup {
         files,
@@ -248,6 +255,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn m5b_task_backup_roundtrip_and_preview_never_disclose_name() {
+        for status in ["active", "completed", "abandoned"] {
+            let mut files = candidate();
+            files.focus=serde_json::to_vec(&serde_json::json!({"version":2,"session":{"status":"paused","duration_ms":60000,"remaining_ms":32000},"task":{"name":"私人事项 🔒","status":status}})).unwrap();
+            let focus = files.focus.clone();
+            let bytes = encode(files, 0).unwrap();
+            let result = decode(&bytes).unwrap();
+            assert_eq!(result.files.focus, focus);
+            assert_eq!(result.preview.focus.task_status, status);
+            let preview = serde_json::to_string(&result.preview).unwrap();
+            assert!(!preview.contains("私人"));
+            assert!(!preview.contains("name"));
+        }
+        let mut files = candidate();
+        files.focus=br#"{"version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":32000}}"#.to_vec();
+        let expected = files.focus.clone();
+        let result = decode(&encode(files, 0).unwrap()).unwrap();
+        assert_eq!(result.files.focus, expected);
+        assert_eq!(result.preview.focus.task_status, "none");
+        assert_eq!(result.preview.focus.status, "paused");
+    }
     fn mutate(mut edit: impl FnMut(&mut serde_json::Value)) -> Vec<u8> {
         let mut value: serde_json::Value =
             serde_json::from_slice(&encode(candidate(), 0).unwrap()).unwrap();
@@ -471,7 +500,7 @@ mod tests {
         assert!(!decoded.preview.focus.defaulted_from_v1);
         assert_eq!(
             serde_json::to_value(&decoded.preview.focus).unwrap(),
-            serde_json::json!({"status":"paused","defaultedFromV1":false})
+            serde_json::json!({"status":"paused","defaultedFromV1":false,"taskStatus":"none"})
         );
         let mut changed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         changed["files"]["focusJsonBase64"] = STANDARD
