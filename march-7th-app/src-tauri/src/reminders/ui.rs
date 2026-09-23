@@ -606,12 +606,24 @@ fn placement<R: Runtime>(
         .or(main.primary_monitor().map_err(|e| e.to_string())?)
         .ok_or("no available display")?;
     let observation = observe(window)?;
+    let reminder_rows = if settings {
+        0
+    } else {
+        let raw = native::snapshot(app).map_err(|error| error.code.to_string())?;
+        app.state::<Ui<R>>()
+            .state
+            .lock()
+            .unwrap()
+            .bubble
+            .visible_item_count(&raw)
+    };
     let desired = ui_geometry::place(
         NATIVE,
         &monitor_geometry(&monitor, true),
         &observe(&main)?,
         &observation,
         settings,
+        reminder_rows,
     )
     .ok_or("unusable work area")?;
     Ok((observation, desired))
@@ -697,6 +709,24 @@ fn settle_reminder<R: Runtime>(
         ui.state.lock().unwrap().reminder_visible = true;
         window.show().map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder.finish_show(ticket, true);
+        if character_visible(app) {
+            let prompt = native::snapshot(app).ok().and_then(|snapshot| {
+                ui.state
+                    .lock()
+                    .unwrap()
+                    .bubble
+                    .automatic_prompt(&snapshot, ticket.presentation)
+            });
+            if let Some(items) = prompt {
+                if let Err(error) = app.emit_to(
+                    "main",
+                    "reminder-prompt",
+                    serde_json::json!({"presentationId": ticket.presentation, "items": items}),
+                ) {
+                    eprintln!("Reminder character prompt unavailable: {error}");
+                }
+            }
+        }
         let response = if character_visible(app) {
             ui.state
                 .lock()

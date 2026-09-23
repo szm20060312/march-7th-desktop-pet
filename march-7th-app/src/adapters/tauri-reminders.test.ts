@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { connectReminders, connectReminderResponses, createReminderReady, parseReminderSnapshot, parseSettingsOpenIntent, type ReminderTransport } from "./tauri-reminders";
+import { connectReminders, connectReminderPrompts, connectReminderResponses, createReminderReady, parseReminderPromptEvent, parseReminderSnapshot, parseSettingsOpenIntent, type ReminderTransport } from "./tauri-reminders";
 
 export function snapshot(revision = 1) {
   return { revision, settings: { items: ["water", "move", "eyes"].map(id => ({ id, enabled: false, intervalMinutes: 60 })), activeHours: { kind: "allDay" }, snoozeMinutes: 10 }, progress: ["water", "move", "eyes"].map(id => ({ id, nextDueAt: null, pending: false, autoHandled: false })), paused: false, quiet: null, snoozePending: false, presentation: null, persistence: { status: "saved", code: null }, runtimeError: null, stopped: false };
@@ -73,6 +73,21 @@ describe("reminder native boundary", () => {
     const h = host(); const respond = vi.fn(); const dispose = connectReminderResponses({ respond, reportError: vi.fn(), transport: h }); await flush();
     h.events.get("reminder-response")!({ revision: 4, type: "complete", id: "water" }); h.events.get("reminder-response")!({ revision: 4, type: "complete", id: "water" }); h.events.get("reminder-response")!({ revision: 6, type: "snoozeAll" }); h.events.get("reminder-response")!({ revision: 5, type: "complete", id: "eyes" });
     expect(respond).toHaveBeenCalledTimes(3); dispose(); h.events.get("reminder-response")!({ revision: 8, type: "snoozeAll" }); expect(respond).toHaveBeenCalledTimes(3);
+  });
+  it("accepts only live, unique automatic presentation prompts with known items", async () => {
+    for (const bad of [null, { presentationId: 0, items: ["water"] }, { presentationId: 1, items: [] }, { presentationId: 1, items: ["water", "water"] }, { presentationId: 1, items: ["other"] }, { presentationId: 1, items: ["water"], path: "private" }]) {
+      expect(() => parseReminderPromptEvent(bad)).toThrow();
+    }
+    const h = host(); const remind = vi.fn(); const reportError = vi.fn();
+    const dispose = connectReminderPrompts({ remind, reportError, transport: h }); await flush();
+    h.events.get("reminder-prompt")!({ presentationId: 3, items: ["water"] });
+    h.events.get("reminder-prompt")!({ presentationId: 3, items: ["water"] });
+    h.events.get("reminder-prompt")!({ presentationId: 2, items: ["move"] });
+    h.events.get("reminder-prompt")!({ presentationId: 4, items: ["eyes", "move"] });
+    expect(remind.mock.calls.map(([event]) => event.presentationId)).toEqual([3, 4]);
+    expect(reportError).not.toHaveBeenCalled(); expect(h.invoke).not.toHaveBeenCalled();
+    dispose(); h.events.get("reminder-prompt")!({ presentationId: 5, items: ["water"] });
+    expect(remind).toHaveBeenCalledTimes(2);
   });
   it("uses only a valid native window token for the presentation handshake", async () => {
     const h: ReminderTransport = host(); const ready = createReminderReady(h, () => 12); await ready(7); expect(h.invoke).toHaveBeenCalledWith("reminder_ui_ready", { presentationId: 7, windowToken: 12 });

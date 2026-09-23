@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ReminderCommand, ReminderResponse, ReminderSnapshot } from "../domain/reminder";
+import { reminderIds, type ReminderCommand, type ReminderId, type ReminderResponse, type ReminderSnapshot } from "../domain/reminder";
 import { parseReminderResponse, parseReminderSettings, parseReminderSnapshot } from "./reminder-dto";
 export { parseReminderSnapshot } from "./reminder-dto";
 export interface ReminderTransport {
@@ -84,6 +84,30 @@ export function connectReminderResponses(options: { respond(response: ReminderRe
     catch (cause) { if (!disposed) options.reportError({ stage: "event", recovery: "retry", cause }); }
   }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, cause => { if (!disposed) options.reportError({ stage: "listen", recovery: "restart", cause }); });
   return () => { if (disposed) return; disposed = true; stop?.(); seen.clear(); };
+}
+
+export type ReminderPromptEvent = { presentationId: number; items: readonly ReminderId[] };
+export function parseReminderPromptEvent(value: unknown): ReminderPromptEvent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid reminder prompt");
+  const raw = value as Record<string, unknown>;
+  if (Object.keys(raw).length !== 2 || !Number.isSafeInteger(raw.presentationId) || (raw.presentationId as number) < 1
+    || !Array.isArray(raw.items) || raw.items.length < 1 || raw.items.length > reminderIds.length
+    || raw.items.some(id => !reminderIds.includes(id)) || new Set(raw.items).size !== raw.items.length) throw Error("Invalid reminder prompt");
+  return { presentationId: raw.presentationId as number, items: raw.items as ReminderId[] };
+}
+// Native emits this only after an automatic bubble has actually shown. A reload cannot replay it.
+export function connectReminderPrompts(options: { remind(event: ReminderPromptEvent): void; reportError(error: ReminderConnectionError): void; transport?: ReminderTransport }): () => void {
+  let disposed = false; let stop: (() => void) | undefined; let latestId = 0;
+  void (options.transport ?? nativeTransport).listen("reminder-prompt", value => {
+    if (disposed) return;
+    try {
+      const event = parseReminderPromptEvent(value);
+      if (event.presentationId <= latestId) return;
+      latestId = event.presentationId;
+      options.remind(event);
+    } catch (cause) { if (!disposed) options.reportError({ stage: "event", recovery: "retry", cause }); }
+  }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, cause => { if (!disposed) options.reportError({ stage: "listen", recovery: "restart", cause }); });
+  return () => { disposed = true; stop?.(); };
 }
 export function createReminderReady(transport = nativeTransport, token = () => (window as unknown as Record<string, unknown>).__MARCH7_REMINDER_WINDOW_TOKEN__) {
   return async (presentationId: number): Promise<void> => {

@@ -1,6 +1,6 @@
 //! Converts current authoritative snapshots into the one bubble's presentation.
 use super::{
-    model::{Command, Error, Mode, Presentation},
+    model::{Command, Error, Id, Mode, Presentation},
     presentation_policy::{Coordinator, FocusState, Input, Source},
     service::Snapshot,
     store::SaveStatus,
@@ -38,6 +38,26 @@ pub fn natural_revision(focus: &Change) -> Option<u64> {
     .then_some(focus.snapshot.revision)
 }
 impl Bubble {
+    pub fn visible_item_count(&self, raw: &Snapshot) -> usize {
+        let Some((_, Source::Reminder(source))) = self.selected else {
+            return 0;
+        };
+        raw.presentation
+            .as_ref()
+            .filter(|presentation| presentation.id == source)
+            .map_or(0, |presentation| presentation.items.len())
+    }
+    pub fn automatic_prompt(&self, raw: &Snapshot, presentation_id: u64) -> Option<Vec<Id>> {
+        let (id, Source::Reminder(source)) = self.selected? else {
+            return None;
+        };
+        let presentation = raw.presentation.as_ref()?;
+        (id == presentation_id
+            && source == presentation.id
+            && presentation.mode == Mode::Automatic
+            && !presentation.items.is_empty())
+        .then(|| presentation.items.clone())
+    }
     pub fn update(
         &mut self,
         reminder: &Snapshot,
@@ -227,6 +247,28 @@ mod tests {
     }
     fn session(b: &Bubble, ui: &mut PresentationUi, r: &Snapshot) {
         ui.update(b.revision, b.selected.map(|(id, _)| id), r.stopped);
+    }
+    #[test]
+    fn only_a_selected_automatic_reminder_can_prompt_the_character() {
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let mut b = Bubble {
+            selected: Some((12, Source::Reminder(9))),
+            ..Default::default()
+        };
+        assert_eq!(b.visible_item_count(&r), 3);
+        assert_eq!(
+            b.automatic_prompt(&r, 12),
+            Some(r.presentation.as_ref().unwrap().items.clone())
+        );
+        assert_eq!(b.automatic_prompt(&r, 13), None);
+        b.selected = Some((12, Source::Focus(5)));
+        assert_eq!(b.visible_item_count(&r), 0);
+        assert_eq!(b.automatic_prompt(&r, 12), None);
+        b.selected = Some((12, Source::Reminder(9)));
+        r.presentation.as_mut().unwrap().mode = Mode::Manual;
+        assert_eq!(b.visible_item_count(&r), 3);
+        assert_eq!(b.automatic_prompt(&r, 12), None);
     }
     #[test]
     fn committed_running_still_silences_reminders_during_transient_focus_write_failure() {

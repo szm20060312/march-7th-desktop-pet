@@ -97,16 +97,33 @@ async function poll(value: ReturnType<typeof sample>, at: number) {
 function paint(at: number) { now = at; frame(at); return sprite.dataset.frame; }
 
 describe("desktop pet behavior at the entry point", () => {
+  it("lets the current character announce each displayed automatic reminder once", async () => {
+    await boot();
+    const prompt = native.listen.mock.calls.find(call => call[0] === "reminder-prompt")?.[1];
+    expect(prompt).toBeTypeOf("function");
+    prompt({ payload: { presentationId: 5, items: ["water"] } });
+    expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
+    expect(paint(0)).toBe("3:0");
+    prompt({ payload: { presentationId: 5, items: ["water"] } });
+    expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
+    native.listen.mock.calls.find(call => call[0] === "selected-character-changed")![1]({ payload: { selectedCharacterId: "raiden-shogun", revision: 2, persistence: "saved" } });
+    await flush();
+    prompt({ payload: { presentationId: 6, items: ["eyes"] } });
+    expect(message.textContent).toBe("让双目暂离屏幕。");
+    windowTarget.dispatch("pagehide");
+    prompt({ payload: { presentationId: 7, items: ["move"] } });
+    expect(message.hidden).toBe(true);
+  });
   it("subscribes once to native reminder responses and routes them to the current character", async () => {
     await boot();
     const listeners = native.listen.mock.calls.filter(call => call[0] === "reminder-response");
     expect(listeners).toHaveLength(1);
     const respond = listeners[0][1];
     respond({ payload: { revision: 1, type: "complete", id: "water" } });
-    expect(["好啦，继续慢慢来。", "照顾好自己呀。"]).toContain(message.textContent);
+    expect(["好耶，先歇一小会儿！", "做完啦，咱慢慢来！"]).toContain(message.textContent);
     const timerCount = timers.size; respond({ payload: { revision: 1, type: "complete", id: "water" } }); expect(timers.size).toBe(timerCount);
     native.listen.mock.calls.find(call => call[0] === "selected-character-changed")![1]({ payload: { selectedCharacterId: "raiden-shogun", revision: 2, persistence: "saved" } }); await flush();
-    respond({ payload: { revision: 3, type: "snoozeAll" } }); expect(["不急，依你的节奏。", "待你方便，再作提醒。"]).toContain(message.textContent);
+    respond({ payload: { revision: 3, type: "snoozeAll" } }); expect(["暂缓即可，我会记下。", "此刻不便，稍后再议。"]).toContain(message.textContent);
     windowTarget.dispatch("pagehide"); const text = message.textContent; respond({ payload: { revision: 4, type: "complete", id: "eyes" } }); expect(message.textContent).toBe(text);
   });
   it("does not queue reminder responses received before a character is ready", async () => {

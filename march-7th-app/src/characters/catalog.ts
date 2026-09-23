@@ -2,12 +2,14 @@ import type {
   AnimationClip,
   CharacterCatalog,
   CharacterDefinition,
+  ReminderTopic,
   ResponseContext,
 } from "../domain/character";
 import data from "./catalog.json";
 
 const clipNames = ["idle", "movingLeft", "movingRight", "wave", "jump"] as const;
-const responseContexts = ["click", "doubleClick", "reminderCompleted", "reminderSnoozed", "focusCompleted", "taskCompleted", "taskAbandoned"] as const;
+const responseContexts = ["click", "doubleClick", "reminderDue", "reminderCompleted", "reminderSnoozed", "focusCompleted", "taskCompleted", "taskAbandoned"] as const;
+const reminderTopics = ["water", "move", "eyes", "multiple"] as const;
 
 function object(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${path} must be an object`);
@@ -81,6 +83,18 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
     });
   }
 
+  const promptData = object(record.reminderPrompts, `${path}.reminderPrompts`);
+  const reminderPrompts = {} as Record<ReminderTopic, readonly string[]>;
+  for (const topic of reminderTopics) {
+    const values = promptData[topic];
+    if (!Array.isArray(values) || values.length !== 2) throw new Error(`${path}.reminderPrompts.${topic} must contain two lines`);
+    reminderPrompts[topic] = values.map((value: unknown, lineIndex: number) => {
+      const line = string(value, `${path}.reminderPrompts.${topic}[${lineIndex}]`);
+      if ([...line].length > 24 || /[\r\n<>]/.test(line)) throw new Error(`${path}.reminderPrompts.${topic} must be short plain text`);
+      return line;
+    });
+  }
+
   return {
     id,
     displayName,
@@ -94,6 +108,7 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
     },
     look: { firstRow, directionCount },
     phrases,
+    reminderPrompts,
   };
 }
 

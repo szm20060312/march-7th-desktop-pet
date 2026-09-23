@@ -7,6 +7,7 @@ const PHRASE_DURATION_MS = 3_000;
 const actions: Readonly<Record<ResponseContext, OneShotAction>> = {
   click: "wave",
   doubleClick: "jump",
+  reminderDue: "wave",
   reminderCompleted: "jump",
   reminderSnoozed: "wave",
   focusCompleted: "wave",
@@ -66,20 +67,20 @@ export function startPetRuntime(options: {
     view.clearPhrase();
   };
 
-  const respond = (context: ResponseContext): boolean => {
+  const respond = (context: ResponseContext, phraseOverride?: string): boolean => {
     if (stopped) return false;
     const now = scheduler.now();
     if (!model.respond(actions[context], now)) return false;
     const phrases = character.phrases[context];
-    if (!phrases?.length) {
+    if (!phraseOverride && !phrases?.length) {
       clearPhrase();
       return true;
     }
     const index = phraseIndexes[context] ?? 0;
-    phraseIndexes[context] = (index + 1) % phrases.length;
+    if (!phraseOverride && phrases?.length) phraseIndexes[context] = (index + 1) % phrases.length;
     if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
     phraseVisible = true;
-    view.showPhrase(phrases[index]);
+    view.showPhrase(phraseOverride ?? phrases![index]);
     phraseTimerId = scheduler.setDelay(() => {
       phraseTimerId = undefined;
       if (stopped || !phraseVisible) return;

@@ -1,6 +1,7 @@
 // Explicit minimal DOM host for view-port tests; real browser layout is a separate QA step.
 export class ElementDouble {
   children: ElementDouble[] = []; dataset: Record<string, string> = {}; attributes: Record<string, string> = {};
+  style: Record<string, string> = {};
   textContent = ""; hidden = false; disabled = false; checked = false; value = ""; className = ""; type = "";
   listeners = new Map<string, Set<(event: Event) => void>>();
   get valueAsNumber() { return this.value === "" ? NaN : Number(this.value); }

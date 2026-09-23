@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html class="reminder-host" lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,8 +8,12 @@
   <script type="module" src="/src/entries/reminder.ts"></script>
 </head>
 <body class="reminder-page">
-  <main>
-    <header><p class="eyebrow">桌面伙伴 · 陪伴提醒</p><h1 id="reminder-title">留一点时间给自己</h1></header>
+  <main id="reminder-card" class="reminder-speech">
+    <header class="reminder-voice">
+      <div id="reminder-avatar" class="reminder-avatar" aria-hidden="true"></div>
+      <div class="reminder-voice-copy"><p id="reminder-speaker" class="eyebrow">桌面伙伴</p><p id="reminder-prompt" class="reminder-prompt" role="status" aria-live="polite">正在读取提醒…</p></div>
+    </header>
+    <h1 id="reminder-title">留一点时间给自己</h1>
     <section class="reminder-content" aria-label="提醒内容">
       <div id="reminder-rows" class="reminder-rows" aria-label="当前提醒"></div>
       <p id="reminder-empty" class="hint" role="status">正在读取提醒…</p>

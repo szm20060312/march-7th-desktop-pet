@@ -1,10 +1,12 @@
 import type { CharacterCatalog, CharacterDefinition, ResponseContext } from "../domain/character";
+import type { ReminderId } from "../domain/reminder";
+import { reminderPrompt } from "../domain/reminder-prompt";
 import type { AtlasPreloader, PresentationStatus } from "./ports";
 
 export type SelectedCharacterSnapshot = Readonly<{ characterId: string; revision: number }>;
 export interface CharacterRuntime {
   stop(): void;
-  respond(context: ResponseContext): boolean;
+  respond(context: ResponseContext, phrase?: string): boolean;
 }
 
 export function createCharacterPresentationController(options: {
@@ -81,6 +83,11 @@ export function createCharacterPresentationController(options: {
   return {
     select,
     respond(context: ResponseContext) { return runtime?.respond(context) ?? false; },
+    remind(items: readonly ReminderId[], presentationId: number) {
+      const character = activeId ? findCharacter(activeId) : null;
+      const phrase = character && reminderPrompt(character, items, presentationId);
+      return phrase ? runtime?.respond("reminderDue", phrase) ?? false : false;
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;

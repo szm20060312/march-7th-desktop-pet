@@ -54,9 +54,11 @@
         "focusable": false,
         "acceptFirstMouse": true,
         "width": 320,
-        "height": 300,
+        "height": 220,
         "resizable": false,
+        "transparent": true,
         "decorations": false,
+        "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "dragDropEnabled": false

@@ -31,12 +31,16 @@ pub fn fully_reachable(
         axis(p.0, s.0, m.origin.0, m.size.0) && axis(p.1, s.1, m.origin.1, m.size.1)
     })
 }
+fn reminder_height(rows: usize) -> f64 {
+    220.0 + (rows.saturating_sub(1).min(2) as f64) * 40.0
+}
 pub fn place(
     coordinates: Coordinates,
     monitor: &Monitor,
     anchor: &Observation,
     window: &Observation,
     settings: bool,
+    reminder_rows: usize,
 ) -> Option<Placement> {
     if !window.scale.is_finite()
         || window.scale <= 0.0
@@ -64,7 +68,7 @@ pub fn place(
     let desired = if settings {
         (460.0, 620.0)
     } else {
-        (320.0, 300.0)
+        (320.0, reminder_height(reminder_rows))
     };
     let inner = (
         ((desired.0 * monitor.scale).round() as u32).min(available.0),
@@ -103,6 +107,14 @@ pub fn place(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn speech_bubble_height_tracks_visible_rows_without_growing_unbounded() {
+        assert_eq!(reminder_height(0), 220.0);
+        assert_eq!(reminder_height(1), 220.0);
+        assert_eq!(reminder_height(2), 260.0);
+        assert_eq!(reminder_height(3), 300.0);
+        assert_eq!(reminder_height(8), 300.0);
+    }
     fn screen(origin: (i32, i32), size: (u32, u32), scale: f64) -> Monitor {
         Monitor {
             name: None,
@@ -125,10 +137,10 @@ mod tests {
         let m = screen((-1920, -100), (1920, 1080), 1.0);
         let w = window((0, 0), (320, 300), 1.0);
         let mut anchor = window((-1000, 500), (240, 260), 1.0);
-        let above = place(Coordinates::Physical, &m, &anchor, &w, false).unwrap();
+        let above = place(Coordinates::Physical, &m, &anchor, &w, false, 3).unwrap();
         assert_eq!(above.position, (-1040, 188));
         anchor.position = (-1900, -90);
-        let below = place(Coordinates::Physical, &m, &anchor, &w, false).unwrap();
+        let below = place(Coordinates::Physical, &m, &anchor, &w, false, 3).unwrap();
         assert_eq!(below.position, (-1920, 182));
     }
     #[test]
@@ -136,7 +148,7 @@ mod tests {
         let m = screen((-3840, -200), (3840, 2160), 2.0);
         let anchor = window((-1700, 500), (240, 260), 1.0);
         let w = window((0, 0), (320, 300), 1.0);
-        let p = place(Coordinates::Mac, &m, &anchor, &w, false).unwrap();
+        let p = place(Coordinates::Mac, &m, &anchor, &w, false, 3).unwrap();
         assert_eq!(p.position, (-3480, 376));
         assert_eq!(p.inner, (640, 600));
         assert!(Coordinates::Mac.reachable(p.position, p.inner, 2.0, &[m]));
@@ -152,7 +164,7 @@ mod tests {
             scale: 1.0,
         };
         for settings in [false, true] {
-            let p = place(Coordinates::Physical, &m, &anchor, &w, settings).unwrap();
+            let p = place(Coordinates::Physical, &m, &anchor, &w, settings, 3).unwrap();
             assert_eq!(p.inner, (268, 122));
             assert_eq!(p.position, (-300, 20));
         }
@@ -167,7 +179,7 @@ mod tests {
             outer: (936, 1279),
             scale: 2.0,
         };
-        let p = place(Coordinates::Physical, &m, &anchor, &w, true).unwrap();
+        let p = place(Coordinates::Physical, &m, &anchor, &w, true, 0).unwrap();
         assert_eq!(p.inner, (920, 861));
         assert_eq!(p.position, (132, 0));
     }
@@ -180,7 +192,7 @@ mod tests {
             outer: (120, 140),
             scale: 1.0,
         };
-        assert!(place(Coordinates::Physical, &m, &w, &w, true).is_none());
+        assert!(place(Coordinates::Physical, &m, &w, &w, true, 0).is_none());
     }
     #[test]
     fn topology_shrink_does_not_accept_an_oversized_window_at_work_area_origin() {

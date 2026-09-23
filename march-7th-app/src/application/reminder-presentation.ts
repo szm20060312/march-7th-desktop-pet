@@ -1,6 +1,7 @@
 import type { ReminderCommand, ReminderId, ReminderSnapshot } from "../domain/reminder";
 export interface ReminderViewState {
   presentationId: number | null;
+  mode?: "automatic" | "manual";
   focusCompleted?: boolean;
   pendingCount?: number;
   rows: { id: ReminderId; done: boolean; busy: boolean }[];
@@ -21,7 +22,7 @@ export function createReminderPresentation(ports: {
   const render = (acknowledge = true) => {
     if (disposed) return;
     const p = snapshot?.presentation; const token = ++renderToken;
-    ports.render({ focusCompleted: p?.focusCompleted === true, pendingCount: snapshot?.progress.filter(p => p.pending).length ?? 0, presentationId: p?.id ?? null, rows: order.map(id => ({ id, done: !p?.items.includes(id) || !snapshot?.progress.find(v => v.id === id)?.pending, busy: busy.has(id) || allBusy })), disabled: disabled() || allBusy, emptyText: !snapshot || snapshot.persistence.status === "loading" ? "正在读取提醒…" : p ? "暂无待处理提醒" : "当前没有展示中的提醒", error });
+    ports.render({ focusCompleted: p?.focusCompleted === true, mode: p?.mode, pendingCount: snapshot?.progress.filter(p => p.pending).length ?? 0, presentationId: p?.id ?? null, rows: order.map(id => ({ id, done: !p?.items.includes(id) || !snapshot?.progress.find(v => v.id === id)?.pending, busy: busy.has(id) || allBusy })), disabled: disabled() || allBusy, emptyText: !snapshot || snapshot.persistence.status === "loading" ? "正在读取提醒…" : p ? "暂无待处理提醒" : "当前没有展示中的提醒", error });
     // The view port is synchronous DOM rendering; readiness follows actual content.
     if (p && !snapshot?.stopped && acknowledge) void ports.ready(p.id).catch(cause => {
       if (disposed || token !== renderToken) return;

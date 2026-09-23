@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import catalogData from "./catalog.json";
 import { characterCatalog, defaultCharacter, parseCharacterCatalog } from "./catalog";
 
-const responseContexts = ["click", "doubleClick", "reminderCompleted", "reminderSnoozed"] as const;
+const responseContexts = ["click", "doubleClick", "reminderDue", "reminderCompleted", "reminderSnoozed"] as const;
 
 describe("compiled character catalog", () => {
   it("exposes the two reviewed characters from one envelope", () => {
@@ -40,6 +40,19 @@ describe("compiled character catalog", () => {
         }
       }
     }
+  });
+
+  it("gives both characters distinct original lines for each reminder topic", () => {
+    for (const character of characterCatalog.characters) {
+      for (const topic of ["water", "move", "eyes", "multiple"] as const) {
+        expect(character.reminderPrompts[topic]).toHaveLength(2);
+        for (const line of character.reminderPrompts[topic]) {
+          expect([...line].length).toBeLessThanOrEqual(24);
+          expect(line).not.toMatch(/[\r\n<>]/);
+        }
+      }
+    }
+    expect(characterCatalog.characters[0].reminderPrompts.water[0]).not.toBe(characterCatalog.characters[1].reminderPrompts.water[0]);
   });
 
   it("rejects duplicate ids, unsafe paths, invalid frame ranges and unsafe phrases", () => {
