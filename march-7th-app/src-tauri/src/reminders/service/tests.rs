@@ -1,6 +1,131 @@
 use super::*;
 use crate::reminders::store::Store;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+#[test]
+fn export_preserves_persisted_reminder_state_without_presentation() {
+    let mut snapshot = Snapshot::from_engine(
+        &Engine::new(Data::default(), false).unwrap(),
+        Persistence::new(SaveStatus::Default, None),
+    );
+    snapshot.settings.items[0].enabled = true;
+    snapshot.progress[0].pending = true;
+    snapshot.progress[0].auto_handled = true;
+    snapshot.paused = true;
+    snapshot.quiet = Some(Quiet {
+        until: 100_000,
+        duration_minutes: 10,
+    });
+    snapshot.snooze_pending = true;
+    snapshot.presentation = Some(Presentation {
+        id: 9,
+        mode: Mode::Manual,
+        items: vec![Id::Water],
+        closes_at: None,
+        monotonic_deadline: None,
+    });
+    let bytes = super::super::export_snapshot(&snapshot).unwrap();
+    let restored = crate::reminders::decode_imported_reminders(&bytes).unwrap();
+    assert_eq!(restored.settings, snapshot.settings);
+    assert_eq!(restored.progress, snapshot.progress);
+    assert_eq!(restored.paused, snapshot.paused);
+    assert_eq!(restored.quiet, snapshot.quiet);
+    assert_eq!(restored.snooze_pending, snapshot.snooze_pending);
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(json.get("presentation").is_none());
+    assert!(json.get("revision").is_none());
+
+    snapshot.persistence = Persistence::new(SaveStatus::Saved, None);
+    assert_eq!(super::super::export_snapshot(&snapshot).unwrap(), bytes);
+
+    for status in [
+        SaveStatus::Loading,
+        SaveStatus::Unsaved,
+        SaveStatus::ReadOnly,
+    ] {
+        snapshot.persistence = Persistence::new(status, None);
+        assert!(super::super::export_snapshot(&snapshot).is_err());
+    }
+    snapshot.persistence = Persistence::new(SaveStatus::Saved, Some("writeFailed"));
+    assert!(super::super::export_snapshot(&snapshot).is_err());
+    snapshot.persistence = Persistence::new(SaveStatus::Saved, None);
+    snapshot.runtime_error = Some("invalidTime");
+    assert!(super::super::export_snapshot(&snapshot).is_err());
+    snapshot.runtime_error = None;
+    snapshot.stopped = true;
+    assert!(super::super::export_snapshot(&snapshot).is_err());
+    snapshot.stopped = false;
+    snapshot.progress[0].auto_handled = false;
+    snapshot.progress[0].pending = false;
+    assert!(super::super::export_snapshot(&snapshot).is_err());
+
+    snapshot.progress[0].pending = true;
+    snapshot.snooze_pending = false;
+    assert!(super::super::export_snapshot(&snapshot).is_err());
+}
+
+#[test]
+fn complete_export_candidate_is_atomic_across_three_module_qualifications() {
+    use crate::{characters, data_directory, desktop};
+    let character = characters::Snapshot {
+        selected_character_id: characters::Catalog::builtin().unwrap().default_id,
+        revision: 2,
+        persistence: characters::Persistence::Saved,
+    };
+    let reminder = Snapshot::from_engine(
+        &Engine::new(Data::default(), false).unwrap(),
+        Persistence::new(SaveStatus::Saved, None),
+    );
+    let placement = || {
+        desktop::ExportPlacement::Captured(desktop::geometry::Placement {
+            monitor_name: Some("synthetic".into()),
+            x: 20.5,
+            y: -4.0,
+        })
+    };
+    let candidate =
+        data_directory::export_snapshot::capture(Some(&character), &reminder, placement()).unwrap();
+    let decoded = data_directory::backup_codec::decode(
+        &data_directory::backup_codec::encode(candidate, 123).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        decoded.preview.selected_character_id,
+        character.selected_character_id
+    );
+    assert!(decoded.preview.has_desktop_placement);
+    assert_eq!(decoded.preview.created_at_utc_ms, 123);
+
+    let mut failed_character = character.clone();
+    failed_character.persistence = characters::Persistence::Fallback;
+    assert!(data_directory::export_snapshot::capture(
+        Some(&failed_character),
+        &reminder,
+        placement()
+    )
+    .is_err());
+    let mut failed_reminder = reminder.clone();
+    failed_reminder.persistence = Persistence::new(SaveStatus::Unsaved, Some("writeFailed"));
+    assert!(data_directory::export_snapshot::capture(
+        Some(&character),
+        &failed_reminder,
+        placement()
+    )
+    .is_err());
+    assert!(data_directory::export_snapshot::capture(
+        Some(&character),
+        &reminder,
+        desktop::ExportPlacement::Unavailable
+    )
+    .is_err());
+    let no_position = data_directory::export_snapshot::capture(
+        Some(&character),
+        &reminder,
+        desktop::ExportPlacement::NeverSaved,
+    )
+    .unwrap();
+    assert!(no_position.desktop.is_none());
+}
 fn time(ms: i64) -> Time {
     Time {
         utc_ms: ms,

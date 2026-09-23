@@ -1,4 +1,5 @@
 use super::model::{Data, Error};
+use super::service::Snapshot;
 use serde::Serialize;
 use std::{fs, io::ErrorKind, path::PathBuf};
 
@@ -58,6 +59,30 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Data, Error> {
 }
 pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), Error> {
     decode(bytes).map(|_| ())
+}
+pub(crate) fn export_snapshot(snapshot: &Snapshot) -> Result<Vec<u8>, &'static str> {
+    if snapshot.stopped
+        || snapshot.runtime_error.is_some()
+        || snapshot.persistence.code.is_some()
+        || !matches!(
+            snapshot.persistence.status,
+            SaveStatus::Default | SaveStatus::Saved
+        )
+    {
+        return Err("exportRemindersUnavailable");
+    }
+    let data = Data {
+        version: 1,
+        settings: snapshot.settings.clone(),
+        progress: snapshot.progress.clone(),
+        paused: snapshot.paused,
+        quiet: snapshot.quiet.clone(),
+        snooze_pending: snapshot.snooze_pending,
+    };
+    data.validate().map_err(|_| "exportRemindersInvalid")?;
+    let bytes = serde_json::to_vec_pretty(&data).map_err(|_| "exportRemindersInvalid")?;
+    validate_import(&bytes).map_err(|_| "exportRemindersInvalid")?;
+    Ok(bytes)
 }
 impl Storage for Store {
     fn load(&mut self) -> (Data, Persistence) {

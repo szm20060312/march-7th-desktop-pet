@@ -105,6 +105,15 @@ pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
 pub(crate) fn imported_has_placement(bytes: &[u8]) -> Result<bool, String> {
     Ok(parse(bytes)?.placement.is_some())
 }
+pub(crate) fn export_placement(placement: &Placement) -> Result<Vec<u8>, &'static str> {
+    if !placement.x.is_finite() || !placement.y.is_finite() {
+        return Err("exportDesktopUnavailable");
+    }
+    let bytes = serde_json::to_vec_pretty(&Config::new(placement.clone()))
+        .map_err(|_| "exportDesktopUnavailable")?;
+    validate_import(&bytes).map_err(|_| "exportDesktopUnavailable")?;
+    Ok(bytes)
+}
 
 #[cfg(test)]
 mod tests {
@@ -224,6 +233,18 @@ mod tests {
             fs::read_to_string(temp.file()).unwrap(),
             r#"{"version":999}"#
         );
+    }
+
+    #[test]
+    fn explicit_export_placement_qualification_never_uses_fallback() {
+        use super::super::{export_placement, ExportPlacement};
+        assert_eq!(export_placement(ExportPlacement::NeverSaved).unwrap(), None);
+        assert!(export_placement(ExportPlacement::Unavailable).is_err());
+        let saved = export_placement(ExportPlacement::Captured(placement(-42.5)))
+            .unwrap()
+            .unwrap();
+        assert!(imported_has_placement(&saved).unwrap());
+        assert!(export_placement(ExportPlacement::Captured(placement(f64::NAN))).is_err());
     }
 
     #[cfg(windows)]

@@ -218,3 +218,35 @@ fn native_snapshot_uses_frontend_contract_and_repeat_selection_has_retry_revisio
     assert_eq!(value["persistence"], "saved");
     service.stop();
 }
+
+#[test]
+fn export_uses_only_running_known_persistable_character() {
+    let mut snapshot = Snapshot {
+        selected_character_id: catalog().default_id,
+        revision: 7,
+        persistence: Persistence::Default,
+    };
+    let bytes = export_snapshot(Some(&snapshot)).unwrap();
+    assert_eq!(
+        imported_selected_id(&bytes).unwrap(),
+        snapshot.selected_character_id
+    );
+    snapshot.selected_character_id = catalog().characters[1].id.clone();
+    snapshot.persistence = Persistence::Saved;
+    assert_eq!(
+        imported_selected_id(&export_snapshot(Some(&snapshot)).unwrap()).unwrap(),
+        snapshot.selected_character_id
+    );
+    for persistence in [
+        Persistence::Fallback,
+        Persistence::SessionOnly,
+        Persistence::SaveFailed,
+    ] {
+        snapshot.persistence = persistence;
+        assert!(export_snapshot(Some(&snapshot)).is_err());
+    }
+    snapshot.persistence = Persistence::Saved;
+    snapshot.selected_character_id = "retired-character".into();
+    assert!(export_snapshot(Some(&snapshot)).is_err());
+    assert!(export_snapshot(None).is_err());
+}
