@@ -4,6 +4,7 @@ mod characters;
 pub mod data_directory;
 mod data_lock;
 mod desktop;
+pub mod focus;
 mod import_session;
 mod local_backup;
 mod local_import;
