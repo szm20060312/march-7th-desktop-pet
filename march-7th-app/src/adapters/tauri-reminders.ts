@@ -109,6 +109,24 @@ export function connectReminderPrompts(options: { remind(event: ReminderPromptEv
   }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, cause => { if (!disposed) options.reportError({ stage: "listen", recovery: "restart", cause }); });
   return () => { disposed = true; stop?.(); };
 }
+export function connectReminderPromptEnds(options: { ended(presentationId: number): void; reportError(error: ReminderConnectionError): void; transport?: ReminderTransport }): () => void {
+  let disposed = false; let stop: (() => void) | undefined; const seen = new Set<number>();
+  void (options.transport ?? nativeTransport).listen("reminder-prompt-ended", value => {
+    if (disposed) return;
+    try {
+      if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length !== 1) throw Error("Invalid reminder prompt end");
+      const id = (value as Record<string, unknown>).presentationId;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 1) throw Error("Invalid reminder prompt end");
+      if (seen.has(id)) return;
+      seen.add(id); options.ended(id);
+    } catch (cause) { if (!disposed) options.reportError({ stage: "event", recovery: "retry", cause }); }
+  }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, cause => { if (!disposed) options.reportError({ stage: "listen", recovery: "restart", cause }); });
+  return () => { disposed = true; stop?.(); seen.clear(); };
+}
+export async function openReminderChoices(presentationId: number, transport: ReminderTransport = nativeTransport): Promise<void> {
+  if (!Number.isSafeInteger(presentationId) || presentationId < 1) throw Error("Invalid reminder presentation identity");
+  await transport.invoke("open_reminder_choices", { presentationId });
+}
 export function createReminderReady(transport = nativeTransport, token = () => (window as unknown as Record<string, unknown>).__MARCH7_REMINDER_WINDOW_TOKEN__) {
   return async (presentationId: number): Promise<void> => {
     const windowToken = token();

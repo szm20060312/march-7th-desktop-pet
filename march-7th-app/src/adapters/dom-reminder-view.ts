@@ -8,12 +8,16 @@ export function createDomReminderView(root: Document) {
   const snooze = element("snooze-reminder") as HTMLButtonElement; const dismiss = element("dismiss-reminder") as HTMLButtonElement;
   const card = element("reminder-card"); const speaker = element("reminder-speaker"); const prompt = element("reminder-prompt");
   const avatar = element("reminder-avatar") as HTMLElement;
+  const choices = element("reminder-choice-strip"); const choicePrimary = element("choice-primary") as HTMLButtonElement;
+  const choiceLater = element("choice-later") as HTMLButtonElement; const choiceError = element("choice-error");
   let batch: number | null = null; const nodes = new Map<ReminderId, { row: HTMLElement; button: HTMLButtonElement }>();
-  let actions: { complete(id: ReminderId): Promise<void>; snooze(): Promise<void>; dismiss(): Promise<void> } | undefined;
+  let actions: { complete(id: ReminderId): Promise<void>; snooze(): Promise<void>; dismiss(): Promise<void>; showPending?(): Promise<void> } | undefined;
   let character: CharacterDefinition | null = null; let current: ReminderViewState | null = null;
+  let choiceItems: ReminderId[] = [];
   const paintVoice = () => {
     speaker.textContent = character?.displayName ?? "桌面伙伴";
     card.dataset.character = character?.id ?? "neutral";
+    choices.dataset.character = character?.id ?? "neutral";
     avatar.style.backgroundImage = character ? `url("${character.atlas.src}")` : "none";
     if (!current || current.presentationId === null) { prompt.textContent = "正在读取提醒…"; return; }
     if (current.focusCompleted) {
@@ -29,6 +33,15 @@ export function createDomReminderView(root: Document) {
     setCharacter(next: CharacterDefinition | null) { character = next; paintVoice(); },
     render(state: ReminderViewState) {
       current = state; paintVoice();
+      const automatic = state.mode === "automatic" && !state.focusCompleted;
+      card.hidden = automatic;
+      choices.hidden = !automatic || state.choicesOpen !== true;
+      choiceItems = state.rows.filter(row => !row.done).map(row => row.id);
+      const choiceLabels: Record<ReminderId, string> = { water: "接过水杯", move: "活动好了", eyes: "眼睛歇好了" };
+      choicePrimary.textContent = choiceItems.length === 1 ? choiceLabels[choiceItems[0]] : "查看待处理";
+      choicePrimary.disabled = choices.hidden || state.disabled || choiceItems.length === 0 || state.rows.some(row => row.busy);
+      choiceLater.disabled = choices.hidden || state.disabled;
+      choiceError.textContent = state.error;
       if (batch !== state.presentationId) { rows.replaceChildren(); nodes.clear(); batch = state.presentationId; }
       for (const item of state.rows) {
         let node = nodes.get(item.id);
@@ -49,8 +62,11 @@ export function createDomReminderView(root: Document) {
     },
     bind(value: NonNullable<typeof actions>) {
       actions = value; const later = () => { void actions?.snooze(); }; const hide = () => { void actions?.dismiss(); };
+      const choose = () => { if (!current?.choicesOpen || current.mode !== "automatic") return; if (choiceItems.length === 1) void actions?.complete(choiceItems[0]); else if (choiceItems.length > 1) void actions?.showPending?.(); };
+      const chooseLater = () => { if (current?.choicesOpen && current.mode === "automatic") void actions?.snooze(); };
       snooze.addEventListener("click", later); dismiss.addEventListener("click", hide);
-      return () => { actions = undefined; snooze.removeEventListener("click", later); dismiss.removeEventListener("click", hide); nodes.clear(); rows.replaceChildren(); };
+      choicePrimary.addEventListener("click", choose); choiceLater.addEventListener("click", chooseLater);
+      return () => { actions = undefined; snooze.removeEventListener("click", later); dismiss.removeEventListener("click", hide); choicePrimary.removeEventListener("click", choose); choiceLater.removeEventListener("click", chooseLater); nodes.clear(); rows.replaceChildren(); };
     },
   };
 }

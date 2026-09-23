@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), startDragging: vi.fn(), listen: vi.fn(), getSelection: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string) => command === "get_selected_character" ? native.getSelection() : native.invoke(command) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, args?: unknown) => command === "get_selected_character" ? native.getSelection() : native.invoke(command, args) }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: native.startDragging }),
 }));
@@ -77,9 +77,11 @@ beforeEach(() => {
     clearTimeout: (id: number) => { timers.delete(id); },
   }));
   vi.stubGlobal("Image", class {
-    src = "";
+    private path = "";
     naturalWidth = 1536;
     naturalHeight = 2288;
+    set src(value: string) { this.path = value; if (value.endsWith("water-offer.png")) { this.naturalWidth = value.includes("raiden-shogun") ? 1205 : 1189; this.naturalHeight = value.includes("raiden-shogun") ? 1306 : 1323; } }
+    get src() { return this.path; }
     decode = vi.fn().mockResolvedValue(undefined);
   });
 });
@@ -103,9 +105,13 @@ describe("desktop pet behavior at the entry point", () => {
     expect(prompt).toBeTypeOf("function");
     prompt({ payload: { presentationId: 5, items: ["water"] } });
     expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
-    expect(paint(0)).toBe("3:0");
+    expect(paint(0)).toBe("water:0:0");
+    const ended = native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")?.[1];
+    expect(ended).toBeTypeOf("function");
+    ended({ payload: { presentationId: 5 } });
+    expect(paint(1_500)).not.toContain("water:");
     prompt({ payload: { presentationId: 5, items: ["water"] } });
-    expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
+    expect(message.hidden).toBe(true);
     native.listen.mock.calls.find(call => call[0] === "selected-character-changed")![1]({ payload: { selectedCharacterId: "raiden-shogun", revision: 2, persistence: "saved" } });
     await flush();
     prompt({ payload: { presentationId: 6, items: ["eyes"] } });
@@ -113,6 +119,22 @@ describe("desktop pet behavior at the entry point", () => {
     windowTarget.dispatch("pagehide");
     prompt({ payload: { presentationId: 7, items: ["move"] } });
     expect(message.hidden).toBe(true);
+  });
+  it("opens a live reminder's separate choices when the pet is clicked", async () => {
+    await boot();
+    const prompt = native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1];
+    prompt({ payload: { presentationId: 9, items: ["water"] } });
+    const pointer = { button: 0, pointerId: 1, isPrimary: true, clientX: 1, clientY: 1 };
+    stageTarget.dispatch("pointerdown", pointer);
+    documentTarget.dispatch("pointerup", pointer);
+    const delayedClick = [...timers.values()].find(timer => timer.ms === 300)!;
+    delayedClick.callback();
+    await flush();
+    expect(native.invoke).toHaveBeenCalledWith("open_reminder_choices", { presentationId: 9 });
+    expect(message.textContent).toBe("先喝口水吧，咱们再继续！");
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")![1]({ payload: { presentationId: 9 } });
+    expect(message.hidden).toBe(true);
+    expect(paint(1000)).not.toContain("water:");
   });
   it("subscribes once to native reminder responses and routes them to the current character", async () => {
     await boot();
@@ -171,7 +193,9 @@ describe("desktop pet behavior at the entry point", () => {
     await boot();
     let fail = true;
     vi.stubGlobal("Image", class {
-      src = ""; naturalWidth = 1536; naturalHeight = 2288;
+      private path = ""; naturalWidth = 1536; naturalHeight = 2288;
+      set src(value: string) { this.path = value; if (value.endsWith("water-offer.png")) { this.naturalWidth = value.includes("raiden-shogun") ? 1205 : 1189; this.naturalHeight = value.includes("raiden-shogun") ? 1306 : 1323; } }
+      get src() { return this.path; }
       decode = async () => { if (fail) throw Error("simulated atlas failure"); };
     });
     const log = vi.spyOn(console, "error").mockImplementation(() => {});

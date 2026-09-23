@@ -18,9 +18,9 @@ function harness(initial: SelectedCharacterSnapshot = { characterId: "march-7th"
     loads.set(src, pending);
     return pending.promise;
   });
-  const runtimes: Array<{ character: CharacterDefinition; stop: ReturnType<typeof vi.fn> }> = [];
+  const runtimes: Array<{ character: CharacterDefinition; stop: ReturnType<typeof vi.fn>; respond: ReturnType<typeof vi.fn>; endReminder: ReturnType<typeof vi.fn> }> = [];
   const createRuntime = vi.fn((character: CharacterDefinition) => {
-    const runtime = { character, stop: vi.fn(), respond: vi.fn() };
+    const runtime = { character, stop: vi.fn(), respond: vi.fn(), endReminder: vi.fn() };
     runtimes.push(runtime);
     return runtime;
   });
@@ -30,6 +30,7 @@ function harness(initial: SelectedCharacterSnapshot = { characterId: "march-7th"
   const finish = async (id: string, size = { width: 1536, height: 2288 }) => {
     const character = characterCatalog.characters.find(item => item.id === id)!;
     loads.get(character.atlas.src)!.resolve(size);
+    loads.get(character.waterOffer.src)!.resolve({ width: character.waterOffer.sourceWidth, height: character.waterOffer.sourceHeight });
     await flush();
   };
   return { controller, preloadAtlas, createRuntime, runtimes, status, reportError, loads, finish };
@@ -43,6 +44,15 @@ describe("character presentation controller", () => {
     expect(h.runtimes[0].character.id).toBe("march-7th");
     expect(h.status.setPresentationError).toHaveBeenLastCalledWith(null);
   });
+  it("preloads the matching water action before selecting a character and forwards its animation", async () => {
+    const h = harness();
+    expect(h.preloadAtlas.mock.calls.map(([src]) => src)).toContain("/assets/march-7th/water-offer.png");
+    await h.finish("march-7th");
+    h.controller.remind(["water"], 1);
+    expect(h.runtimes[0].respond).toHaveBeenLastCalledWith("reminderDue", "先喝口水吧，咱们再继续！", "offerWater");
+    h.controller.endReminder();
+    expect(h.runtimes[0].endReminder).toHaveBeenCalledOnce();
+  });
 
   it("keeps the old runtime until preload succeeds, then stops it before starting the new one", async () => {
     const h = harness();
@@ -52,7 +62,7 @@ describe("character presentation controller", () => {
     old.stop.mockImplementation(() => { order.push("stop-old"); });
     h.createRuntime.mockImplementationOnce(character => {
       order.push("start-new");
-      const runtime = { character, stop: vi.fn(), respond: vi.fn() };
+      const runtime = { character, stop: vi.fn(), respond: vi.fn(), endReminder: vi.fn() };
       h.runtimes.push(runtime);
       return runtime;
     });
@@ -81,6 +91,7 @@ describe("character presentation controller", () => {
 
     const failed = h.controller.select({ characterId: "raiden-shogun", revision: 3 });
     h.loads.get("/assets/raiden-shogun/spritesheet.webp")!.resolve({ width: 1, height: 1 });
+    h.loads.get("/assets/raiden-shogun/water-offer.png")!.resolve({ width: 1205, height: 1306 });
     await failed;
     expect(h.runtimes[h.runtimes.length - 1].character.id).toBe("march-7th");
     expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请重试。");

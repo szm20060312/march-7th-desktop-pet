@@ -3,7 +3,7 @@ import { preloadBrowserAtlas } from "./adapters/browser-atlas-preloader";
 import { createDomPetGestures } from "./adapters/dom-pet-gestures";
 import { createDomPetView } from "./adapters/dom-pet-view";
 import { connectCharacterSelection } from "./adapters/tauri-characters";
-import { connectFocusResponses, connectReminderPrompts, connectReminderResponses, connectTaskResponses } from "./adapters/tauri-reminders";
+import { connectFocusResponses, connectReminderPromptEnds, connectReminderPrompts, connectReminderResponses, connectTaskResponses, openReminderChoices } from "./adapters/tauri-reminders";
 import { createTauriHost } from "./adapters/tauri-host";
 import { createCharacterPresentationController } from "./application/character-presentation";
 import { startPetRuntime } from "./application/pet-runtime";
@@ -27,6 +27,21 @@ const status = {
   },
 };
 let presentation: ReturnType<typeof createCharacterPresentationController> | undefined;
+let activeReminderPrompt: number | null = null;
+let openingReminderChoices = false;
+let disposed = false;
+const onPetClick = () => {
+  if (activeReminderPrompt === null) return false;
+  if (openingReminderChoices) return true;
+  const id = activeReminderPrompt;
+  openingReminderChoices = true;
+  void openReminderChoices(id).catch(error => {
+    if (disposed || activeReminderPrompt !== id) return;
+    console.error("Reminder choices could not open", error);
+    status.setPresentationError("无法打开提醒操作，请从托盘查看待处理。");
+  }).finally(() => { openingReminderChoices = false; });
+  return true;
+};
 const disconnect = connectCharacterSelection({
   ids: characterCatalog.characters.map(character => character.id),
   reportError(error) {
@@ -46,7 +61,7 @@ const disconnect = connectCharacterSelection({
       status,
       reportError: (character, error) => console.error(`Character presentation failed (${character?.id ?? "unknown"})`, error),
       createRuntime: character => startPetRuntime({
-        character, host, view, gestures, scheduler: browserScheduler,
+        character, host, view, gestures, scheduler: browserScheduler, onPetClick,
         reportError: (operation, error) => console.error(`Pet ${operation} failed`, error),
       }),
     });
@@ -57,8 +72,16 @@ const disconnectReminderResponses = connectReminderResponses({
   reportError: error => console.error("Reminder response connection failed", error),
 });
 const disconnectReminderPrompts = connectReminderPrompts({
-  remind(event) { presentation?.remind(event.items, event.presentationId); },
+  remind(event) { if (presentation?.remind(event.items, event.presentationId)) activeReminderPrompt = event.presentationId; },
   reportError: error => console.error("Reminder prompt connection failed", error),
+});
+const disconnectReminderPromptEnds = connectReminderPromptEnds({
+  ended(id) {
+    if (activeReminderPrompt !== id) return;
+    activeReminderPrompt = null;
+    presentation?.endReminder();
+  },
+  reportError: error => console.error("Reminder prompt end connection failed", error),
 });
 const disconnectFocusResponses = connectFocusResponses({
   respond() { presentation?.respond("focusCompleted"); },
@@ -69,11 +92,13 @@ const disconnectTaskResponses = connectTaskResponses({
   reportError: () => console.error("Task response connection failed"),
 });
 const dispose = () => {
+  disposed = true;
   disconnectTaskResponses();
   disconnectFocusResponses();
   disconnect();
   disconnectReminderResponses();
   disconnectReminderPrompts();
+  disconnectReminderPromptEnds();
   presentation?.destroy();
   if (errorTimer !== undefined) window.clearTimeout(errorTimer);
   window.removeEventListener("pagehide", dispose);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { connectReminders, connectReminderPrompts, connectReminderResponses, createReminderReady, parseReminderPromptEvent, parseReminderSnapshot, parseSettingsOpenIntent, type ReminderTransport } from "./tauri-reminders";
+import { connectReminders, connectReminderPromptEnds, connectReminderPrompts, connectReminderResponses, createReminderReady, openReminderChoices, parseReminderPromptEvent, parseReminderSnapshot, parseSettingsOpenIntent, type ReminderTransport } from "./tauri-reminders";
 
 export function snapshot(revision = 1) {
   return { revision, settings: { items: ["water", "move", "eyes"].map(id => ({ id, enabled: false, intervalMinutes: 60 })), activeHours: { kind: "allDay" }, snoozeMinutes: 10 }, progress: ["water", "move", "eyes"].map(id => ({ id, nextDueAt: null, pending: false, autoHandled: false })), paused: false, quiet: null, snoozePending: false, presentation: null, persistence: { status: "saved", code: null }, runtimeError: null, stopped: false };
@@ -88,6 +88,15 @@ describe("reminder native boundary", () => {
     expect(reportError).not.toHaveBeenCalled(); expect(h.invoke).not.toHaveBeenCalled();
     dispose(); h.events.get("reminder-prompt")!({ presentationId: 5, items: ["water"] });
     expect(remind).toHaveBeenCalledTimes(2);
+  });
+  it("delivers each prompt end once and uses a guarded native command to open choices", async () => {
+    const h = host(); const ended = vi.fn(); const reportError = vi.fn(); const dispose = connectReminderPromptEnds({ ended, reportError, transport: h }); await flush();
+    h.events.get("reminder-prompt-ended")!({ presentationId: 7 });
+    h.events.get("reminder-prompt-ended")!({ presentationId: 7 });
+    h.events.get("reminder-prompt-ended")!({ presentationId: 0 });
+    expect(ended).toHaveBeenCalledTimes(1); expect(reportError).toHaveBeenCalledTimes(1);
+    await openReminderChoices(7, h); expect(h.invoke).toHaveBeenCalledWith("open_reminder_choices", { presentationId: 7 });
+    dispose(); h.events.get("reminder-prompt-ended")!({ presentationId: 8 }); expect(ended).toHaveBeenCalledTimes(1);
   });
   it("uses only a valid native window token for the presentation handshake", async () => {
     const h: ReminderTransport = host(); const ready = createReminderReady(h, () => 12); await ready(7); expect(h.invoke).toHaveBeenCalledWith("reminder_ui_ready", { presentationId: 7, windowToken: 12 });

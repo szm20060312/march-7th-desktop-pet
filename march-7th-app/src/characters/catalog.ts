@@ -70,6 +70,14 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   const directionCount = positiveInteger(lookData.directionCount, `${path}.look.directionCount`);
   if (firstRow + Math.ceil(directionCount / columns) > rows) throw new Error(`${path}.look exceeds atlas rows`);
 
+  const offerData = object(record.waterOffer, `${path}.waterOffer`);
+  const offerSrc = string(offerData.src, `${path}.waterOffer.src`);
+  if (offerSrc !== `/assets/${id}/water-offer.png`) throw new Error(`${path}.waterOffer path must be a local built-in asset`);
+  const sourceWidth = positiveInteger(offerData.sourceWidth, `${path}.waterOffer.sourceWidth`);
+  const sourceHeight = positiveInteger(offerData.sourceHeight, `${path}.waterOffer.sourceHeight`);
+  if (offerData.columns !== 2 || offerData.rows !== 2 || offerData.frameCount !== 4) throw new Error(`${path}.waterOffer must be a complete 2x2 action`);
+  const offerInterval = positiveInteger(offerData.frameIntervalMs, `${path}.waterOffer.frameIntervalMs`);
+
   const phraseData = object(record.phrases, `${path}.phrases`);
   const phrases: Partial<Record<ResponseContext, readonly string[]>> = {};
   for (const context of responseContexts) {
@@ -107,6 +115,7 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
       jump: parsedClips.jump,
     },
     look: { firstRow, directionCount },
+    waterOffer: { src: offerSrc, sourceWidth, sourceHeight, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: offerInterval },
     phrases,
     reminderPrompts,
   };

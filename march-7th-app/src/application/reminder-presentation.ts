@@ -2,6 +2,7 @@ import type { ReminderCommand, ReminderId, ReminderSnapshot } from "../domain/re
 export interface ReminderViewState {
   presentationId: number | null;
   mode?: "automatic" | "manual";
+  choicesOpen?: boolean;
   focusCompleted?: boolean;
   pendingCount?: number;
   rows: { id: ReminderId; done: boolean; busy: boolean }[];
@@ -22,7 +23,7 @@ export function createReminderPresentation(ports: {
   const render = (acknowledge = true) => {
     if (disposed) return;
     const p = snapshot?.presentation; const token = ++renderToken;
-    ports.render({ focusCompleted: p?.focusCompleted === true, mode: p?.mode, pendingCount: snapshot?.progress.filter(p => p.pending).length ?? 0, presentationId: p?.id ?? null, rows: order.map(id => ({ id, done: !p?.items.includes(id) || !snapshot?.progress.find(v => v.id === id)?.pending, busy: busy.has(id) || allBusy })), disabled: disabled() || allBusy, emptyText: !snapshot || snapshot.persistence.status === "loading" ? "正在读取提醒…" : p ? "暂无待处理提醒" : "当前没有展示中的提醒", error });
+    ports.render({ focusCompleted: p?.focusCompleted === true, mode: p?.mode, choicesOpen: p?.choicesOpen, pendingCount: snapshot?.progress.filter(p => p.pending).length ?? 0, presentationId: p?.id ?? null, rows: order.map(id => ({ id, done: !p?.items.includes(id) || !snapshot?.progress.find(v => v.id === id)?.pending, busy: busy.has(id) || allBusy })), disabled: disabled() || allBusy, emptyText: !snapshot || snapshot.persistence.status === "loading" ? "正在读取提醒…" : p ? "暂无待处理提醒" : "当前没有展示中的提醒", error });
     // The view port is synchronous DOM rendering; readiness follows actual content.
     if (p && !snapshot?.stopped && acknowledge) void ports.ready(p.id).catch(cause => {
       if (disposed || token !== renderToken) return;
@@ -50,6 +51,7 @@ export function createReminderPresentation(ports: {
     receive,
     async complete(id: ReminderId) { if (!snapshot?.presentation?.items.includes(id) || !snapshot.progress.find(p => p.id === id)?.pending) return; await run({ type: "complete", id }, id); },
     async snooze() { if (snapshot?.presentation) await run({ type: snapshot.presentation.focusCompleted ? "showPending" : "snoozeAll" }); },
+    async showPending() { if (snapshot?.presentation) await run({ type: "showPending" }); },
     async dismiss() { const id = snapshot?.presentation?.id; if (id) await run({ type: "dismiss", presentationId: id }); },
     error(message: string) { if (!disposed) { error = message; render(false); } },
     dispose() { disposed = true; renderToken++; operation++; busy.clear(); },

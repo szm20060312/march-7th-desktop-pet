@@ -1,4 +1,4 @@
-import type { CharacterCatalog, CharacterDefinition, ResponseContext } from "../domain/character";
+import type { CharacterCatalog, CharacterDefinition, OneShotAction, ResponseContext } from "../domain/character";
 import type { ReminderId } from "../domain/reminder";
 import { reminderPrompt } from "../domain/reminder-prompt";
 import type { AtlasPreloader, PresentationStatus } from "./ports";
@@ -6,7 +6,8 @@ import type { AtlasPreloader, PresentationStatus } from "./ports";
 export type SelectedCharacterSnapshot = Readonly<{ characterId: string; revision: number }>;
 export interface CharacterRuntime {
   stop(): void;
-  respond(context: ResponseContext, phrase?: string): boolean;
+  respond(context: ResponseContext, phrase?: string, action?: OneShotAction): boolean;
+  endReminder(): void;
 }
 
 export function createCharacterPresentationController(options: {
@@ -43,12 +44,15 @@ export function createCharacterPresentationController(options: {
     }
 
     try {
-      const size = await preloadAtlas(character.atlas.src);
+      const [size, offerSize] = await Promise.all([preloadAtlas(character.atlas.src), preloadAtlas(character.waterOffer.src)]);
       if (destroyed || token !== request || snapshot.revision !== latestRevision) return false;
       const expectedWidth = character.atlas.cellWidth * character.atlas.columns;
       const expectedHeight = character.atlas.cellHeight * character.atlas.rows;
       if (size.width !== expectedWidth || size.height !== expectedHeight) {
         throw new Error(`图集尺寸应为 ${expectedWidth}×${expectedHeight}，实际为 ${size.width}×${size.height}`);
+      }
+      if (offerSize.width !== character.waterOffer.sourceWidth || offerSize.height !== character.waterOffer.sourceHeight) {
+        throw new Error(`递杯图集尺寸应为 ${character.waterOffer.sourceWidth}×${character.waterOffer.sourceHeight}`);
       }
       const previousCharacter = activeId ? findCharacter(activeId) ?? null : null;
       runtime?.stop();
@@ -86,8 +90,9 @@ export function createCharacterPresentationController(options: {
     remind(items: readonly ReminderId[], presentationId: number) {
       const character = activeId ? findCharacter(activeId) : null;
       const phrase = character && reminderPrompt(character, items, presentationId);
-      return phrase ? runtime?.respond("reminderDue", phrase) ?? false : false;
+      return phrase ? runtime?.respond("reminderDue", phrase, items.includes("water") ? "offerWater" : undefined) ?? false : false;
     },
+    endReminder() { runtime?.endReminder(); },
     destroy() {
       if (destroyed) return;
       destroyed = true;

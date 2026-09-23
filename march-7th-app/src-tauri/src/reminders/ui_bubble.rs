@@ -38,6 +38,12 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
         );
         let revision = s.bubble.revision;
         let presentation = s.bubble.selected.map(|(id, _)| id);
+        let ended = s.announced_auto.filter(|id| {
+            !character_visible(app) || s.bubble.automatic_prompt(&snapshot, *id).is_none()
+        });
+        if ended.is_some() {
+            s.announced_auto = None;
+        }
         s.reminder.update(revision, presentation, snapshot.stopped);
         let hide = old != s.reminder.ticket();
         if hide {
@@ -54,6 +60,15 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
         if let Some(Ok(projection)) = projection {
             if let Err(error) = app.emit_to("reminder", "reminders-changed", projection) {
                 fail(app, "presentationFailed", error);
+            }
+        }
+        if let Some(presentation_id) = ended {
+            if let Err(error) = app.emit_to(
+                "main",
+                "reminder-prompt-ended",
+                serde_json::json!({"presentationId": presentation_id}),
+            ) {
+                eprintln!("Reminder character prompt end unavailable: {error}");
             }
         }
     }

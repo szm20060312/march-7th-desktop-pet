@@ -37,3 +37,21 @@ it("presents an automatic reminder as the selected character's speech without lo
   view.render({ ...base, mode: "manual" });
   expect(dom.get("reminder-prompt").textContent).toBe("待处理提醒");
 });
+
+it("keeps the automatic window visually empty until cup choices are opened, then shows only two chips", () => {
+  const dom = documentDouble(); const view = createDomReminderView(dom.document);
+  const complete = vi.fn(); const snooze = vi.fn(); const showPending = vi.fn();
+  view.bind({ complete, snooze, showPending, dismiss: vi.fn() });
+  const base = { presentationId: 8, mode: "automatic" as const, rows: [{ id: "water" as const, done: false, busy: false }], disabled: false, emptyText: "", error: "" };
+  view.render({ ...base, choicesOpen: false });
+  expect(dom.get("reminder-card").hidden).toBe(true);
+  expect(dom.get("reminder-choice-strip").hidden).toBe(true);
+  view.render({ ...base, choicesOpen: true });
+  expect(dom.get("reminder-choice-strip").hidden).toBe(false);
+  expect(dom.get("choice-primary").textContent).toBe("接过水杯");
+  dom.get("choice-primary").dispatch("click"); expect(complete).toHaveBeenCalledWith("water");
+  dom.get("choice-later").dispatch("click"); expect(snooze).toHaveBeenCalledOnce();
+  view.render({ ...base, mode: "manual", choicesOpen: false });
+  expect(dom.get("reminder-card").hidden).toBe(false);
+  expect(dom.get("reminder-choice-strip").hidden).toBe(true);
+});

@@ -49,4 +49,15 @@ describe("DOM pet view", () => {
     view.setPresentationError(null);
     expect(message.node.hidden).toBe(true);
   });
+  it("switches to the water action sheet and restores the original atlas afterward", () => {
+    const sprite = element(); const view = createDomPetView(sprite.node, element().node, element().node, element().node);
+    view.configure(march7th);
+    view.render({ asset: "waterOffer", row: 1, column: 0 });
+    expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/water-offer.png")');
+    expect(sprite.style.backgroundSize).toBe("384px 416px");
+    expect(sprite.style.backgroundPosition).toBe("0px -208px");
+    view.render({ row: 0, column: 0 });
+    expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/spritesheet.webp")');
+    expect(sprite.style.backgroundSize).toBe("1536px 2288px");
+  });
 });

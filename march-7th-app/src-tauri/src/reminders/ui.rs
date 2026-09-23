@@ -30,6 +30,7 @@ use tauri::{
 struct State {
     reminder: PresentationUi,
     bubble: super::bubble::Bubble,
+    announced_auto: Option<u64>,
     reminder_settle: Option<(Ticket, Observation, Placement)>,
     reminder_visible: bool,
     reminder_attempts: u16,
@@ -606,16 +607,17 @@ fn placement<R: Runtime>(
         .or(main.primary_monitor().map_err(|e| e.to_string())?)
         .ok_or("no available display")?;
     let observation = observe(window)?;
-    let reminder_rows = if settings {
-        0
+    let (reminder_rows, choices) = if settings {
+        (0, false)
     } else {
         let raw = native::snapshot(app).map_err(|error| error.code.to_string())?;
-        app.state::<Ui<R>>()
-            .state
-            .lock()
-            .unwrap()
-            .bubble
-            .visible_item_count(&raw)
+        let ui = app.state::<Ui<R>>();
+        let state = ui.state.lock().unwrap();
+        let id = state.bubble.selected.map(|(id, _)| id);
+        (
+            state.bubble.visible_item_count(&raw),
+            id.is_some_and(|id| state.bubble.automatic_prompt(&raw, id).is_some()),
+        )
     };
     let desired = ui_geometry::place(
         NATIVE,
@@ -624,6 +626,7 @@ fn placement<R: Runtime>(
         &observation,
         settings,
         reminder_rows,
+        choices,
     )
     .ok_or("unusable work area")?;
     Ok((observation, desired))
@@ -706,18 +709,35 @@ fn settle_reminder<R: Runtime>(
             return Ok(());
         }
         window.set_focusable(false).map_err(|e| e.to_string())?;
+        let automatic = native::snapshot(app).ok().and_then(|snapshot| {
+            ui.state
+                .lock()
+                .unwrap()
+                .bubble
+                .automatic_prompt(&snapshot, ticket.presentation)
+        });
+        let choices_open = ui
+            .state
+            .lock()
+            .unwrap()
+            .bubble
+            .choices_open_for(ticket.presentation);
+        window
+            .set_ignore_cursor_events(automatic.is_some() && !choices_open)
+            .map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder_visible = true;
         window.show().map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder.finish_show(ticket, true);
         if character_visible(app) {
-            let prompt = native::snapshot(app).ok().and_then(|snapshot| {
-                ui.state
-                    .lock()
-                    .unwrap()
-                    .bubble
-                    .automatic_prompt(&snapshot, ticket.presentation)
-            });
-            if let Some(items) = prompt {
+            if let Some(items) = automatic.filter(|_| {
+                let mut state = ui.state.lock().unwrap();
+                if state.announced_auto == Some(ticket.presentation) {
+                    false
+                } else {
+                    state.announced_auto = Some(ticket.presentation);
+                    true
+                }
+            }) {
                 if let Err(error) = app.emit_to(
                     "main",
                     "reminder-prompt",
@@ -740,6 +760,49 @@ fn settle_reminder<R: Runtime>(
         respond_focus(app, response);
         ui.state.lock().unwrap().reminder_attempts = 0;
     }
+    Ok(())
+}
+
+pub(crate) fn open_choices<R: Runtime>(
+    app: &AppHandle<R>,
+    presentation_id: u64,
+) -> Result<(), Error> {
+    refresh(app);
+    let raw = native::snapshot(app)?;
+    let ui = app.try_state::<Ui<R>>().ok_or(Error::new("stopped"))?;
+    if !running(&ui)
+        || !ui
+            .state
+            .lock()
+            .unwrap()
+            .bubble
+            .automatic_prompt(&raw, presentation_id)
+            .is_some()
+    {
+        return Err(Error::new("stalePresentation"));
+    }
+    let window = app
+        .get_webview_window("reminder")
+        .ok_or(Error::new("windowUnavailable"))?;
+    if !window
+        .is_visible()
+        .map_err(|_| Error::new("windowUnavailable"))?
+    {
+        return Err(Error::new("windowUnavailable"));
+    }
+    window
+        .set_ignore_cursor_events(false)
+        .map_err(|_| Error::new("interactionFailed"))?;
+    if !ui
+        .state
+        .lock()
+        .unwrap()
+        .bubble
+        .open_choices(&raw, presentation_id)
+    {
+        return Err(Error::new("stalePresentation"));
+    }
+    reconcile(app);
     Ok(())
 }
 

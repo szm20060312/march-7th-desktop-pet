@@ -18,7 +18,7 @@ export class PetModel {
   private nextMovementFrameAt = 0;
   private idleFrame = 0;
   private nextIdleFrameAt: number;
-  private oneShot: Readonly<{ clip: AnimationClip; startedAt: number }> | null = null;
+  private oneShot: Readonly<{ action: OneShotAction; clip: AnimationClip; startedAt: number }> | null = null;
 
   constructor(
     private readonly character: CharacterDefinition,
@@ -73,6 +73,10 @@ export class PetModel {
     if (this.oneShot) {
       const { clip } = this.oneShot;
       const column = Math.floor(Math.max(0, now - this.oneShot.startedAt) / clip.frameIntervalMs);
+      if (this.oneShot.action === "offerWater") {
+        const frame = Math.min(column, clip.frameCount - 1);
+        return { asset: "waterOffer", row: Math.floor(frame / this.character.waterOffer.columns), column: frame % this.character.waterOffer.columns };
+      }
       if (column < clip.frameCount) return { row: clip.row, column };
       this.oneShot = null;
     }
@@ -89,8 +93,15 @@ export class PetModel {
 
   respond(action: OneShotAction, now: number): boolean {
     if (this.isMoving(now)) return false;
-    this.oneShot = { clip: this.character.clips[action] ?? this.character.clips.idle, startedAt: now };
+    const clip = action === "offerWater"
+      ? { row: 0, frameCount: this.character.waterOffer.frameCount, frameIntervalMs: this.character.waterOffer.frameIntervalMs }
+      : this.character.clips[action] ?? this.character.clips.idle;
+    this.oneShot = { action, clip, startedAt: now };
     return true;
+  }
+
+  endOfferWater(): void {
+    if (this.oneShot?.action === "offerWater") this.oneShot = null;
   }
 
   private movementClip() {

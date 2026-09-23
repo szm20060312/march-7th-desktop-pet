@@ -26,6 +26,7 @@ describe("compiled character catalog", () => {
       });
       expect(character.look).toEqual({ firstRow: 9, directionCount: 16 });
       expect(Object.values(character.clips).every(clip => clip.row < 5)).toBe(true);
+      expect(character.waterOffer).toMatchObject({ src: `/assets/${character.id}/water-offer.png`, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: 220 });
     }
   });
 
@@ -61,11 +62,16 @@ describe("compiled character catalog", () => {
     const duplicate = clone();
     duplicate.characters[1].id = duplicate.characters[0].id;
     duplicate.characters[1].atlas.src = duplicate.characters[0].atlas.src;
+    duplicate.characters[1].waterOffer.src = duplicate.characters[0].waterOffer.src;
     expect(() => parseCharacterCatalog(duplicate)).toThrow(/duplicate/i);
 
     const unsafePath = clone();
     unsafePath.characters[0].atlas.src = "https://example.com/pet.webp";
     expect(() => parseCharacterCatalog(unsafePath)).toThrow(/atlas.*path/i);
+
+    const unsafeOffer = clone();
+    unsafeOffer.characters[0].waterOffer.src = "https://example.com/offer.png";
+    expect(() => parseCharacterCatalog(unsafeOffer)).toThrow(/waterOffer.*path/i);
 
     const outsideAtlas = clone();
     outsideAtlas.characters[0].clips.wave.frameCount = 9;

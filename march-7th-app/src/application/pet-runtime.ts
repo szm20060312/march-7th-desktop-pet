@@ -23,6 +23,7 @@ export function startPetRuntime(options: {
   gestures: PetGestureInput;
   scheduler: Scheduler;
   reportError: (operation: "drag", error: unknown) => void;
+  onPetClick?: () => boolean;
 }) {
   const { character, host, view, gestures, scheduler, reportError } = options;
   const model = new PetModel(character, scheduler.now());
@@ -31,6 +32,7 @@ export function startPetRuntime(options: {
   let timerId: number | undefined;
   let phraseTimerId: number | undefined;
   let phraseVisible = false;
+  let phraseContext: ResponseContext | null = null;
   const phraseIndexes: Partial<Record<ResponseContext, number>> = {};
 
   view.configure(character);
@@ -62,15 +64,16 @@ export function startPetRuntime(options: {
   const clearPhrase = () => {
     if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
     phraseTimerId = undefined;
+    phraseContext = null;
     if (!phraseVisible) return;
     phraseVisible = false;
     view.clearPhrase();
   };
 
-  const respond = (context: ResponseContext, phraseOverride?: string): boolean => {
+  const respond = (context: ResponseContext, phraseOverride?: string, actionOverride?: OneShotAction): boolean => {
     if (stopped) return false;
     const now = scheduler.now();
-    if (!model.respond(actions[context], now)) return false;
+    if (!model.respond(actionOverride ?? actions[context], now)) return false;
     const phrases = character.phrases[context];
     if (!phraseOverride && !phrases?.length) {
       clearPhrase();
@@ -80,6 +83,7 @@ export function startPetRuntime(options: {
     if (!phraseOverride && phrases?.length) phraseIndexes[context] = (index + 1) % phrases.length;
     if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
     phraseVisible = true;
+    phraseContext = context;
     view.showPhrase(phraseOverride ?? phrases![index]);
     phraseTimerId = scheduler.setDelay(() => {
       phraseTimerId = undefined;
@@ -91,8 +95,8 @@ export function startPetRuntime(options: {
   };
 
   const unsubscribe = gestures.subscribe({
-    click: () => { respond("click"); },
-    doubleClick: () => { respond("doubleClick"); },
+    click: () => { if (!options.onPetClick?.()) respond("click"); },
+    doubleClick: () => { if (!options.onPetClick?.()) respond("doubleClick"); },
     drag: () => {
       if (stopped) return;
       clearPhrase();
@@ -114,5 +118,10 @@ export function startPetRuntime(options: {
     clearPhrase();
   };
 
-  return { stop, respond };
+  const endReminder = () => {
+    model.endOfferWater();
+    if (phraseContext === "reminderDue") clearPhrase();
+  };
+
+  return { stop, respond, endReminder };
 }

@@ -112,6 +112,21 @@ pub(crate) fn snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<Snapshot, Error
         .ok_or(Error::new("workerUnavailable"))
 }
 #[tauri::command]
+pub async fn open_reminder_choices<R: Runtime>(
+    app: AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+    presentation_id: u64,
+) -> Result<(), Error> {
+    if window.label() != "main" || presentation_id == 0 || presentation_id > super::model::MAX_SAFE
+    {
+        return Err(Error::new("invalidWindow"));
+    }
+    on_ui(&app, move |app| {
+        super::ui::open_choices(app, presentation_id)
+    })
+    .await
+}
+#[tauri::command]
 pub async fn reminder_command<R: Runtime>(
     app: AppHandle<R>,
     window: tauri::WebviewWindow<R>,

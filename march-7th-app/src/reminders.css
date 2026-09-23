@@ -86,6 +86,13 @@ button.primary:hover:not(:disabled) { background: #405849; }
 .reminder-row[data-done=true] span { color: var(--muted); }
 .reminder-page footer { flex: none; margin-top: 8px; padding: 8px 0 12px; }
 .reminder-page #reminder-empty { padding: 12px 0; }
+.reminder-choice-strip { width: 100%; height: 100dvh; padding: 8px 7px; display: flex; flex-direction: column; justify-content: center; gap: 2px; background: transparent; }
+.reminder-choice-actions { display: flex; gap: 7px; }
+.reminder-choice-actions button { flex: 1; min-width: 0; min-height: 34px; padding: 5px 7px; border: 1px solid rgb(229 221 211 / 35%); border-radius: 6px; background: rgb(47 45 43 / 94%); color: #f7f0e7; font-size: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 24%); }
+.reminder-choice-actions button:hover:not(:disabled) { background: rgb(68 64 60 / 96%); border-color: #e7dcd0; }
+.reminder-choice-strip[data-character="march-7th"] #choice-primary { border-color: #dc9ab0; }
+.reminder-choice-strip[data-character="raiden-shogun"] #choice-primary { border-color: #ab9ada; }
+.reminder-choice-strip .notice { margin: 0 3px; padding: 0 2px; background: rgb(47 45 43 / 94%); }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
 @media (max-width: 320px) { .backup-row { align-items: flex-start; flex-direction: column; gap: 8px; } .backup-actions { width: 100%; } .backup-actions button { flex: 1; } .backup-preview { padding: 10px; } }
 @media (max-width: 320px) { .focus-section { padding: 10px; } .focus-time { font-size: 21px; } .focus-actions button { flex: 1 1 45%; } }

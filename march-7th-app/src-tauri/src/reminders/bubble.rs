@@ -14,12 +14,14 @@ use serde_json::Value;
 struct Signature {
     revision: u64,
     selected: Option<(u64, Source)>,
+    choices_open: Option<u64>,
     stopped: bool,
 }
 #[derive(Default)]
 pub struct Bubble {
     pub policy: Coordinator,
     pub selected: Option<(u64, Source)>,
+    choices_open: Option<u64>,
     signature: Option<Signature>,
     pub revision: u64,
 }
@@ -57,6 +59,16 @@ impl Bubble {
             && presentation.mode == Mode::Automatic
             && !presentation.items.is_empty())
         .then(|| presentation.items.clone())
+    }
+    pub fn open_choices(&mut self, raw: &Snapshot, presentation_id: u64) -> bool {
+        if self.automatic_prompt(raw, presentation_id).is_none() {
+            return false;
+        }
+        self.choices_open = Some(presentation_id);
+        true
+    }
+    pub fn choices_open_for(&self, presentation_id: u64) -> bool {
+        self.choices_open == Some(presentation_id)
     }
     pub fn update(
         &mut self,
@@ -111,9 +123,13 @@ impl Bubble {
             },
             completion,
         );
+        if self.choices_open != self.selected.map(|(id, _)| id) {
+            self.choices_open = None;
+        }
         let signature = Signature {
             revision: reminder.revision,
             selected: self.selected,
+            choices_open: self.choices_open,
             stopped: reminder.stopped,
         };
         if self.signature == Some(signature) {
@@ -145,6 +161,11 @@ impl Bubble {
             None => None,
         };
         let mut value = serde_json::to_value(projected).map_err(|_| Error::new("invalidState"))?;
+        if let Some((id, Source::Reminder(_))) = self.selected {
+            if value["presentation"]["mode"] == "automatic" {
+                value["presentation"]["choicesOpen"] = Value::Bool(self.choices_open_for(id));
+            }
+        }
         if matches!(self.selected, Some((_, Source::Focus(_)))) {
             value["presentation"]["focusCompleted"] = Value::Bool(true);
         }
@@ -158,6 +179,7 @@ impl Bubble {
                     return Err(Error::new("stalePresentation"));
                 }
                 self.policy.dismiss();
+                self.choices_open = None;
                 Ok(match source {
                     Source::Reminder(presentation_id) => Some(Command::Dismiss { presentation_id }),
                     Source::Focus(_) => None,
@@ -165,6 +187,7 @@ impl Bubble {
             }
             Command::ShowPending {} => {
                 self.policy.dismiss();
+                self.choices_open = None;
                 Ok(Some(command))
             }
             _ => Ok(Some(command)),
@@ -269,6 +292,25 @@ mod tests {
         r.presentation.as_mut().unwrap().mode = Mode::Manual;
         assert_eq!(b.visible_item_count(&r), 3);
         assert_eq!(b.automatic_prompt(&r, 12), None);
+    }
+    #[test]
+    fn cup_choices_require_the_live_automatic_presentation_and_clear_when_it_ends() {
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let f = focus(Session::Idle {});
+        let mut b = Bubble::default();
+        update(&mut b, &r, &f, None, 0);
+        let id = b.selected.unwrap().0;
+        assert!(!b.choices_open_for(id));
+        assert!(!b.open_choices(&r, id + 1));
+        assert!(b.open_choices(&r, id));
+        update(&mut b, &r, &f, None, 1);
+        assert_eq!(b.snapshot(&r).unwrap()["presentation"]["choicesOpen"], true);
+        assert!(b.choices_open_for(id));
+        r.presentation = None;
+        r.revision += 1;
+        update(&mut b, &r, &f, None, 2);
+        assert!(!b.choices_open_for(id));
     }
     #[test]
     fn committed_running_still_silences_reminders_during_transient_focus_write_failure() {

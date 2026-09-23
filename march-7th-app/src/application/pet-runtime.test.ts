@@ -115,6 +115,17 @@ describe("pet runtime lifecycle", () => {
     expect(h.view.render).toHaveBeenLastCalledWith({ row: 4, column: 0 });
     runtime.stop();
   });
+  it("holds the offered cup after the four frames until an authoritative reminder end", () => {
+    const h = harness(); const runtime = h.start();
+    expect(runtime.respond("reminderDue", "先喝口水吧，咱们再继续！", "offerWater")).toBe(true);
+    const paint = [...h.frames.values()][0]; paint(0);
+    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 0, column: 0 });
+    paint(10_000);
+    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 1, column: 1 });
+    runtime.endReminder(); paint(10_001);
+    expect(h.view.render).toHaveBeenLastCalledWith(expect.not.objectContaining({ asset: "waterOffer" }));
+    runtime.stop();
+  });
   it("clears phrases after three seconds and immediately on drag or stop", () => {
     const h = harness();
     const runtime = h.start();
@@ -145,6 +156,12 @@ describe("pet runtime lifecycle", () => {
     expect(h.view.showPhrase).toHaveBeenLastCalledWith("咱在呢！");
     h.gesture("doubleClick");
     expect(h.view.showPhrase).toHaveBeenLastCalledWith("嘿，精神满满！");
+    runtime.stop();
+  });
+  it("lets a live reminder consume the pet click before the ordinary click phrase", () => {
+    const h = harness(); const onPetClick = vi.fn().mockReturnValue(true);
+    const runtime = startPetRuntime({ character: march7th, view: h.view, gestures: h.gestures, host: h.host, scheduler: h.scheduler, reportError: h.reportError, onPetClick });
+    h.gesture("click"); expect(onPetClick).toHaveBeenCalledOnce(); expect(h.view.showPhrase).not.toHaveBeenCalled();
     runtime.stop();
   });
   it("keeps the action but shows no text when a context has no phrases", () => {

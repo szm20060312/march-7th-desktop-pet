@@ -64,6 +64,7 @@ pub fn run() {
             reminders::native::get_reminders,
             reminders::native::reminder_command,
             reminders::ui::reminder_ui_ready,
+            reminders::native::open_reminder_choices,
             reminders::ui::hide_reminder_settings,
             local_backup::export_local_backup,
             local_import::select_local_backup,

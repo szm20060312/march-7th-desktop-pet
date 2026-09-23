@@ -5,7 +5,7 @@ export type AnimationClip = Readonly<{
   frameIntervalMs: number;
 }>;
 
-export type OneShotAction = "wave" | "jump";
+export type OneShotAction = "wave" | "jump" | "offerWater";
 export type ResponseContext = "click" | "doubleClick" | "reminderDue" | "reminderCompleted" | "reminderSnoozed" | "focusCompleted" | "taskCompleted" | "taskAbandoned";
 export type ReminderTopic = "water" | "move" | "eyes" | "multiple";
 
@@ -27,6 +27,7 @@ export type CharacterDefinition = Readonly<{
     jump?: AnimationClip;
   }>;
   look: Readonly<{ firstRow: number; directionCount: number }>;
+  waterOffer: Readonly<{ src: string; sourceWidth: number; sourceHeight: number; columns: 2; rows: 2; frameCount: 4; frameIntervalMs: number }>;
   phrases: Readonly<Partial<Record<ResponseContext, readonly string[]>>>;
   reminderPrompts: Readonly<Record<ReminderTopic, readonly string[]>>;
 }>;

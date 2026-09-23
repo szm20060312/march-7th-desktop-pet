@@ -4,6 +4,14 @@ import { fresh } from "../../test/reminder-fixture";
 import type { ReminderId, ReminderCommand } from "../domain/reminder";
 function batch(revision: number, id: number, items: ReminderId[]) { const s = fresh(revision); s.presentation = { id, mode: "manual", items, closesAt: null }; s.progress.forEach(p => { p.pending = items.includes(p.id); }); return s; }
 describe("reminder presentation", () => {
+  it("keeps a compact choice intent in the display snapshot and opens pending for a merged batch", async () => {
+    const render = vi.fn(); const command = vi.fn().mockResolvedValue(undefined);
+    const c = createReminderPresentation({ render, command, ready: vi.fn().mockResolvedValue(undefined) });
+    const next = batch(1, 7, ["water", "eyes"]); next.presentation = { ...next.presentation!, mode: "automatic", choicesOpen: true };
+    c.receive(next);
+    expect(render.mock.lastCall?.[0]).toMatchObject({ mode: "automatic", choicesOpen: true });
+    await c.showPending(); expect(command).toHaveBeenCalledWith({ type: "showPending" });
+  });
   it("keeps completed row positions, appends arrivals, rebuilds a new batch and never imports omitted pending items", async () => {
     let state!: ReminderViewState; const command = vi.fn().mockResolvedValue(undefined); const ready = vi.fn().mockResolvedValue(undefined);
     const c = createReminderPresentation({ render: s => { state = s; }, command, ready });

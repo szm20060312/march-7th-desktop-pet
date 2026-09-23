@@ -61,6 +61,18 @@ describe("PetModel", () => {
     expect(pet.frameAt(640, center)).toEqual({ row: 3, column: 3 });
     expect(pet.frameAt(820, center).row).toBe(0);
   });
+  it("offers water through four dedicated frames and holds the cup until the reminder ends", () => {
+    const pet = new PetModel(march7th, 0);
+    expect(pet.respond("offerWater", 100)).toBe(true);
+    expect(pet.frameAt(100, center)).toEqual({ asset: "waterOffer", row: 0, column: 0 });
+    expect(pet.frameAt(320, center)).toEqual({ asset: "waterOffer", row: 0, column: 1 });
+    expect(pet.frameAt(540, center)).toEqual({ asset: "waterOffer", row: 1, column: 0 });
+    expect(pet.frameAt(760, center)).toEqual({ asset: "waterOffer", row: 1, column: 1 });
+    expect(pet.frameAt(8_000, center)).toEqual({ asset: "waterOffer", row: 1, column: 1 });
+    pet.endOfferWater();
+    expect(pet.frameAt(8_001, center).row).toBe(0);
+    expect(pet.frameAt(8_001, center).asset).toBeUndefined();
+  });
   it("prioritizes real movement and aborts rather than queues interaction", () => {
     const pet = new PetModel(march7th, 0);
     pet.acceptSample(sample(0), 0);
