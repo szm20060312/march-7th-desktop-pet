@@ -71,3 +71,7 @@ describe("compiled character catalog", () => {
     expect(() => parseCharacterCatalog(html)).toThrow(/phrase/i);
   });
 });
+
+it("gives both built-in characters two gentle focus completion phrases using the existing context", () => {
+  for (const character of characterCatalog.characters) expect(character.phrases.focusCompleted).toHaveLength(2);
+});

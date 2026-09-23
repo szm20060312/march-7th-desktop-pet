@@ -12,6 +12,7 @@ export function createDomFocusControls(root: Document) {
   };
   const format = (ms: number) => { const seconds = Math.ceil(ms / 1000); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
   return {
+    pending(count: number) { get<HTMLElement>("focus-pending").textContent = `当前待处理 ${count} 项提醒，可从托盘「查看待处理」打开。`; },
     render(state: FocusViewState) {
       const session = state.snapshot?.data?.session;
       const blocked = !session || !!state.snapshot?.error || !!state.snapshot?.stopped;

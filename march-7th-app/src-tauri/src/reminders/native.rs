@@ -75,7 +75,10 @@ fn emit_change<R: Runtime>(app: &AppHandle<R>, change: Change) {
     }
     let revision = change.snapshot.revision;
     super::ui::reconcile(app);
-    if app.emit("reminders-changed", latest).is_err() {
+    if app
+        .emit_to("settings", "reminders-changed", latest)
+        .is_err()
+    {
         eprintln!("Reminder snapshot event unavailable");
     }
     if let Some(response) = change.response {
@@ -93,8 +96,15 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 #[tauri::command]
-pub fn get_reminders<R: Runtime>(app: AppHandle<R>) -> Result<Snapshot, Error> {
-    snapshot(&app)
+pub fn get_reminders<R: Runtime>(
+    app: AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) -> Result<serde_json::Value, Error> {
+    if window.label() == "reminder" {
+        super::ui::bubble_snapshot(&app)
+    } else {
+        serde_json::to_value(snapshot(&app)?).map_err(|_| Error::new("invalidState"))
+    }
 }
 pub(crate) fn snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<Snapshot, Error> {
     app.try_state::<NativeReminders>()
@@ -106,12 +116,38 @@ pub async fn reminder_command<R: Runtime>(
     app: AppHandle<R>,
     window: tauri::WebviewWindow<R>,
     command: CommandInput,
-) -> Result<Snapshot, Error> {
+) -> Result<serde_json::Value, Error> {
     let command = command.0?;
     if !command_allowed(window.label(), &command) {
         return Err(Error::new("invalidWindow"));
     }
-    dispatch(&app, command).await
+    if window.label() == "reminder" {
+        let mapped = on_ui(&app, move |app| super::ui::map_bubble_command(app, command)).await?;
+        if let Some(command) = mapped {
+            dispatch(&app, command).await?;
+        }
+        on_ui(&app, super::ui::bubble_snapshot).await
+    } else {
+        serde_json::to_value(dispatch(&app, command).await?).map_err(|_| Error::new("invalidState"))
+    }
+}
+async fn on_ui<R: Runtime, T: Send + 'static>(
+    app: &AppHandle<R>,
+    action: impl FnOnce(&AppHandle<R>) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    let (send, receive) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(action(&handle));
+    })
+    .map_err(|_| Error::new("workerUnavailable"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        receive
+            .recv()
+            .map_err(|_| Error::new("workerUnavailable"))?
+    })
+    .await
+    .map_err(|_| Error::new("workerUnavailable"))?
 }
 fn command_allowed(label: &str, command: &Command) -> bool {
     match label {
@@ -121,7 +157,10 @@ fn command_allowed(label: &str, command: &Command) -> bool {
         ),
         "reminder" => matches!(
             command,
-            Command::Complete { .. } | Command::SnoozeAll {} | Command::Dismiss { .. }
+            Command::Complete { .. }
+                | Command::SnoozeAll {}
+                | Command::Dismiss { .. }
+                | Command::ShowPending {}
         ),
         _ => false,
     }
@@ -166,7 +205,10 @@ mod tests {
             &Command::Dismiss { presentation_id: 1 }
         ));
         for label in ["main", "settings", "reminder", "unknown"] {
-            assert!(!command_allowed(label, &Command::ShowPending {}));
+            assert_eq!(
+                command_allowed(label, &Command::ShowPending {}),
+                label == "reminder"
+            );
         }
         assert!(!command_allowed("main", &Command::SnoozeAll {}));
     }

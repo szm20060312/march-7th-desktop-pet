@@ -14,7 +14,7 @@ export interface ReminderSnapshot {
   paused: boolean;
   quiet: { until: number; durationMinutes: number } | null;
   snoozePending: boolean;
-  presentation: { id: number; mode: "automatic" | "manual"; items: ReminderId[]; closesAt: number | null } | null;
+  presentation: { id: number; mode: "automatic" | "manual"; items: ReminderId[]; closesAt: number | null; focusCompleted?: boolean } | null;
   persistence: { status: "loading" | "default" | "saved" | "unsaved" | "readOnly"; code: string | null };
   runtimeError: string | null;
   stopped: boolean;

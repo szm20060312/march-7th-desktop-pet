@@ -27,7 +27,7 @@ export function parseReminderSnapshot(value: unknown): ReminderSnapshot {
     const p = record(raw.presentation);
     if (!Array.isArray(p.items) || p.items.length > 3) return invalid();
     const items = p.items.map(id); if (new Set(items).size !== items.length) return invalid();
-    presentation = { id: integer(p.id, 1), mode: enumeration(p.mode, ["automatic", "manual"]), items, closesAt: nullableUtc(p.closesAt) };
+    presentation = { id: integer(p.id, 1), mode: enumeration(p.mode, ["automatic", "manual"]), items, closesAt: nullableUtc(p.closesAt), ...(p.focusCompleted === undefined ? {} : { focusCompleted: bool(p.focusCompleted) }) };
   }
   const q = raw.quiet === null ? null : record(raw.quiet);
   return {

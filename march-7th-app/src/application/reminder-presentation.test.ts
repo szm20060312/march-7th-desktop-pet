@@ -31,3 +31,12 @@ describe("reminder presentation", () => {
     c.receive(batch(1, 1, [])); expect(order.slice(-2)).toEqual(["render", "ready"]); expect(state.emptyText).toBe("暂无待处理提醒"); c.receive(fresh(2)); expect(state.presentationId).toBeNull(); expect(state.rows).toEqual([]); c.dispose(); reject(Error("late")); await Promise.resolve(); expect(state.error).toBe("");
   });
 });
+
+it("presents a focus rest message and authoritative pending count without completing reminders", async () => {
+  let state!: ReminderViewState; const command=vi.fn().mockResolvedValue(undefined);
+  const c=createReminderPresentation({render:s=>{state=s;},command,ready:async()=>{}});
+  const snapshot=batch(7,4,[]); snapshot.presentation={...snapshot.presentation!,focusCompleted:true}; snapshot.progress[0].pending=true; snapshot.progress[1].pending=true;
+  c.receive(snapshot); expect(state.focusCompleted).toBe(true); expect(state.pendingCount).toBe(2); expect(state.rows).toEqual([]);
+  await c.snooze(); expect(command).toHaveBeenCalledWith({type:"showPending"});
+  expect(snapshot.progress.filter(p=>p.pending)).toHaveLength(2);
+});

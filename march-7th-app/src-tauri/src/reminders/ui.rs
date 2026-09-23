@@ -8,6 +8,10 @@ use super::{
     ui_policy::{PresentationUi, SettingsUi, Ticket},
 };
 use crate::desktop::{coordinates::NATIVE, monitor_geometry};
+#[path = "ui_bubble.rs"]
+mod bubble_host;
+pub(crate) use bubble_host::{bubble_snapshot, focus_changed, map_bubble_command};
+use bubble_host::{character_visible, dismiss_bubble, refresh, respond_focus};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -25,6 +29,7 @@ use tauri::{
 #[derive(Default)]
 struct State {
     reminder: PresentationUi,
+    bubble: super::bubble::Bubble,
     reminder_settle: Option<(Ticket, Observation, Placement)>,
     reminder_visible: bool,
     reminder_attempts: u16,
@@ -40,6 +45,7 @@ struct State {
 struct Ui<R: Runtime> {
     state: Mutex<State>,
     stopped: Arc<AtomicBool>,
+    started: std::time::Instant,
     pause: CheckMenuItem<R>,
     pending: MenuItem<R>,
     status: MenuItem<R>,
@@ -68,6 +74,7 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::er
     app.manage(Ui {
         state: Mutex::new(State::default()),
         stopped: stopped.clone(),
+        started: std::time::Instant::now(),
         pause,
         pending,
         status,
@@ -277,7 +284,7 @@ pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) 
             fail(app, "hideFailed", error);
         }
         if let Some(presentation_id) = id {
-            tray_command(app, Command::Dismiss { presentation_id });
+            dismiss_bubble(app, presentation_id);
         }
     }
     true
@@ -430,32 +437,6 @@ fn created<R: Runtime>(
                 }
             }
             reconcile(app);
-        }
-    }
-}
-
-fn refresh<R: Runtime>(app: &AppHandle<R>) {
-    let Some(ui) = app.try_state::<Ui<R>>() else {
-        return;
-    };
-    if let Ok(snapshot) = native::snapshot(app) {
-        let mut s = ui.state.lock().unwrap();
-        let old = s.reminder.ticket();
-        s.reminder.update(
-            snapshot.revision,
-            snapshot.presentation.as_ref().map(|p| p.id),
-            snapshot.stopped,
-        );
-        let changed = old != s.reminder.ticket();
-        if changed {
-            s.reminder_settle = None;
-            s.reminder_attempts = 0;
-        }
-        drop(s);
-        if changed {
-            if let Err(error) = hide_reminder(app) {
-                fail(app, "hideFailed", error);
-            }
         }
     }
 }
@@ -716,6 +697,17 @@ fn settle_reminder<R: Runtime>(
         ui.state.lock().unwrap().reminder_visible = true;
         window.show().map_err(|e| e.to_string())?;
         ui.state.lock().unwrap().reminder.finish_show(ticket, true);
+        let response = if character_visible(app) {
+            ui.state
+                .lock()
+                .unwrap()
+                .bubble
+                .policy
+                .presented(ticket.presentation)
+        } else {
+            None
+        };
+        respond_focus(app, response);
         ui.state.lock().unwrap().reminder_attempts = 0;
     }
     Ok(())
@@ -759,6 +751,14 @@ fn settle_settings<R: Runtime>(
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
+            if focus_target && character_visible(app) {
+                let revision = crate::focus::native::current(app)
+                    .as_ref()
+                    .and_then(super::bubble::natural_revision);
+                let response =
+                    revision.and_then(|r| ui.state.lock().unwrap().bubble.policy.respond(r));
+                respond_focus(app, response);
+            }
         }
         let mut state = ui.state.lock().unwrap();
         if state.settings.presented(intent) {

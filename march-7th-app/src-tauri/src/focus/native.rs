@@ -1,4 +1,4 @@
-//! Native focus IPC only; no window, tray item or presentation policy is added here.
+//! Focus IPC publishes committed events to the shared presentation coordinator.
 use super::{
     model::{Command, Error, Time},
     service::{Change, Service, Snapshot},
@@ -63,10 +63,20 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Err
         },
         move |change| {
             let queued = handle.clone();
+            let queued_at = Instant::now();
+            let queued_utc = chrono::Utc::now().timestamp_millis();
             let _ = handle.run_on_main_thread(move || {
                 if let Some(native) = queued.try_state::<NativeFocus>() {
                     let snapshot = native.service.snapshot();
                     if !snapshot.stopped {
+                        crate::reminders::ui::focus_changed(
+                            &queued,
+                            &change,
+                            queued_at.elapsed().as_secs() < 10
+                                && (0..10_000).contains(
+                                    &(chrono::Utc::now().timestamp_millis() - queued_utc),
+                                ),
+                        );
                         let _ = queued.emit("focus-changed", change);
                     }
                 }
@@ -81,6 +91,9 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
     if let Some(native) = app.try_state::<NativeFocus>() {
         native.service.stop();
     }
+}
+pub(crate) fn current<R: Runtime>(app: &AppHandle<R>) -> Option<Change> {
+    app.try_state::<NativeFocus>().map(|n| n.service.current())
 }
 pub(crate) fn export_bytes<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<u8>, Error> {
     app.try_state::<NativeFocus>()

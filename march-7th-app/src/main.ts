@@ -3,7 +3,7 @@ import { preloadBrowserAtlas } from "./adapters/browser-atlas-preloader";
 import { createDomPetGestures } from "./adapters/dom-pet-gestures";
 import { createDomPetView } from "./adapters/dom-pet-view";
 import { connectCharacterSelection } from "./adapters/tauri-characters";
-import { connectReminderResponses } from "./adapters/tauri-reminders";
+import { connectFocusResponses, connectReminderResponses } from "./adapters/tauri-reminders";
 import { createTauriHost } from "./adapters/tauri-host";
 import { createCharacterPresentationController } from "./application/character-presentation";
 import { startPetRuntime } from "./application/pet-runtime";
@@ -56,7 +56,12 @@ const disconnectReminderResponses = connectReminderResponses({
   respond(response) { presentation?.respond(response.type === "complete" ? "reminderCompleted" : "reminderSnoozed"); },
   reportError: error => console.error("Reminder response connection failed", error),
 });
+const disconnectFocusResponses = connectFocusResponses({
+  respond() { presentation?.respond("focusCompleted"); },
+  reportError: error => console.error("Focus response connection failed", error),
+});
 const dispose = () => {
+  disconnectFocusResponses();
   disconnect();
   disconnectReminderResponses();
   presentation?.destroy();

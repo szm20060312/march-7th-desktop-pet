@@ -19,7 +19,10 @@ export function createDomReminderView(root: Document) {
         }
         node.row.dataset.done = String(item.done); node.button.textContent = item.done ? "已处理" : item.busy ? "处理中" : "完成"; node.button.disabled = item.done || item.busy || state.disabled;
       }
-      empty.textContent = state.emptyText; empty.hidden = state.rows.length > 0;
+      const focus = state.focusCompleted === true;
+      const title = root.getElementById("reminder-title"); if (title) title.textContent = focus ? "这段专注完成了，休息一下" : "留一点时间给自己";
+      empty.textContent = focus ? `有 ${state.pendingCount ?? 0} 项待处理提醒。完成记录可从托盘「当前专注」查看。` : state.emptyText;
+      snooze.textContent = focus ? "查看待处理" : "稍后提醒"; empty.hidden = state.rows.length > 0;
       error.textContent = state.error;
       snooze.disabled = dismiss.disabled = state.presentationId === null || state.disabled;
     },

@@ -424,7 +424,7 @@ impl Time {
     }
 }
 impl ActiveHours {
-    fn contains(&self, minute: i32) -> bool {
+    pub(super) fn contains(&self, minute: i32) -> bool {
         match *self {
             Self::AllDay {} => true,
             Self::Daily { start, end } => {

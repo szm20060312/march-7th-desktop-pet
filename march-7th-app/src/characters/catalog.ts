@@ -7,7 +7,7 @@ import type {
 import data from "./catalog.json";
 
 const clipNames = ["idle", "movingLeft", "movingRight", "wave", "jump"] as const;
-const responseContexts = ["click", "doubleClick", "reminderCompleted", "reminderSnoozed"] as const;
+const responseContexts = ["click", "doubleClick", "reminderCompleted", "reminderSnoozed", "focusCompleted"] as const;
 
 function object(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${path} must be an object`);

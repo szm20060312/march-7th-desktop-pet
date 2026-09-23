@@ -69,7 +69,7 @@ const unbindFocus = focusView.bind(focusControls);
 const focusTicker = setInterval(() => focusControls.tick(), 1000);
 const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: hideSettingsWindow, closed: () => { backup.close(); focusConnection.close(); focusControls.close(); } });
 const connection = connectReminders({
-  select: controller.receive,
+  select(snapshot) { controller.receive(snapshot); focusView.pending(snapshot.progress.filter(p => p.pending).length); },
   opened(intent) { if (!intent.alreadyVisible) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.reopen(); } if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
   reportError(error) {
     console.error("Reminder settings connection failed", error);

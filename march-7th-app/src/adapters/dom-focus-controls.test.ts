@@ -35,3 +35,8 @@ it("binds all explicit controls and detaches them on disposal", () => {
   expect(actions.act.mock.calls.map(([type]) => type)).toEqual(["start", "pause", "resume", "endEarly", "abandon", "dismissFeedback"]);
   unbind(); dom.get("focus-start").dispatch("click"); expect(actions.act).toHaveBeenCalledTimes(6);
 });
+
+it("keeps the authoritative pending count visible independently of focus controls", () => {
+  const dom=documentDouble();const view=createDomFocusControls(dom.document);view.pending(3);view.render(state("finished",{outcome:"endedEarly",feedback:"none"}));
+  expect(dom.get("focus-pending").textContent).toContain("3 项");view.pending(0);expect(dom.get("focus-pending").textContent).toContain("0 项");
+});

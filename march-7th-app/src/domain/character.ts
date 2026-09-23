@@ -6,7 +6,7 @@ export type AnimationClip = Readonly<{
 }>;
 
 export type OneShotAction = "wave" | "jump";
-export type ResponseContext = "click" | "doubleClick" | "reminderCompleted" | "reminderSnoozed";
+export type ResponseContext = "click" | "doubleClick" | "reminderCompleted" | "reminderSnoozed" | "focusCompleted";
 
 export type CharacterDefinition = Readonly<{
   id: string;

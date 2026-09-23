@@ -92,3 +92,19 @@ export function createReminderReady(transport = nativeTransport, token = () => (
     await transport.invoke("reminder_ui_ready", { presentationId, windowToken });
   };
 }
+
+// A live native presentation event only. Snapshot reads and character selection never replay it.
+export function connectFocusResponses(options: { respond(): void; reportError(error: unknown): void; transport?: ReminderTransport }): () => void {
+  let disposed = false; let stop: (() => void) | undefined; let seen = 0;
+  void (options.transport ?? nativeTransport).listen("focus-response", value => {
+    if (disposed) return;
+    try {
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid focus response");
+      const revision = (value as Record<string, unknown>).revision;
+      if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) throw Error("Invalid focus response");
+      if (revision <= seen) return;
+      seen = revision; options.respond();
+    } catch (error) { options.reportError(error); }
+  }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }, error => { if (!disposed) options.reportError(error); });
+  return () => { disposed = true; stop?.(); };
+}

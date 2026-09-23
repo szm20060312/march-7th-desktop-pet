@@ -228,3 +228,12 @@ describe("desktop pet behavior at the entry point", () => {
     expect(paint(0)).toBe("1:0");
   });
 });
+
+it("focus response is live-only, deduplicated across character changes and disposed with the main page", async () => {
+  await boot(); const respond=native.listen.mock.calls.find(c=>c[0]==="focus-response")![1];
+  respond({payload:{revision:5}}); expect(message.textContent).toBe("完成啦，歇一会儿吧");
+  native.listen.mock.calls.find(c=>c[0]==="selected-character-changed")![1]({payload:{selectedCharacterId:"raiden-shogun",revision:2,persistence:"saved"}}); await flush();
+  const text=message.textContent; respond({payload:{revision:5}}); expect(message.textContent).toBe(text);
+  respond({payload:{revision:6}});expect(message.textContent).toBe("此刻，宜稍作休息");
+  windowTarget.dispatch("pagehide");const end=message.textContent;respond({payload:{revision:7}});expect(message.textContent).toBe(end);
+});
