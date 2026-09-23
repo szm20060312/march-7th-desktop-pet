@@ -226,6 +226,7 @@ fn incomplete_preparation_and_changed_staging_never_change_active_pointer() {
     fs::write(root.join("data-sets"), b"block directory creation").unwrap();
     assert!(directory.prepare_import(valid_import()).is_err());
     assert!(!root.join("pending-import.json").exists());
+    assert!(!root.join("data-set-activated.json").exists());
     drop(directory);
     fs::remove_file(root.join("data-sets")).unwrap();
     let directory = acquire(Some(root.clone())).unwrap();
@@ -302,6 +303,11 @@ fn base_mismatch_keeps_both_records_and_blocks_auto_apply() {
     ] {
         fs::copy(staged.join(file), other.join(file)).unwrap();
     }
+    fs::write(
+        root.join("data-set-activated.json"),
+        br#"{"version":1,"activated":true}"#,
+    )
+    .unwrap();
     let other_pointer = r#"{"version":1,"setId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","transactionId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#;
     fs::write(root.join("active-data-set.json"), other_pointer).unwrap();
     let protected = acquire(Some(root.clone())).unwrap();
@@ -366,4 +372,117 @@ fn process_exit_after_prepare_is_recovered_by_next_process() {
         .starts_with(root.join("data-sets")));
     assert!(root.join("active-data-set.json").exists());
     assert!(!root.join("pending-import.json").exists());
+}
+
+#[test]
+fn committed_pointer_loss_never_falls_back_to_legacy_files() {
+    let temp = Temp::new();
+    let root = temp.0.join("config");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("desktop-state.json"), b"old flat position").unwrap();
+    let directory = acquire(Some(root.clone())).unwrap();
+    directory.prepare_import(valid_import()).unwrap();
+    drop(directory);
+    let committed = acquire(Some(root.clone())).unwrap();
+    assert!(root.join("data-set-activated.json").exists());
+    drop(committed);
+    assert!(!root.join("pending-import.json").exists());
+    fs::remove_file(root.join("active-data-set.json")).unwrap();
+    let protected = acquire(Some(root.clone())).unwrap();
+    assert_eq!(protected.diagnostic(), Some("activePointerMissing"));
+    for file in [DataFile::Desktop, DataFile::Characters, DataFile::Reminders] {
+        assert!(protected.path(file).is_none());
+    }
+    assert_eq!(
+        fs::read(root.join("desktop-state.json")).unwrap(),
+        b"old flat position"
+    );
+}
+
+#[test]
+fn marker_before_first_pointer_can_finish_pending_but_missing_pending_protects() {
+    let temp = Temp::new();
+    let root = temp.0.join("config");
+    let directory = acquire(Some(root.clone())).unwrap();
+    directory.prepare_import(valid_import()).unwrap();
+    drop(directory);
+    fs::write(
+        root.join("data-set-activated.json"),
+        br#"{"version":1,"activated":true}"#,
+    )
+    .unwrap();
+    let resumed = acquire(Some(root.clone())).unwrap();
+    assert_eq!(resumed.diagnostic(), None);
+    assert!(root.join("active-data-set.json").exists());
+    drop(resumed);
+    fs::remove_file(root.join("active-data-set.json")).unwrap();
+    assert_eq!(
+        acquire(Some(root.clone())).unwrap().diagnostic(),
+        Some("activePointerMissing")
+    );
+}
+
+#[test]
+fn second_import_keeps_activation_history_and_first_set() {
+    let temp = Temp::new();
+    let root = temp.0.join("config");
+    let first = acquire(Some(root.clone())).unwrap();
+    first.prepare_import(valid_import()).unwrap();
+    drop(first);
+    let first_active = acquire(Some(root.clone())).unwrap();
+    let old_set = first_active
+        .path(DataFile::Reminders)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    first_active.prepare_import(valid_import()).unwrap();
+    drop(first_active);
+    let second_active = acquire(Some(root.clone())).unwrap();
+    assert_eq!(second_active.diagnostic(), None);
+    assert_ne!(
+        second_active.path(DataFile::Reminders).unwrap().parent(),
+        Some(old_set.as_path())
+    );
+    assert!(old_set.join("reminders.json").exists());
+    assert!(root.join("data-set-activated.json").exists());
+}
+
+#[test]
+fn invalid_activation_marker_never_becomes_a_legacy_session() {
+    for marker in [
+        b"broken".as_slice(),
+        br#"{"version":2,"activated":true}"#,
+        br#"{"version":1,"activated":false}"#,
+        br#"{"version":1,"activated":true,"future":1}"#,
+    ] {
+        let temp = Temp::new();
+        let root = temp.0.join("config");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("data-set-activated.json"), marker).unwrap();
+        fs::write(root.join("reminders.json"), b"legacy unchanged").unwrap();
+        let protected = acquire(Some(root.clone())).unwrap();
+        assert_eq!(protected.diagnostic(), Some("activationMarkerInvalid"));
+        assert!(protected.path(DataFile::Reminders).is_none());
+        assert_eq!(
+            fs::read(root.join("reminders.json")).unwrap(),
+            b"legacy unchanged"
+        );
+    }
+}
+
+#[test]
+fn losing_activation_marker_with_a_valid_pointer_is_protected() {
+    let temp = Temp::new();
+    let root = temp.0.join("config");
+    let first = acquire(Some(root.clone())).unwrap();
+    first.prepare_import(valid_import()).unwrap();
+    drop(first);
+    let active = acquire(Some(root.clone())).unwrap();
+    drop(active);
+    fs::remove_file(root.join("data-set-activated.json")).unwrap();
+    let protected = acquire(Some(root.clone())).unwrap();
+    assert_eq!(protected.diagnostic(), Some("activationMarkerMissing"));
+    assert!(protected.path(DataFile::Reminders).is_none());
+    assert!(root.join("active-data-set.json").exists());
 }

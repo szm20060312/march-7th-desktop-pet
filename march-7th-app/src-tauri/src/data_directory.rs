@@ -12,6 +12,7 @@ use std::{
 
 const ACTIVE: &str = "active-data-set.json";
 const PENDING: &str = "pending-import.json";
+const ACTIVATED: &str = "data-set-activated.json";
 const SETS: &str = "data-sets";
 const MAX_SET_BYTES: usize = 1024 * 1024;
 const MAX_RECORD_BYTES: usize = 4096;
@@ -93,6 +94,12 @@ struct Pending {
     base_set_id: Option<String>,
     base_transaction_id: Option<String>,
     digest: String,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Activation {
+    version: u8,
+    activated: bool,
 }
 impl Pointer {
     fn valid(&self) -> bool {
@@ -196,6 +203,9 @@ impl DataDirectory {
         if &current != selected {
             return Err("activePointerChanged");
         }
+        if read_activation(root)? != selected.is_some() {
+            return Err("activationMarkerChanged");
+        }
         let mut random = [0_u8; 32];
         getrandom::fill(&mut random).map_err(|_| "randomUnavailable")?;
         let set_id = hex(&random[..16]);
@@ -249,20 +259,31 @@ impl DataDirectory {
 }
 
 fn resolve_locked(root: &Path) -> Result<Option<Pointer>, &'static str> {
-    resolve_locked_with(root, crate::atomic_file::replace, |path| {
-        fs::remove_file(path)
-    })
+    resolve_locked_with(
+        root,
+        |path, bytes| crate::atomic_file::replace(path, bytes, None),
+        crate::atomic_file::replace,
+        |path| fs::remove_file(path),
+    )
 }
 fn resolve_locked_with(
     root: &Path,
+    write_activation: impl FnOnce(&Path, &[u8]) -> Result<(), String>,
     replace_pointer: impl FnOnce(&Path, &[u8], Option<&[u8]>) -> Result<(), String>,
     remove_pending: impl Fn(&Path) -> io::Result<()>,
 ) -> Result<Option<Pointer>, &'static str> {
+    let activated = read_activation(root)?;
     let active = read_pointer(root)?;
+    if active.is_some() && !activated {
+        return Err("activationMarkerMissing");
+    }
     if let Some(pointer) = &active {
         read_set(root, &pointer.set_id)?;
     }
     let Some(pending) = read_record::<Pending>(&root.join(PENDING), "pendingImportInvalid")? else {
+        if activated && active.is_none() {
+            return Err("activePointerMissing");
+        }
         return Ok(active);
     };
     if !pending.valid() {
@@ -281,6 +302,18 @@ fn resolve_locked_with(
     let staged = read_set(root, &pending.set_id)?;
     if staged.digest() != pending.digest {
         return Err("pendingImportChanged");
+    }
+    if !activated {
+        let bytes = serde_json::to_vec(&Activation {
+            version: 1,
+            activated: true,
+        })
+        .map_err(|_| "activationMarkerWriteFailed")?;
+        write_activation(&root.join(ACTIVATED), &bytes)
+            .map_err(|_| "activationMarkerWriteFailed")?;
+        if !read_activation(root)? {
+            return Err("activationMarkerWriteFailed");
+        }
     }
     let bytes = serde_json::to_vec(&target).map_err(|_| "activePointerWriteFailed")?;
     let previous = if active.is_some() {
@@ -307,9 +340,27 @@ fn read_pointer(root: &Path) -> Result<Option<Pointer>, &'static str> {
     }
     Ok(pointer)
 }
+fn read_activation(root: &Path) -> Result<bool, &'static str> {
+    let activation = read_record::<Activation>(&root.join(ACTIVATED), "activationMarkerInvalid")?;
+    match activation {
+        None => Ok(false),
+        Some(Activation {
+            version: 1,
+            activated: true,
+        }) => Ok(true),
+        Some(_) => Err("activationMarkerInvalid"),
+    }
+}
 fn read_record<T: DeserializeOwned>(
     path: &Path,
     error_code: &'static str,
+) -> Result<Option<T>, &'static str> {
+    read_record_with_reader(path, error_code, read_limited)
+}
+fn read_record_with_reader<T: DeserializeOwned>(
+    path: &Path,
+    error_code: &'static str,
+    reader: impl FnOnce(&Path, usize) -> io::Result<Vec<u8>>,
 ) -> Result<Option<T>, &'static str> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if !metadata.is_file() || metadata.is_symlink() => return Err(error_code),
@@ -317,11 +368,10 @@ fn read_record<T: DeserializeOwned>(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(error_code),
     }
-    match read_limited(path, MAX_RECORD_BYTES) {
+    match reader(path, MAX_RECORD_BYTES) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map(Some)
             .map_err(|_| error_code),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(_) => Err(error_code),
     }
 }
@@ -424,12 +474,14 @@ mod tests {
         assert_eq!(
             resolve_locked_with(
                 root,
+                |path, bytes| crate::atomic_file::replace(path, bytes, None),
                 |_path, _bytes, _previous| Err("injected replace failure".into()),
                 |_path| Ok(())
             ),
             Err("activePointerWriteFailed")
         );
         assert!(!root.join(ACTIVE).exists());
+        assert!(root.join(ACTIVATED).exists());
         assert!(root.join(PENDING).exists());
         assert_eq!(
             fs::read(root.join("desktop-state.json")).unwrap(),
@@ -450,9 +502,12 @@ mod tests {
         let directory = acquire(Some(root.clone())).unwrap();
         directory.prepare_import(candidate()).unwrap();
         drop(directory);
-        resolve_locked_with(root, crate::atomic_file::replace, |_path| {
-            Err(io::Error::other("injected cleanup failure"))
-        })
+        resolve_locked_with(
+            root,
+            |path, bytes| crate::atomic_file::replace(path, bytes, None),
+            crate::atomic_file::replace,
+            |_path| Err(io::Error::other("injected cleanup failure")),
+        )
         .unwrap();
         assert!(root.join(ACTIVE).exists());
         assert!(root.join(PENDING).exists());
@@ -471,5 +526,47 @@ mod tests {
                 ["paused"],
             true
         );
+    }
+
+    #[test]
+    fn record_seen_then_not_found_during_read_is_protected() {
+        let temp = Temp::new();
+        let path = temp.0.join(ACTIVE);
+        fs::write(&path, b"seen before read").unwrap();
+        let result =
+            read_record_with_reader::<Pointer>(&path, "activePointerInvalid", |_path, _limit| {
+                Err(io::Error::from(io::ErrorKind::NotFound))
+            });
+        assert!(matches!(result, Err("activePointerInvalid")));
+    }
+
+    #[test]
+    fn activation_write_failure_keeps_pending_for_retry_without_legacy_loss() {
+        let temp = Temp::new();
+        let root = &temp.0;
+        fs::write(root.join("desktop-state.json"), b"legacy").unwrap();
+        let directory = acquire(Some(root.clone())).unwrap();
+        directory.prepare_import(candidate()).unwrap();
+        drop(directory);
+        assert_eq!(
+            resolve_locked_with(
+                root,
+                |_path, _bytes| Err("injected marker failure".into()),
+                crate::atomic_file::replace,
+                |_path| Ok(())
+            ),
+            Err("activationMarkerWriteFailed")
+        );
+        assert!(!root.join(ACTIVATED).exists());
+        assert!(!root.join(ACTIVE).exists());
+        assert!(root.join(PENDING).exists());
+        assert_eq!(
+            fs::read(root.join("desktop-state.json")).unwrap(),
+            b"legacy"
+        );
+        let restarted = acquire(Some(root.clone())).unwrap();
+        assert_eq!(restarted.diagnostic(), None);
+        assert!(root.join(ACTIVATED).exists());
+        assert!(root.join(ACTIVE).exists());
     }
 }
