@@ -1,5 +1,6 @@
 //! One participating writer per configuration root, and one selected data set
 //! for all three stores. No pointer means the original flat files remain live.
+pub mod backup_codec;
 pub use crate::data_lock::AlreadyRunning;
 use crate::data_lock::LockedRoot;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

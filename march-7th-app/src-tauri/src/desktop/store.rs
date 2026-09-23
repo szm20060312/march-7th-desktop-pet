@@ -102,6 +102,9 @@ fn parse(bytes: &[u8]) -> Result<Config, String> {
 pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
     parse(bytes).map(|_| ())
 }
+pub(crate) fn imported_has_placement(bytes: &[u8]) -> Result<bool, String> {
+    Ok(parse(bytes)?.placement.is_some())
+}
 
 #[cfg(test)]
 mod tests {
