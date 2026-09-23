@@ -23,6 +23,26 @@ pub(crate) fn imported_selected_id(bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn validate_stored(bytes: &[u8]) -> Result<(), String> {
     parse(bytes).map(|_| ())
 }
+pub(crate) fn export_snapshot(snapshot: Option<&Snapshot>) -> Result<Vec<u8>, &'static str> {
+    let snapshot = snapshot.ok_or("exportCharacterUnavailable")?;
+    if !matches!(
+        snapshot.persistence,
+        Persistence::Default | Persistence::Saved
+    ) {
+        return Err("exportCharacterUnavailable");
+    }
+    let catalog = Catalog::builtin().map_err(|_| "exportCharacterUnavailable")?;
+    if !catalog.contains(&snapshot.selected_character_id) {
+        return Err("exportCharacterUnavailable");
+    }
+    let bytes = serde_json::to_vec_pretty(&Config {
+        version: 1,
+        selected_character_id: snapshot.selected_character_id.clone(),
+    })
+    .map_err(|_| "exportCharacterUnavailable")?;
+    validate_import(&bytes).map_err(|_| "exportCharacterUnavailable")?;
+    Ok(bytes)
+}
 fn parse(bytes: &[u8]) -> Result<Config, String> {
     let config: Config =
         serde_json::from_slice(bytes).map_err(|_| "invalid character configuration".to_string())?;

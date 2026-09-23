@@ -6,6 +6,7 @@ use std::{
     path::PathBuf,
     sync::{mpsc, Arc, Mutex},
 };
+pub(crate) use store::export_snapshot;
 pub(crate) use store::imported_selected_id;
 pub(crate) use store::validate_import as validate_imported_characters;
 pub(crate) use store::validate_stored as validate_stored_characters;
