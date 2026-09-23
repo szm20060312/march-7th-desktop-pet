@@ -72,7 +72,7 @@ describe("real settings entry / adapter / controller error ownership", () => {
 });
 
 describe("local backup entry stays separate from reminder drafts", () => {
-  const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
+  const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, focus: { status: "paused", defaultedFromV1: false }, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
   it("previews limited coverage, confirms only on explicit action, and preserves reminder draft", async () => {
     native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "confirm_local_backup" ? Promise.resolve({ transactionId: "abc", restartRequired: true }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); edit(37);
@@ -80,11 +80,25 @@ describe("local backup entry stays separate from reminder drafts", () => {
     expect(dom.get("backup-preview").hidden).toBe(false);
     expect(dom.get("import-character").textContent).toContain("雷电将军");
     expect(dom.get("import-pending").textContent).toContain("待处理 2 项");
+    expect(dom.get("import-focus").textContent).toBe("已暂停");
     expect(native.invoke.mock.calls.some(([name]) => name === "confirm_local_backup")).toBe(false);
     dom.get("confirm-import").dispatch("click"); await flush();
     expect(native.invoke).toHaveBeenCalledWith("confirm_local_backup", { ticket: 7 });
     expect(dom.get("backup-status").textContent).toContain("下次启动");
     expect(dom.get("snooze-minutes").value).toBe("37");
+  });
+  it("explains a v1 backup will restore an empty focus session without private fields", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "idle", defaultedFromV1: true } } }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("import-focus").textContent).toContain("旧版 v1");
+    expect(dom.get("import-focus").textContent).toContain("空专注会话");
+    expect(dom.get("import-focus").textContent).not.toContain("anchor");
+  });
+  it("rejects a preview that leaks internal focus clock fields", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ...preview, preview: { ...preview.preview, focus: { status: "running", defaultedFromV1: false, anchor_utc_ms: 100 } } }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(true);
+    expect(dom.get("backup-status").textContent).toContain("无法预览");
   });
   it("invalidates late selection after close and keeps export and import mutually disabled", async () => {
     let finish!: (value: unknown) => void;
@@ -165,5 +179,50 @@ describe("local backup entry stays separate from reminder drafts", () => {
     dom.get("export-backup").dispatch("click"); await flush();
     expect(dom.get("backup-status").textContent).toContain("已存在");
     expect(dom.get("settings-notice").textContent).toBe("");
+  });
+});
+
+describe("focus settings entry uses the committed Rust state", () => {
+  const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 1, session }, error: null, stopped: false }, completedNow: false, error: null });
+  it("starts, pauses, resumes, ends early, and never invokes mutating view for display", async () => {
+    let current = focus(1, { status: "idle" });
+    native.invoke.mockImplementation(async (name, args) => {
+      if (name === "get_focus") return current;
+      if (name === "focus_command") {
+        const type = args.command.type;
+        current = focus(current.snapshot.revision + 1, type === "start" || type === "resume"
+          ? { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: 100 }
+          : type === "pause" ? { status: "paused", duration_ms: 1_500_000, remaining_ms: 800_000 }
+            : { status: "finished", duration_ms: 1_500_000, outcome: "endedEarly", feedback: "none" });
+        return current.snapshot;
+      }
+      return fresh();
+    });
+    await import("./settings"); await flush();
+    expect(dom.get("focus-start").disabled).toBe(false);
+    dom.get("focus-start").dispatch("click"); await flush();
+    expect(native.invoke).toHaveBeenCalledWith("focus_command", { command: { type: "start", durationMs: 1_500_000 } });
+    expect(dom.get("focus-state").textContent).toBe("专注进行中");
+    dom.get("focus-pause").dispatch("click"); await flush();
+    expect(dom.get("focus-state").textContent).toBe("已暂停");
+    dom.get("focus-resume").dispatch("click"); await flush();
+    dom.get("focus-end").dispatch("click"); await flush();
+    expect(dom.get("focus-state").textContent).toBe("已提前结束");
+    expect(native.invoke.mock.calls.some(([name, args]) => name === "focus_command" && args.command.type === "view")).toBe(false);
+  });
+
+  it("keeps failed and late commands from reporting success after close and reopen", async () => {
+    let reject!: (reason: unknown) => void;
+    const initial = focus(1, { status: "running", duration_ms: 1_500_000, remaining_ms: 1_000_000, anchor_utc_ms: 100 });
+    native.invoke.mockImplementation((name) => name === "get_focus" ? Promise.resolve(initial) : name === "focus_command" ? new Promise((_, no) => { reject = no; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush();
+    dom.get("focus-pause").dispatch("click"); await flush();
+    dom.get("close-settings").dispatch("click"); await flush();
+    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    const newer = focus(2, { status: "paused", duration_ms: 1_500_000, remaining_ms: 900_000 });
+    events.get("focus-changed")!({ payload: newer }); await flush();
+    reject({ code: "writeFailed" }); await flush();
+    expect(dom.get("focus-state").textContent).toBe("已暂停");
+    expect(dom.get("focus-notice").textContent).toBe("");
   });
 });

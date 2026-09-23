@@ -3,6 +3,7 @@ export type BackupPreview = {
   createdAtUtcMs: number;
   selectedCharacterId: string;
   hasDesktopPlacement: boolean;
+  focus: { status: "idle" | "running" | "paused" | "interrupted" | "finished"; defaultedFromV1: boolean };
   reminders: {
     items: { id: "water" | "move" | "eyes"; enabled: boolean; intervalMinutes: number }[];
     activeHours: { kind: "allDay" } | { kind: "daily"; start: number; end: number };
@@ -26,7 +27,7 @@ const messages: Record<string, string> = {
   backupInvalidTime: "备份时间无效，请检查文件。",
   backupUnsupportedVersion: "备份版本比当前应用更新，暂不能导入。",
   backupChecksumMismatch: "备份校验失败，文件可能已损坏。",
-  dataSetInvalid: "备份中的角色、位置或提醒数据无效，未安排导入。",
+  dataSetInvalid: "备份中的角色、位置、提醒或专注数据无效，未安排导入。",
   dataSetsUnavailable: "无法准备本地数据，原数据未改变，请稍后重试。",
   dataSetCreateFailed: "无法准备本地数据，原数据未改变，请稍后重试。",
   dataSetWriteFailed: "无法准备本地数据，原数据未改变，请稍后重试。",

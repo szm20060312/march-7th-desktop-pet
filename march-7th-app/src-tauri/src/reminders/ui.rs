@@ -45,6 +45,7 @@ struct Ui<R: Runtime> {
 
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::error::Error>> {
     let settings = MenuItem::with_id(app, "reminder-settings", "提醒设置…", true, None::<&str>)?;
+    let focus_settings = MenuItem::with_id(app, "focus-settings", "当前专注…", true, None::<&str>)?;
     let pending = MenuItem::with_id(app, "reminder-pending", "查看待处理", false, None::<&str>)?;
     let pause = CheckMenuItem::with_id(
         app,
@@ -55,7 +56,12 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::er
         None::<&str>,
     )?;
     let status = MenuItem::with_id(app, "reminder-status", "提醒：加载中", false, None::<&str>)?;
-    let menu = Submenu::with_items(app, "提醒", true, &[&settings, &pending, &pause, &status])?;
+    let menu = Submenu::with_items(
+        app,
+        "提醒",
+        true,
+        &[&focus_settings, &settings, &pending, &pause, &status],
+    )?;
     let stopped = Arc::new(AtomicBool::new(false));
     app.manage(Ui {
         state: Mutex::new(State::default()),
@@ -141,7 +147,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
     let operation = event.id().as_ref();
     if !matches!(
         operation,
-        "reminder-settings" | "reminder-pending" | "reminder-pause"
+        "focus-settings" | "reminder-settings" | "reminder-pending" | "reminder-pause"
     ) {
         return false;
     }
@@ -153,7 +159,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
     }
     ui.state.lock().unwrap().error = None;
     match operation {
-        "reminder-settings" => {
+        "focus-settings" | "reminder-settings" => {
             let exists = app.get_webview_window("settings").is_some();
             let token = {
                 let mut s = ui.state.lock().unwrap();

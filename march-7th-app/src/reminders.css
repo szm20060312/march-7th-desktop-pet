@@ -8,6 +8,16 @@ p { margin: 0; }
 .eyebrow { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
 .intro, .hint, .status { color: var(--muted); font-size: 12px; }
 .intro { max-width: 32em; }
+.focus-section { padding: 12px 14px 14px; margin-bottom: 21px; border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--field); border-radius: 4px; }
+.focus-heading { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
+.focus-heading h2 { margin: 1px 0 0; font-size: 17px; line-height: 1.35; font-weight: 650; }
+.focus-time { color: var(--accent); font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.focus-state { margin-top: 6px; font-size: 13px; }
+.focus-setup { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--line); }
+.focus-setup span { white-space: nowrap; }
+.focus-section .hint { margin-top: 5px; }
+.focus-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.focus-actions button { flex: 0 1 auto; }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 legend { padding: 0 0 7px; font-weight: 600; }
 .setting-row { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); }
@@ -69,6 +79,7 @@ button.primary:hover:not(:disabled) { background: #405849; }
 .reminder-page #reminder-empty { padding: 12px 0; }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
 @media (max-width: 320px) { .backup-row { align-items: flex-start; flex-direction: column; gap: 8px; } .backup-actions { width: 100%; } .backup-actions button { flex: 1; } .backup-preview { padding: 10px; } }
+@media (max-width: 320px) { .focus-section { padding: 10px; } .focus-time { font-size: 21px; } .focus-actions button { flex: 1 1 45%; } }
 /* Exceptionally small native work areas need scrolling around the entire view. */
-@media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 300px; } .settings-page footer { position: static; } }
+@media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 0; } .settings-page footer { position: static; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }
