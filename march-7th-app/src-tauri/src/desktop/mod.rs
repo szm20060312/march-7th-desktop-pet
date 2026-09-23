@@ -450,6 +450,27 @@ fn capture_current<R: Runtime>(app: &AppHandle<R>) -> Result<Placement, String> 
         )
         .ok_or("invalid monitor geometry".into())
 }
+pub(crate) fn export_current<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<ExportPlacement, &'static str> {
+    let desktop = app
+        .try_state::<Desktop<R>>()
+        .ok_or("exportDesktopUnavailable")?;
+    {
+        let session = desktop.shared.session.lock().unwrap();
+        if session.lifecycle != Lifecycle::Running
+            || session.startup.is_some()
+            || !session.writable
+            || session.availability == Availability::Unavailable
+            || session.scale_needed
+            || session.scale_pending.is_some()
+        {
+            return Err("exportDesktopUnavailable");
+        }
+    }
+    let captured = capture_current(app).map_err(|_| "exportDesktopUnavailable")?;
+    Ok(ExportPlacement::Captured(captured))
+}
 fn schedule_current<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let desktop = app.state::<Desktop<R>>();
     if !active(&desktop) || desktop.shared.session.lock().unwrap().startup.is_some() {

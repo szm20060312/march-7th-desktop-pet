@@ -28,6 +28,10 @@ input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; m
 .status { margin-top: 13px; }
 .notice { color: var(--warning); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
 .notice:empty { display: none; }
+.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 14px; margin-top: 16px; border-top: 1px solid var(--line); }
+.backup-row h2 { font-size: 14px; line-height: 1.4; margin: 0 0 3px; font-weight: 600; }
+.backup-row button { flex: none; }
+.backup-status { min-height: 1.2em; }
 footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 0; border-top: 1px solid var(--line); margin-top: 14px; background: var(--paper); }
 .settings-page footer { position: sticky; bottom: 0; }
 button { border: 1px solid var(--line); border-radius: 5px; background: var(--field); padding: 7px 13px; min-height: 34px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
@@ -57,6 +61,7 @@ button.primary:hover:not(:disabled) { background: #405849; }
 .reminder-page footer { flex: none; margin-top: 10px; padding: 10px 0 13px; }
 .reminder-page #reminder-empty { padding: 12px 0; }
 @media (max-width: 365px) { .settings-page main { padding-left: 14px; padding-right: 14px; } .daily-hours { gap: 6px; } .daily-hours input { width: 100px; } }
+@media (max-width: 320px) { .backup-row { align-items: flex-start; flex-direction: column; gap: 8px; } }
 /* Exceptionally small native work areas need scrolling around the entire view. */
 @media (max-height: 180px), (max-width: 260px) { .reminder-page { overflow: auto; } .reminder-page main { display: block; height: auto; min-width: 220px; } .reminder-content { overflow: visible; } .settings-page main { min-width: 300px; } .settings-page footer { position: static; } }
 @media (prefers-color-scheme: dark) { :root { color: #e6e2d9; background: #242522; --paper: #242522; --ink: #e6e2d9; --muted: #b1b1a5; --line: #474940; --accent: #6b8a75; --hover: #3a3d35; --field: #2d3029; --warning: #e5bf8c; } button.primary { color: #101a12; } button.primary:hover:not(:disabled) { background: #88a890; } }
