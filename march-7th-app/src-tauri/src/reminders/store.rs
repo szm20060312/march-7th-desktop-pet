@@ -56,6 +56,9 @@ fn decode(bytes: &[u8]) -> Result<Data, Error> {
     data.validate().map_err(|_| Error::new("invalidFile"))?;
     Ok(data)
 }
+pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), Error> {
+    decode(bytes).map(|_| ())
+}
 impl Storage for Store {
     fn load(&mut self) -> (Data, Persistence) {
         let result = self

@@ -3,10 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 
 #[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Config {
     version: u32,
     selected_character_id: String,
+}
+pub(crate) fn validate_import(bytes: &[u8]) -> Result<(), String> {
+    let config = parse(bytes)?;
+    let catalog = Catalog::builtin()?;
+    if !catalog.contains(&config.selected_character_id) {
+        return Err("unknown imported character".into());
+    }
+    Ok(())
 }
 fn parse(bytes: &[u8]) -> Result<Config, String> {
     let config: Config =

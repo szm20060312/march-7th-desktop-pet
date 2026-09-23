@@ -65,6 +65,7 @@ fn corrupt_future_and_read_errors_are_session_only_without_content_leaks() {
     for raw in [
         "private broken content",
         r#"{"version":99,"private":"secret"}"#,
+        r#"{"version":1,"selectedCharacterId":"march-7th","future":"keep"}"#,
     ] {
         fs::write(temp.file(), raw).unwrap();
         let (mut store, initial) = Store::load(Some(temp.file()), &catalog);

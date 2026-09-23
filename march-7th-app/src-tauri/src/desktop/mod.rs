@@ -2,6 +2,7 @@ pub(crate) mod coordinates;
 pub(crate) mod geometry;
 mod state;
 mod store;
+pub(crate) use store::validate_import as validate_imported_desktop;
 
 use crate::data_directory::{DataDirectory, DataFile};
 use geometry::{Monitor, Placement};

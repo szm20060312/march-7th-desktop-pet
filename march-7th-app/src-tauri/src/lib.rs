@@ -1,7 +1,8 @@
 mod atomic_file;
 pub mod build_info;
 mod characters;
-mod data_directory;
+pub mod data_directory;
+mod data_lock;
 mod desktop;
 mod platform;
 mod reminders;

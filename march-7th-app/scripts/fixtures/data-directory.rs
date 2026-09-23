@@ -1,8 +1,8 @@
-// Compiled directly with rustc by the Node regression: production std-only core.
-#[path = "../../src-tauri/src/data_directory.rs"]
-mod data_directory;
+// Compiled directly with rustc by the Node regression: production std-only lock core.
+#[path = "../../src-tauri/src/data_lock.rs"]
+mod data_lock;
 
-use data_directory::{acquire, DataFile};
+use data_lock::acquire;
 use std::io::{self, Write};
 
 fn main() {
@@ -11,25 +11,21 @@ fn main() {
     let mode = args.next().expect("mode");
     let directory = match acquire(Some(root)) {
         Ok(directory) => directory,
-        Err(data_directory::AlreadyRunning) => {
+        Err(data_lock::AlreadyRunning) => {
             println!("alreadyRunning");
             return;
         }
     };
-    if let Some(code) = directory.diagnostic() {
-        assert!(directory.path(DataFile::Desktop).is_none());
-        assert!(directory.path(DataFile::Characters).is_none());
-        assert!(directory.path(DataFile::Reminders).is_none());
+    if let data_lock::LockedRoot::Unavailable(code) = &directory {
         println!("unavailable:{code}");
         return;
     }
     // A visible stand-in for service initialization, strictly after qualification.
     // Existing config bytes are never touched by this fixture.
-    std::fs::write(
-        directory.root().unwrap().join("fixture-started"),
-        b"started",
-    )
-    .unwrap();
+    let data_lock::LockedRoot::Ready { root, .. } = &directory else {
+        unreachable!()
+    };
+    std::fs::write(root.join("fixture-started"), b"started").unwrap();
     println!("ready");
     io::stdout().flush().unwrap();
     if mode == "hold" {

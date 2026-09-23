@@ -6,6 +6,7 @@ use std::{
     path::PathBuf,
     sync::{mpsc, Arc, Mutex},
 };
+pub(crate) use store::validate_import as validate_imported_characters;
 use store::Store;
 
 #[derive(Deserialize)]
