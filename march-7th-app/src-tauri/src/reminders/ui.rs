@@ -374,8 +374,8 @@ fn created<R: Runtime>(
                                     "reminder window destroyed; pending remains recoverable",
                                 );
                             }
-                        } else if s.settings.token == token {
-                            s.settings.close();
+                        } else if s.settings.destroyed(token) {
+                            crate::local_backup::invalidate(&app);
                             s.settings_settle = None;
                         }
                     });
@@ -716,9 +716,11 @@ fn settle_settings<R: Runtime>(
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
-            ui.state.lock().unwrap().settings.open = false;
         }
-        ui.state.lock().unwrap().settings_reflow = false;
+        let mut state = ui.state.lock().unwrap();
+        if state.settings.presented(generation) {
+            state.settings_reflow = false;
+        }
     }
     Ok(())
 }
@@ -763,8 +765,7 @@ pub(crate) fn settings_export_session<R: Runtime>(app: &AppHandle<R>) -> Option<
         return None;
     }
     let state = ui.state.lock().unwrap();
-    (state.settings.open && !state.settings.creating && !state.settings_reflow)
-        .then_some((state.settings.token, state.settings.generation))
+    state.settings.export_session(state.settings_reflow)
 }
 
 #[tauri::command]
