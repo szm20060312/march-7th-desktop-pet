@@ -19,15 +19,17 @@
 
 ### 项目简介
 
-长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。双角色、情境短句和提醒仍在计划中，当前运行功能见下文。
+长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。本开发分支已实现双角色、情境短句和本地提醒；当前提交的双平台实机体验与真实反馈仍待验收。
 
 开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
 
+本候选已统一配置目录并协调同目录的可写实例：第二个采用新协议的实例会正常结束；目录或锁不可用时保留临时角色选择、关闭且只读的提醒和位置不可保存提示。升级前先退出旧版；保留的 `instance.lock` 不能用来判断实例仍在运行，也不要删除它来解锁。设置页已接入本地备份导出和确认下次启动导入；双平台真实文件对话框、迁移和 GUI 验收仍待完成。详见 [本地目录与实例协调](docs/development/app/G7-DATA-DIRECTORY.md)和[导入入口](docs/development/app/G7-LOCAL-BACKUP-IMPORT.md)。
+
 March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用了经过完整 QA 的 Codex v2 动画图集，并逐步将待机、注视、移动和其他角色动作迁移到 Tauri 2。
 
-当前稳定版本为 **v0.2.0**。
+当前稳定版本为 **v0.2.0**。下方功能与平台实机记录属于该历史基线；本分支另已实现 G1/G2 托盘控制、点击穿透和位置持久化，仍待当前提交的实机验收，不能沿用历史通过结论。实现与验证边界见 [G2 记录](docs/development/app/G2-PLACEMENT.md)。
 
-### 当前功能
+### v0.2.0 历史基线功能
 
 - 透明、无边框、始终置顶的桌宠窗口
 - 六帧待机动画
@@ -37,6 +39,14 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
 - 拖动期间屏蔽注视帧，解决眼神抖动
 - 停止移动约 160 ms 后恢复鼠标注视
 - 可拖动窗口
+
+### 本分支的本地提醒（实机待验收）
+
+首次启动喝水、起身活动、休息眼睛全部关闭；从系统托盘的“提醒 → 提醒设置…”查看间隔和活动时段，确认并保存后才启用。默认分钟数只是可调整偏好，不是健康建议。设置窗关闭只隐藏窗口，未保存草稿在下次打开时丢弃。
+
+提醒气泡有“完成”“全部稍后”“收起”；收起及约 10 秒无回应只结束这次自动展示，事项仍待处理，可从“提醒 → 查看待处理”恢复，空集合也能查看。从托盘“暂停提醒／恢复提醒”控制自动提示；隐藏角色或开启角色穿透不会暂停提醒，气泡独立接收鼠标。两角色共用同一套提醒规则，切换角色不重计时。
+
+全部数据保存在本机，无账号、云同步或另一套系统通知；保存失败、只读保护和界面失败会如实提示。关闭设置或气泡不退出应用；正常结束使用托盘“退出”。本地代码、自动测试、浏览器模拟、同提交双平台构建和真实桌面体验是不同证据，当前不宣称 M3 或完整日用首版完成。详见 [G6 记录](docs/development/app/G6-REMINDERS.md) 和 [实机清单](docs/development/app/regression/CHECKLIST.md)。
 
 ### 动画预览
 
@@ -53,7 +63,7 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
   </tr>
 </table>
 
-### 平台支持
+### 平台支持（历史基线实机记录）
 
 | 平台 | 状态 |
 |---|---|
@@ -123,13 +133,13 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### Overview
 
-The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. Two built-in characters, contextual lines and reminders are planned, not implemented yet. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
+The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. This development branch implements two built-in characters, contextual lines and local reminders; current-commit Windows/macOS hands-on acceptance and user feedback remain pending. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 
-The current stable version is **v0.2.0**.
+The current stable version is **v0.2.0**. The features and real-device platform results below describe that historical baseline. This branch also implements G1/G2 tray controls, click-through and placement persistence; human acceptance for the current commit is still pending. See the [G2 record](docs/development/app/G2-PLACEMENT.md) for implementation and evidence boundaries.
 
-### Features
+### v0.2.0 Baseline Features
 
 - Transparent, frameless, always-on-top pet window
 - Six-frame idle animation
@@ -155,7 +165,7 @@ The current stable version is **v0.2.0**.
   </tr>
 </table>
 
-### Platform Support
+### Platform Support (Historical Baseline)
 
 | Platform | Status |
 |---|---|

@@ -5,6 +5,9 @@ export type AnimationClip = Readonly<{
   frameIntervalMs: number;
 }>;
 
+export type OneShotAction = "wave" | "jump";
+export type ResponseContext = "click" | "doubleClick" | "reminderCompleted" | "reminderSnoozed";
+
 export type CharacterDefinition = Readonly<{
   id: string;
   displayName: string;
@@ -19,6 +22,14 @@ export type CharacterDefinition = Readonly<{
     idle: AnimationClip;
     movingLeft: AnimationClip;
     movingRight: AnimationClip;
+    wave?: AnimationClip;
+    jump?: AnimationClip;
   }>;
   look: Readonly<{ firstRow: number; directionCount: number }>;
+  phrases: Readonly<Partial<Record<ResponseContext, readonly string[]>>>;
+}>;
+
+export type CharacterCatalog = Readonly<{
+  defaultId: string;
+  characters: readonly CharacterDefinition[];
 }>;

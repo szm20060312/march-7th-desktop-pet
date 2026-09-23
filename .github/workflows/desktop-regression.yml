@@ -1,0 +1,128 @@
+name: Desktop Regression Builds
+
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths:
+      - '.gitattributes'
+      - '.github/workflows/desktop-regression.yml'
+      - 'march-7th-app/**'
+      - 'docs/development/app/regression/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: march-7th-app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: march-7th-app/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: march-7th-app/src-tauri -> target
+      - name: Diagnose ignored source before dependency installation
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs before-install
+      - run: pnpm install --frozen-lockfile
+      - name: Diagnose ignored source after dependency installation
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs after-install
+      - run: pnpm check
+      - name: Diagnose ignored source after frontend checks
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs after-check
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - id: rust_tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+      - name: Diagnose ignored source after Cargo tests
+        if: ${{ !cancelled() && (steps.rust_tests.outcome == 'success' || steps.rust_tests.outcome == 'failure') }}
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs after-cargo-test
+      - id: rust_clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --all-targets -- -D warnings
+      - name: Diagnose ignored source after Clippy
+        if: ${{ !cancelled() && (steps.rust_clippy.outcome == 'success' || steps.rust_clippy.outcome == 'failure') }}
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs after-clippy
+      - name: Verify actual cross-process directory locks and exit recovery
+        run: node --test scripts/data-directory.node-test.mjs
+      - name: Verify build provenance and incremental Cargo invalidation
+        id: identity_fixtures
+        run: node --test scripts/build-identity.node-test.mjs scripts/diagnose-frontend-ignore.node-test.mjs
+      - name: Diagnose ignored source after identity fixtures
+        if: ${{ !cancelled() && (steps.identity_fixtures.outcome == 'success' || steps.identity_fixtures.outcome == 'failure') }}
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: node scripts/diagnose-frontend-ignore.mjs after-identity-fixture
+      - name: Build Windows executable
+        if: runner.os == 'Windows'
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: pnpm tauri build --ci --target x86_64-pc-windows-msvc --no-bundle -- --locked
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        env:
+          MARCH_BUILD_INPUT_DIAGNOSTICS: '1'
+        run: pnpm tauri build --ci --target aarch64-apple-darwin --bundles app -- --locked
+      - name: Preserve macOS bundle permissions in a zip
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/March 7th.app" "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/March 7th.app.zip"
+      - name: Prepare Windows regression packet
+        if: runner.os == 'Windows'
+        run: |
+          git diff -- src-tauri/Cargo.toml src-tauri/Cargo.lock package.json pnpm-lock.yaml
+          node scripts/prepare-regression.mjs x86_64-pc-windows-msvc src-tauri/target/x86_64-pc-windows-msvc/release/march-7th-app.exe ../regression-output src-tauri/target/x86_64-pc-windows-msvc/release/march-7th-app.exe
+      - name: Prepare macOS regression packet
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/March 7th.app"
+          executable_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")
+          executable="$bundle/Contents/MacOS/$executable_name"
+          test -f "$executable" && test -x "$executable"
+          node scripts/prepare-regression.mjs aarch64-apple-darwin "$bundle.zip" ../regression-output "$executable"
+      - name: Upload regression packet
+        uses: actions/upload-artifact@v7
+        with:
+          name: march-7th-${{ matrix.platform }}-${{ github.sha }}
+          path: regression-output/
+          if-no-files-found: error
+          retention-days: 30

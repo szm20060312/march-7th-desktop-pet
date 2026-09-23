@@ -1,0 +1,3 @@
+# Tauri rewrites this manifest with LF during native builds. Keep Windows
+# checkouts identical so the build provenance check sees a clean worktree.
+/march-7th-app/src-tauri/Cargo.toml text eol=lf

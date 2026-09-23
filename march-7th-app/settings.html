@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>提醒设置 · 桌面伙伴</title>
+  <link rel="stylesheet" href="/src/reminders.css" />
+  <script type="module" src="/src/entries/settings.ts"></script>
+</head>
+<body class="settings-page">
+  <main>
+    <header><p class="eyebrow">桌面伙伴</p><h1>按你的节奏提醒</h1><p class="intro">首次使用默认关闭。选好后保存，提醒才会生效。</p></header>
+    <form id="settings-form" novalidate>
+      <fieldset id="configuration" disabled>
+        <legend>日常提醒</legend>
+        <div class="setting-row"><label class="toggle-label"><input id="water-enabled" type="checkbox" />喝水</label><label class="interval-label" for="water-interval">每 <input id="water-interval" type="number" min="1" max="1440" step="1" inputmode="numeric" aria-label="喝水间隔（分钟）" /> 分钟</label></div>
+        <div class="setting-row"><label class="toggle-label"><input id="move-enabled" type="checkbox" />起身活动</label><label class="interval-label" for="move-interval">每 <input id="move-interval" type="number" min="1" max="1440" step="1" inputmode="numeric" aria-label="起身活动间隔（分钟）" /> 分钟</label></div>
+        <div class="setting-row"><label class="toggle-label"><input id="eyes-enabled" type="checkbox" />休息眼睛</label><label class="interval-label" for="eyes-interval">每 <input id="eyes-interval" type="number" min="1" max="1440" step="1" inputmode="numeric" aria-label="休息眼睛间隔（分钟）" /> 分钟</label></div>
+        <p class="hint">间隔可设为 1–1440 分钟，只代表你的偏好。</p>
+        <div class="hours-heading"><label for="hours-kind">活动时段</label><select id="hours-kind"><option value="allDay">全天</option><option value="daily">每日时段</option></select></div>
+        <div id="daily-hours" class="daily-hours"><label for="hours-start">开始 <input id="hours-start" type="time" /></label><span aria-hidden="true">—</span><label for="hours-end">结束 <input id="hours-end" type="time" /></label></div>
+        <p class="hint" id="hours-hint">支持跨午夜；起止相同请改选全天。</p>
+        <div class="snooze-setting"><label for="snooze-minutes">选择“稍后提醒”后</label><label class="interval-label" for="snooze-minutes"><input id="snooze-minutes" type="number" min="1" max="120" step="1" inputmode="numeric" aria-label="稍后提醒间隔（分钟）" /> 分钟再提醒</label></div>
+      </fieldset>
+      <section class="pause-row" aria-label="即时控制"><div><strong id="pause-state">正在读取状态</strong><p class="hint">立即生效，与上面的草稿分开。</p></div><button id="pause" type="button" disabled>暂停提醒</button></section>
+      <p id="settings-status" class="status" role="status" aria-live="polite">正在读取设置…</p>
+      <p id="settings-notice" class="notice" role="status" aria-live="polite"></p>
+      <section class="backup-row" aria-labelledby="backup-heading">
+        <div><h2 id="backup-heading">本地数据</h2><p class="hint">保存当前角色、提醒及桌面位置，方便以后迁移。</p></div>
+        <div class="backup-actions"><button id="export-backup" type="button">导出备份…</button><button id="import-backup" type="button">导入备份…</button></div>
+      </section>
+      <p id="backup-status" class="notice backup-status" role="status" aria-live="polite"></p>
+      <section id="backup-preview" class="backup-preview" aria-labelledby="import-preview-heading" hidden>
+        <h3 id="import-preview-heading">将恢复的内容</h3>
+        <dl>
+          <dt>角色</dt><dd id="import-character"></dd>
+          <dt>桌面位置</dt><dd id="import-placement"></dd>
+          <dt>喝水</dt><dd id="import-water"></dd>
+          <dt>起身活动</dt><dd id="import-move"></dd>
+          <dt>休息眼睛</dt><dd id="import-eyes"></dd>
+          <dt>活动时段</dt><dd id="import-hours"></dd>
+          <dt>待处理</dt><dd id="import-pending"></dd>
+          <dt>提醒状态</dt><dd id="import-reminder-state"></dd>
+        </dl>
+        <p class="hint">确认后当前会话不变；正常退出并重新打开后整体生效。原数据会保留。</p>
+        <div class="backup-preview-actions"><button id="cancel-import" type="button">取消</button><button id="confirm-import" class="primary" type="button">确认导入</button></div>
+      </section>
+      <footer><button id="close-settings" type="button">关闭</button><button id="save-settings" class="primary" type="submit" disabled>保存设置</button></footer>
+    </form>
+    <details class="build-info">
+      <summary>版本信息</summary>
+      <p id="build-status" class="hint" role="status">正在读取版本信息…</p>
+      <dl>
+        <dt>版本</dt><dd id="build-version"></dd>
+        <dt>平台</dt><dd id="build-target"></dd>
+        <dt>源提交</dt><dd id="build-commit" class="build-commit"></dd>
+        <dt>来源状态</dt><dd id="build-state"></dd>
+      </dl>
+      <p class="hint">用于核对测试包；不代表正式发布或验收通过。</p>
+    </details>
+  </main>
+</body>
+</html>

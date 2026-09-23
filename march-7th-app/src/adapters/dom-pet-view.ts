@@ -1,9 +1,17 @@
 import type { PetView } from "../application/ports";
 import type { CharacterDefinition } from "../domain/character";
 
-export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, body: HTMLElement): PetView {
+export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, message: HTMLElement, body: HTMLElement): PetView {
   let character: CharacterDefinition;
   let lastFrame = "";
+  let phrase: string | null = null;
+  let presentationError: string | null = null;
+  const updateMessage = () => {
+    const text = presentationError ?? phrase;
+    message.textContent = text ?? "";
+    message.hidden = text === null;
+    message.dataset.kind = presentationError ? "error" : "phrase";
+  };
   return {
     configure(definition) {
       character = definition;
@@ -29,10 +37,8 @@ export function createDomPetView(sprite: HTMLElement, stage: HTMLElement, body: 
       lastFrame = key;
     },
     setTracking: status => { body.dataset.cursorTracking = status; },
-    onDragStart(handler) {
-      const listener = (event: PointerEvent) => { if (event.button === 0) handler(); };
-      stage.addEventListener("pointerdown", listener);
-      return () => stage.removeEventListener("pointerdown", listener);
-    },
+    showPhrase(text) { phrase = text; updateMessage(); },
+    clearPhrase() { phrase = null; updateMessage(); },
+    setPresentationError(error) { presentationError = error; updateMessage(); },
   };
 }

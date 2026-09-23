@@ -10,3 +10,4 @@ src-tauri/target/
 coverage/
 .obsidian/
 .pnpm-store/
+/regression-output/
