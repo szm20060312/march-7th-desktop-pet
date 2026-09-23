@@ -17,7 +17,7 @@ const PENDING: &str = "pending-import.json";
 const ACTIVATED: &str = "data-set-activated.json";
 const SETS: &str = "data-sets";
 const MAX_SET_BYTES: usize = 1024 * 1024; // v1 limit is part of the legacy contract
-const MAX_FOCUS_BYTES: usize = 4096;
+pub(crate) const MAX_FOCUS_BYTES: usize = 4096;
 const MAX_V2_SET_BYTES: usize = MAX_SET_BYTES + MAX_FOCUS_BYTES;
 const MAX_RECORD_BYTES: usize = 4096;
 const ABSENT_DESKTOP: &[u8] = br#"{"version":1,"placement":null}"#;
@@ -263,14 +263,6 @@ impl DataDirectory {
             return Err("activationMarkerChanged");
         }
         stage(root, selected.as_ref(), &files, false)
-    }
-
-    /// Until a focus service owns live state, export its exact qualified persisted bytes.
-    pub(crate) fn read_focus(&self) -> Result<Vec<u8>, &'static str> {
-        let path = self.path(DataFile::Focus).ok_or("directoryUnavailable")?;
-        let bytes = read_store(&path)?;
-        decode_focus(&bytes)?;
-        Ok(bytes)
     }
 }
 
@@ -868,18 +860,5 @@ mod tests {
         assert_eq!(read_pointer(&temp.0).unwrap().unwrap().version, 2);
         assert!(!temp.0.join(PENDING).exists());
         assert!(!old_set.join("focus.json").exists());
-    }
-
-    #[test]
-    fn export_reads_exact_focus_from_selected_set_and_refuses_runtime_corruption() {
-        let temp = Temp::new();
-        let directory = acquire(Some(temp.0.clone())).unwrap();
-        let path = directory.path(DataFile::Focus).unwrap();
-        let paused=br#"{ "version":1,"session":{"status":"paused","duration_ms":60000,"remaining_ms":12000}}"#;
-        fs::write(&path, paused).unwrap();
-        assert_eq!(directory.read_focus().unwrap(), paused);
-        fs::write(&path, b"invalid").unwrap();
-        assert_eq!(directory.read_focus(), Err("dataSetInvalid"));
-        assert_eq!(fs::read(&path).unwrap(), b"invalid");
     }
 }

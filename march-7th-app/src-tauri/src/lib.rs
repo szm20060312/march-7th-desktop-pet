@@ -51,10 +51,13 @@ pub fn run() {
         .setup(|app| {
             let characters = characters::setup(app)?;
             let reminders = reminders::setup(app)?;
+            focus::native::setup(app)?;
             desktop::setup(app, &characters, &reminders)
         })
         .invoke_handler(tauri::generate_handler![
             build_info::get_build_info,
+            focus::native::get_focus,
+            focus::native::focus_command,
             cursor_relative_to_window,
             characters::native::get_selected_character,
             characters::native::select_character,
@@ -85,6 +88,7 @@ pub fn run() {
             &event,
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
         ) {
+            focus::native::stop(app);
             characters::stop(app);
             reminders::ui::stop(app);
             reminders::stop(app);

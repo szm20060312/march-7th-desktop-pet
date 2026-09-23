@@ -79,6 +79,15 @@ impl LocalDataGate {
         });
         Ok(ticket)
     }
+    fn cancel_before_dialog(&mut self, ticket: Ticket) {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.ticket == ticket && active.phase == Phase::Dialog)
+        {
+            self.active = None;
+        }
+    }
     fn authorize(&mut self, ticket: Ticket, current: (u64, u64)) -> Result<(), &'static str> {
         let Some(active) = self.active.as_mut() else {
             return Err("backupStale");
@@ -383,26 +392,39 @@ fn prepare<R: Runtime>(
     if app.state::<DataDirectory>().root().is_none() {
         return Err(ExportError::new("backupUnavailable"));
     }
-    let character =
-        characters::native::snapshot(app).ok_or(ExportError::new("backupUnavailable"))?;
-    let reminder =
-        reminders::native::snapshot(app).map_err(|_| ExportError::new("backupUnavailable"))?;
-    let position =
-        desktop::export_current(app).map_err(|_| ExportError::new("backupUnavailable"))?;
-    let focus = app
-        .state::<DataDirectory>()
-        .read_focus()
-        .map_err(|_| ExportError::new("backupUnavailable"))?;
-    let files = export_snapshot::capture(Some(&character), &reminder, position, focus)
-        .map_err(|_| ExportError::new("backupUnavailable"))?;
-    let bytes = backup_codec::encode(files, chrono::Utc::now().timestamp_millis())
-        .map_err(|_| ExportError::new("backupUnavailable"))?;
+    // Reserve import/export first. Focus publication has its own lock: its read
+    // linearizes against a command commit, never against a partially written file.
+    // Confirmed import only stages the next startup set and cannot switch this one.
     let ticket = app
         .state::<Mutex<LocalDataGate>>()
         .lock()
         .unwrap()
         .begin(session, cancel)
         .map_err(ExportError::new)?;
+    let captured = (|| {
+        let character =
+            characters::native::snapshot(app).ok_or(ExportError::new("backupUnavailable"))?;
+        let reminder =
+            reminders::native::snapshot(app).map_err(|_| ExportError::new("backupUnavailable"))?;
+        let position =
+            desktop::export_current(app).map_err(|_| ExportError::new("backupUnavailable"))?;
+        let focus = crate::focus::native::export_bytes(app)
+            .map_err(|_| ExportError::new("backupUnavailable"))?;
+        let files = export_snapshot::capture(Some(&character), &reminder, position, focus)
+            .map_err(|_| ExportError::new("backupUnavailable"))?;
+        backup_codec::encode(files, chrono::Utc::now().timestamp_millis())
+            .map_err(|_| ExportError::new("backupUnavailable"))
+    })();
+    let bytes = match captured {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            app.state::<Mutex<LocalDataGate>>()
+                .lock()
+                .unwrap()
+                .cancel_before_dialog(ticket);
+            return Err(error);
+        }
+    };
     Ok((ticket, bytes))
 }
 
@@ -774,5 +796,24 @@ mod tests {
         );
         let (send, _) = mpsc::channel();
         assert!(gate.begin_import((3, 7), send).is_ok());
+    }
+    #[test]
+    fn failed_snapshot_capture_releases_only_its_unopened_export_lease() {
+        let mut gate = LocalDataGate::default();
+        let (send, _) = mpsc::channel();
+        let first = gate.begin((1, 1), send.clone()).unwrap();
+        assert_eq!(
+            gate.begin_import((1, 1), mpsc::channel().0),
+            Err("backupBusy")
+        );
+        gate.cancel_before_dialog(first);
+        let second = gate.begin((1, 1), send).unwrap();
+        gate.cancel_before_dialog(first);
+        assert_eq!(
+            gate.begin_import((1, 1), mpsc::channel().0),
+            Err("backupBusy")
+        );
+        gate.cancel_before_dialog(second);
+        assert!(gate.begin_import((1, 1), mpsc::channel().0).is_ok());
     }
 }

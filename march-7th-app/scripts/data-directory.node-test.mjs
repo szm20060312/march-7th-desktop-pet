@@ -23,8 +23,8 @@ test("native assembly qualifies once before run and every store consumes managed
   }
   assert.match(lib, /Err\(data_directory::AlreadyRunning\) => return/);
   assert.equal((lib.match(/generate_context!/g) ?? []).length, 1);
-  assert.match(lib, /\.setup\(\|app\| \{\s*let characters = characters::setup\(app\)\?;\s*let reminders = reminders::setup\(app\)\?;\s*desktop::setup\(app, &characters, &reminders\)/);
-  for (const [file, kind] of [["characters/native.rs", "Characters"], ["reminders/native.rs", "Reminders"], ["desktop/mod.rs", "Desktop"]]) {
+  assert.match(lib, /\.setup\(\|app\| \{\s*let characters = characters::setup\(app\)\?;\s*let reminders = reminders::setup\(app\)\?;\s*focus::native::setup\(app\)\?;\s*desktop::setup\(app, &characters, &reminders\)/);
+  for (const [file, kind] of [["characters/native.rs", "Characters"], ["reminders/native.rs", "Reminders"], ["focus/native.rs", "Focus"], ["desktop/mod.rs", "Desktop"]]) {
     const native = source(file);
     assert.ok(native.includes(`app.state::<DataDirectory>().path(DataFile::${kind})`));
     assert.doesNotMatch(native, /app_config_dir|create_dir_all/);

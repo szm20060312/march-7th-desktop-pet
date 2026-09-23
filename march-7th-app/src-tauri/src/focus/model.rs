@@ -157,7 +157,7 @@ pub struct Transition {
     pub completed_now: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Error {
     pub code: &'static str,
 }
