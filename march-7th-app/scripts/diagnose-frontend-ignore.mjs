@@ -47,18 +47,19 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
   if (safePhase === "unknown") return unavailable("phase");
   let failureStage = "root";
   try {
-    appRoot = realpathSync(appRoot);
+    // Native canonicalization expands Windows 8.3 aliases as well as symlinks.
+    appRoot = realpathSync.native(appRoot);
     const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
     for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]) delete env[key];
     const query = git ?? ((args, input) => execFileSync("git", args, { cwd: appRoot, input, env, timeout: 5_000, maxBuffer: 2 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }));
     let repoRoot = decode(query(["rev-parse", "--show-toplevel"])).trim();
     if (!path.isAbsolute(repoRoot) || repoRoot.includes("\0")) return unavailable("root");
-    repoRoot = realpathSync(repoRoot);
+    repoRoot = realpathSync.native(repoRoot);
     if (within(repoRoot, appRoot) === null) return unavailable("root");
     failureStage = "path";
     const declaredFrontend = path.join(appRoot, "src");
     if (!lstatSync(declaredFrontend).isDirectory()) return unavailable("path");
-    const frontend = realpathSync(declaredFrontend);
+    const frontend = realpathSync.native(declaredFrontend);
     const frontendIdentity = statSync(frontend, { bigint: true });
     const scope = within(repoRoot, frontend);
     if (scope === null || scope === "") return unavailable("path");
@@ -85,7 +86,7 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
       const location = path.resolve(repoRoot, entry);
       if (within(frontend, location, true) === null) return unavailable("path");
       failureStage = "metadata";
-      const canonical = realpathSync(location);
+      const canonical = realpathSync.native(location);
       failureStage = "path";
       const relative = within(frontend, canonical, true);
       if (relative === null) return unavailable("path");
@@ -128,7 +129,7 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
 }
 
 let isEntry = false;
-try { isEntry = Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { /* import/eval */ }
+try { isEntry = Boolean(process.argv[1]) && realpathSync.native(process.argv[1]) === realpathSync.native(fileURLToPath(import.meta.url)); } catch { /* import/eval */ }
 if (isEntry) {
   const line = summarizeFrontendIgnored({ appRoot: process.cwd(), phase: process.argv[2], enabled: process.env.MARCH_BUILD_INPUT_DIAGNOSTICS });
   if (line) console.log(line);

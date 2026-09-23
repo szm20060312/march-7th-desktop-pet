@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, symlinkSync, renameSync, existsSync, realpathSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, symlinkSync, renameSync, existsSync, realpathSync, statSync, copyFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import { summarizeFrontendIgnored } from "./diagnose-frontend-ignore.mjs";
@@ -20,6 +21,57 @@ function fixture(t, appName = "app") {
 }
 const phase = "after-check";
 const unavailable = stage => `ignored-input phase=${phase} state=unavailable total=unknown groups=unknown overflow=no failureStage=${stage}`;
+
+function shortDirectory(t, directory) {
+  // Read existing filesystem metadata only; never enable or alter 8.3 settings.
+  let short;
+  try {
+    const script = "$ErrorActionPreference='Stop'; $fso=New-Object -ComObject Scripting.FileSystemObject; $fso.GetFolder($env:MARCH_TEST_DIRECTORY).ShortPath";
+    short = execFileSync(process.env.MARCH_TEST_PWSH ?? "pwsh.exe", ["-NoProfile", "-Command", script], {
+      timeout: 10_000, maxBuffer: 16_384, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, MARCH_TEST_DIRECTORY: realpathSync.native(directory) },
+    }).trim();
+  } catch { throw Error("Windows short-name metadata query failed; MARCH_TEST_PWSH may select an existing PowerShell 7"); }
+  if (path.relative(short, realpathSync.native(directory)) === "") { t.skip("No distinct 8.3 directory alias on this volume"); return null; }
+  assert.ok(realpathSync.native(short) === realpathSync.native(directory), "short and long names must resolve to the same directory");
+  const a = statSync(short, { bigint: true }), b = statSync(directory, { bigint: true });
+  assert.ok(a.dev === b.dev && a.ino === b.ino && a.ino !== 0n, "directory identity must be reliable and identical");
+  return short;
+}
+
+test("Windows 8.3 directory aliases classify identically to their native long names", { skip: process.platform !== "win32" }, t => {
+  const { appRoot } = fixture(t, "Long Application Directory");
+  writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
+  const short = shortDirectory(t, appRoot);
+  if (!short) return;
+  const expected = `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no`;
+  assert.equal(summarizeFrontendIgnored({ appRoot: realpathSync.native(appRoot), phase, enabled: "1" }), expected);
+  assert.equal(summarizeFrontendIgnored({ appRoot: short, phase, enabled: "1" }), expected);
+});
+
+for (const entry of ["diagnose-frontend-ignore.mjs", "prepare-regression.mjs"]) {
+  test(`Windows 8.3 path actually executes ${entry} CLI`, { skip: process.platform !== "win32" }, t => {
+    const { appRoot } = fixture(t, "Long Application Directory");
+    writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
+    mkdirSync(path.join(appRoot, "scripts"));
+    copyFileSync(fileURLToPath(new URL(`./${entry}`, import.meta.url)), path.join(appRoot, "scripts", entry));
+    const short = shortDirectory(t, appRoot);
+    if (!short) return;
+    const diagnostic = entry === "diagnose-frontend-ignore.mjs";
+    const result = spawnSync(process.execPath, [path.join(short, "scripts", entry), ...(diagnostic ? [phase] : [])], {
+      cwd: short, encoding: "utf8", timeout: 10_000,
+      env: { ...process.env, MARCH_BUILD_INPUT_DIAGNOSTICS: "1" },
+    });
+    assert.equal(result.status, diagnostic ? 0 : 1);
+    if (diagnostic) {
+      assert.equal(result.stdout.trim(), `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no`);
+      assert.equal(result.stderr, "");
+    } else {
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /^Usage: node scripts\/prepare-regression.mjs/);
+    }
+  });
+}
 
 test("literal source directory scope does not match the native target sibling", t => {
   const { root, appRoot } = fixture(t);
@@ -106,7 +158,7 @@ function injectedRecords(root, status, ruleOutput) {
   const git = args => {
     const command = args[0] === "-C" ? args[2] : args[0];
     calls.push(command);
-    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync(root), "all record queries must use the verified repository root");
+    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync.native(root), "all record queries must use the verified repository root");
     if (command === "rev-parse") return Buffer.from(root + "\n");
     if (command === "status") return Buffer.isBuffer(status) ? status : Buffer.from(status);
     if (command === "check-ignore") return Buffer.from(ruleOutput);
@@ -236,7 +288,7 @@ test("real queries share one repository cwd, literal scope and repo-relative NUL
   const git = (args, input) => {
     const command = args[0] === "-C" ? args[2] : args[0];
     seen.push(command);
-    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync(root), "fixed repository context");
+    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync.native(root), "fixed repository context");
     if (command === "status") assert.ok(args.at(-1) === ":(literal)app[private]/src/", "literal source directory boundary");
     if (command === "check-ignore") assert.ok(input.equals(Buffer.from("app[private]/src/PRIVATE.local\0")), "repo-relative stdin must match porcelain records");
     return execFileSync("git", args, { cwd: appRoot, input, stdio: ["pipe", "pipe", "pipe"] });
