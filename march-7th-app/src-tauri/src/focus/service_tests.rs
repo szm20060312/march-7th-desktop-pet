@@ -610,26 +610,32 @@ fn automatic_save_failure_reports_an_error_without_publishing_uncommitted_progre
     use std::sync::atomic::AtomicU64;
     let current = Arc::new(AtomicU64::new(0));
     let clock = current.clone();
-    let (store, fail) = memory(Data::default());
+    let samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sampled = samples.clone();
+    let (store, fail) = memory(Data {
+        version: 1,
+        session: Session::Running {
+            duration_ms: MIN_DURATION_MS,
+            remaining_ms: 100,
+            anchor_utc_ms: 0,
+        },
+    });
     let (events, receive) = mpsc::channel();
     let service = Service::start(
         store,
-        move || Ok(time(clock.load(Ordering::SeqCst))),
+        move || {
+            sampled.fetch_add(1, Ordering::SeqCst);
+            Ok(time(clock.load(Ordering::SeqCst)))
+        },
         move |change| {
             let _ = events.send(change);
         },
     )
     .unwrap();
-    receive.recv_timeout(Duration::from_secs(5)).unwrap();
-    let committed = service
-        .command(Command::Start {
-            duration_ms: MIN_DURATION_MS,
-        })
-        .unwrap()
+    let committed = receive
         .recv_timeout(Duration::from_secs(5))
         .unwrap()
-        .unwrap();
-    receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        .snapshot;
     let bytes = service.export_bytes().unwrap();
     fail.store(true, Ordering::SeqCst);
     current.store(MIN_DURATION_MS, Ordering::SeqCst);
@@ -641,6 +647,16 @@ fn automatic_save_failure_reports_an_error_without_publishing_uncommitted_progre
     assert_eq!(failure.snapshot, committed);
     assert_eq!(service.snapshot(), committed);
     assert_eq!(service.export_bytes().unwrap(), bytes);
+    let count = samples.load(Ordering::SeqCst);
+    assert_eq!(
+        receive.recv_timeout(Duration::from_millis(250)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    );
+    assert_eq!(
+        samples.load(Ordering::SeqCst),
+        count,
+        "failed near-deadline writes must not spin"
+    );
     fail.store(false, Ordering::SeqCst);
     service
         .command(Command::Tick)
@@ -653,6 +669,13 @@ fn automatic_save_failure_reports_an_error_without_publishing_uncommitted_progre
     assert_eq!(service.current().error, None);
     assert!(!service.current().completed_now);
     assert!(recovery.completed_now);
+    service
+        .command(Command::Tick)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    assert!(receive.try_recv().is_err());
 }
 
 #[test]
@@ -680,7 +703,7 @@ fn stopping_during_background_failed_save_suppresses_late_error_notification() {
         version: 1,
         session: Session::Running {
             duration_ms: MIN_DURATION_MS,
-            remaining_ms: MIN_DURATION_MS,
+            remaining_ms: 100,
             anchor_utc_ms: 0,
         },
     };
@@ -705,4 +728,206 @@ fn stopping_during_background_failed_save_suppresses_late_error_notification() {
         receive.recv_timeout(Duration::from_secs(5)),
         Err(mpsc::RecvTimeoutError::Disconnected)
     );
+}
+
+#[test]
+fn background_checkpoint_does_not_save_or_publish_each_second_but_pause_is_immediate() {
+    struct Counted {
+        inner: Memory,
+        saves: Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Storage for Counted {
+        fn load(&mut self) -> Result<Vec<u8>, Error> {
+            self.inner.load()
+        }
+        fn save(&mut self, bytes: &[u8]) -> Result<(), Error> {
+            self.saves.fetch_add(1, Ordering::SeqCst);
+            self.inner.save(bytes)
+        }
+    }
+    let (inner, _) = memory(Data::default());
+    let saves = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let store = Counted {
+        inner,
+        saves: saves.clone(),
+    };
+    let (send, events) = mpsc::channel();
+    let started = std::time::Instant::now();
+    let service = Service::start(
+        store,
+        move || Ok(time(started.elapsed().as_millis() as u64)),
+        move |event| {
+            let _ = send.send(event);
+        },
+    )
+    .unwrap();
+    events.recv_timeout(Duration::from_secs(5)).unwrap();
+    let running = service
+        .command(Command::Start {
+            duration_ms: 25 * 60_000,
+        })
+        .unwrap()
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    events.recv_timeout(Duration::from_secs(5)).unwrap();
+    let bytes = service.export_bytes().unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_millis(1200)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    );
+    assert_eq!(saves.load(Ordering::SeqCst), 1); // only Start committed
+    assert_eq!(service.snapshot(), running);
+    assert_eq!(service.export_bytes().unwrap(), bytes);
+    let paused = service
+        .command(Command::Pause)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    assert_eq!(saves.load(Ordering::SeqCst), 2); // Pause commits immediately
+    assert!(matches!(
+        paused.data.as_ref().unwrap().session,
+        Session::Paused { .. }
+    ));
+    assert_eq!(
+        decode(&service.export_bytes().unwrap()).unwrap(),
+        paused.data.unwrap()
+    );
+}
+
+#[test]
+fn checkpoint_wait_is_bounded_by_one_minute_and_remaining_time_with_exact_completion() {
+    let (store, _) = memory(Data::default());
+    let mut core = Core::load(store);
+    assert_eq!(core.checkpoint_delay(), None);
+    core.pump(
+        Command::Start {
+            duration_ms: 25 * 60_000,
+        },
+        time(0),
+    )
+    .unwrap();
+    let mut now = 0;
+    let mut checkpoints = 0;
+    let mut completions = 0;
+    while let Some(delay) = core.checkpoint_delay() {
+        assert!(delay <= Duration::from_secs(60));
+        now += delay.as_millis() as u64;
+        core.pump(Command::Tick, time(now)).unwrap();
+        checkpoints += 1;
+        completions += usize::from(core.completed_now);
+        assert_eq!(
+            decode(&core.bytes).unwrap(),
+            core.snapshot.data.clone().unwrap()
+        );
+    }
+    assert_eq!(now, 25 * 60_000);
+    assert_eq!(checkpoints, 25);
+    assert_eq!(completions, 1);
+    core.pump(
+        Command::Start {
+            duration_ms: 65_000,
+        },
+        time(now),
+    )
+    .unwrap();
+    core.pump(Command::Tick, time(now + 60_000)).unwrap();
+    assert_eq!(core.checkpoint_delay(), Some(Duration::from_secs(5)));
+    core.pump(Command::Pause, time(now + 61_000)).unwrap();
+    assert_eq!(core.checkpoint_delay(), None);
+    core.pump(Command::Resume, time(now + 62_000)).unwrap();
+    assert_eq!(core.checkpoint_delay(), Some(Duration::from_secs(4)));
+}
+
+#[test]
+fn short_remaining_deadline_is_not_delayed_by_invalid_commands_or_spurious_wakes() {
+    let data = Data {
+        version: 1,
+        session: Session::Running {
+            duration_ms: MIN_DURATION_MS,
+            remaining_ms: 150,
+            anchor_utc_ms: 0,
+        },
+    };
+    let (store, _) = memory(data);
+    let (send, events) = mpsc::channel();
+    let started = Instant::now();
+    let service = Service::start(
+        store,
+        move || Ok(time(started.elapsed().as_millis() as u64)),
+        move |event| {
+            let _ = send.send(event);
+        },
+    )
+    .unwrap();
+    let initial = events.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(!initial.completed_now);
+    while started.elapsed() < Duration::from_millis(200) {
+        service.shared.wake.notify_one();
+        assert_eq!(
+            service
+                .command(Command::Start { duration_ms: 1 })
+                .unwrap()
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .unwrap_err()
+                .code,
+            "invalidDuration"
+        );
+    }
+    let completion = events.recv_timeout(Duration::from_millis(500)).unwrap();
+    assert!(completion.completed_now);
+    assert!(matches!(
+        completion.snapshot.data.unwrap().session,
+        Session::Finished { .. }
+    ));
+    assert!(events.try_recv().is_err());
+}
+#[test]
+fn checkpoint_gaps_restore_elapsed_time_and_detect_untrusted_sleep_without_replay() {
+    let (store, _) = memory(Data::default());
+    let mut core = Core::load(store);
+    core.pump(
+        Command::Start {
+            duration_ms: 150_000,
+        },
+        time(0),
+    )
+    .unwrap();
+    core.pump(Command::Tick, time(60_000)).unwrap();
+    let mut restored = Core::load(core.store);
+    restored.pump(Command::Tick, time(100_000)).unwrap();
+    assert!(matches!(
+        restored.snapshot.data.as_ref().unwrap().session,
+        Session::Running {
+            remaining_ms: 50_000,
+            ..
+        }
+    ));
+    assert_eq!(restored.checkpoint_delay(), Some(Duration::from_secs(50)));
+    assert!(!restored.completed_now);
+    restored
+        .pump(
+            Command::Tick,
+            Time {
+                utc_ms: 200_000,
+                monotonic_ms: 150_000,
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        restored.snapshot.data.as_ref().unwrap().session,
+        Session::Interrupted {
+            remaining_ms: 50_000,
+            ..
+        }
+    ));
+    assert_eq!(restored.checkpoint_delay(), None);
+    assert!(!restored.completed_now);
+    restored.pump(Command::Resume, time(210_000)).unwrap();
+    restored.pump(Command::Tick, time(300_000)).unwrap();
+    assert!(restored.completed_now);
+    assert!(!restored.pump(Command::Tick, time(310_000)).unwrap());
+    assert!(!restored.completed_now);
 }

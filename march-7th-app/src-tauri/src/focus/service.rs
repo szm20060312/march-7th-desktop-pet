@@ -7,8 +7,9 @@ use serde::Serialize;
 use std::{
     collections::VecDeque,
     sync::{mpsc, Arc, Condvar, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
+const CHECKPOINT_MS: u64 = 60_000;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -29,6 +30,7 @@ impl Snapshot {
 }
 /// Pending feedback is durable reviewable state. This flag is only a live,
 /// successfully committed transition; it is never recovered from the file.
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Change {
@@ -65,6 +67,20 @@ impl<S: Storage> Core<S> {
             snapshot,
             bytes: result.unwrap_or_default(),
             loaded,
+        }
+    }
+    // Background progress is checkpointed once a minute or at an earlier deadline, never
+    // intentionally beyond the saved remaining duration. Explicit commands
+    // still enter pump immediately and commit their complete next state.
+    fn checkpoint_delay(&self) -> Option<Duration> {
+        if self.snapshot.error.is_some() {
+            return None;
+        }
+        match self.snapshot.data.as_ref()?.session {
+            Session::Running { remaining_ms, .. } => {
+                Some(Duration::from_millis(remaining_ms.min(CHECKPOINT_MS)))
+            }
+            _ => None,
         }
     }
     fn pump(&mut self, command: Command, time: Time) -> Result<bool, Error> {
@@ -250,6 +266,7 @@ fn run_worker<S: Storage>(
         return;
     }
     // Restoration may itself change durable progress. Keep old loaded data on failure.
+    let sampled_at = Instant::now();
     if let Err(error) = clock().and_then(|time| core.pump(Command::Tick, time)) {
         core.snapshot.error = Some(error.code);
     }
@@ -257,6 +274,7 @@ fn run_worker<S: Storage>(
         return;
     }
     let mut last_tick_error = None;
+    let mut wake_at = core.checkpoint_delay().map(|delay| sampled_at + delay);
     loop {
         let request = {
             let mut state = shared.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -264,22 +282,21 @@ fn run_worker<S: Storage>(
                 if state.snapshot.stopped {
                     return;
                 }
+                // Keep one absolute deadline through spurious wakes/invalid commands.
+                // A due checkpoint wins over the queue, preventing command floods
+                // from indefinitely postponing natural completion.
+                if wake_at.is_some_and(|deadline| Instant::now() >= deadline) {
+                    break None;
+                }
                 if let Some(request) = state.queue.pop_front() {
                     break Some(request);
                 }
-                if matches!(
-                    core.snapshot.data.as_ref().map(|d| d.session),
-                    Some(Session::Running { .. })
-                ) && core.snapshot.error.is_none()
-                {
-                    let (next, timeout) = shared
+                if let Some(deadline) = wake_at {
+                    let (next, _) = shared
                         .wake
-                        .wait_timeout(state, Duration::from_secs(1))
+                        .wait_timeout(state, deadline.saturating_duration_since(Instant::now()))
                         .unwrap_or_else(|e| e.into_inner());
                     state = next;
-                    if timeout.timed_out() {
-                        break None;
-                    }
                 } else {
                     state = shared.wake.wait(state).unwrap_or_else(|e| e.into_inner());
                 }
@@ -297,9 +314,20 @@ fn run_worker<S: Storage>(
             }
             return;
         }
+        let sampled_at = Instant::now();
         let result = clock().and_then(|time| {
             core.pump(request.as_ref().map_or(Command::Tick, |r| r.command), time)
         });
+        if result.is_ok() {
+            // Anchor the wait before sampling/IO, so slow saves do not extend a session.
+            wake_at = core.checkpoint_delay().map(|delay| sampled_at + delay);
+        } else if request.is_none() {
+            // Failed background IO retains committed progress; bounded retry avoids
+            // a hot loop when the original deadline is already in the past.
+            wake_at = core
+                .checkpoint_delay()
+                .map(|_| Instant::now() + Duration::from_millis(CHECKPOINT_MS));
+        }
         let reply = match result {
             Ok(changed) => {
                 let recovered = last_tick_error.take().is_some();
