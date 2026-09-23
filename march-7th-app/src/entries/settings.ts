@@ -57,7 +57,7 @@ cancelImportButton.addEventListener("click", onCancelImport);
 
 const view = createDomReminderSettings(document);
 const focusView = createDomFocusControls(document);
-const focusControls = createFocusControls({ render: focusView.render, command: command => focusConnection.command(command), now: Date.now });
+const focusControls = createFocusControls({ render: focusView.render, command: command => focusConnection.command(command), now: Date.now, monotonicNow: () => performance.now() });
 const focusConnection = connectFocus({
   select: focusControls.receive,
   reportError(error) {
@@ -67,10 +67,10 @@ const focusConnection = connectFocus({
 });
 const unbindFocus = focusView.bind(focusControls);
 const focusTicker = setInterval(() => focusControls.tick(), 1000);
-const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: async () => { backup.close(); focusControls.close(); await hideSettingsWindow(); } });
+const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: async () => { backup.close(); focusConnection.close(); focusControls.close(); await hideSettingsWindow(); } });
 const connection = connectReminders({
   select: controller.receive,
-  opened(intent) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.refresh(); if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
+  opened(intent) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.reopen(); if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
   reportError(error) {
     console.error("Reminder settings connection failed", error);
     // Command feedback belongs to the controller's submitting session. The

@@ -15,21 +15,30 @@ const errorMessage = (error: unknown) => {
   }
 };
 
-export function createFocusControls(ports: { command(command: FocusCommand): Promise<FocusSnapshot>; render(state: FocusViewState): void; now(): number }) {
+export function createFocusControls(ports: { command(command: FocusCommand): Promise<FocusSnapshot>; render(state: FocusViewState): void; now(): number; monotonicNow?: () => number }) {
   const now = ports.now;
+  const monotonicNow = ports.monotonicNow ?? now;
   let snapshot: FocusSnapshot | null = null;
   let durationMinutes = 25;
   let receivedAt = 0;
+  let visualRemaining = 0;
   let notice = "";
   let diagnostic = false;
   let busy = false;
   let generation = 0;
   let disposed = false;
   let visible = true;
+  const rebaseDisplay = () => {
+    const session = snapshot?.data?.session;
+    receivedAt = monotonicNow();
+    visualRemaining = session?.status === "running"
+      ? Math.max(0, session.remaining_ms - Math.max(0, now() - session.anchor_utc_ms))
+      : 0;
+  };
   const displayRemainingMs = () => {
     const session = snapshot?.data?.session;
     if (!session || !(session.status === "running" || session.status === "paused" || session.status === "interrupted")) return null;
-    return session.status === "running" ? Math.max(0, session.remaining_ms - Math.max(0, now() - receivedAt)) : session.remaining_ms;
+    return session.status === "running" ? Math.max(0, visualRemaining - Math.max(0, monotonicNow() - receivedAt)) : session.remaining_ms;
   };
   const render = () => { if (!disposed && visible) ports.render({ snapshot, durationMinutes, displayRemainingMs: displayRemainingMs(), busy, notice }); };
   render();
@@ -37,8 +46,8 @@ export function createFocusControls(ports: { command(command: FocusCommand): Pro
     receive(change: FocusChange) {
       if (disposed || snapshot && change.snapshot.revision < snapshot.revision) return;
       const stateChanged = snapshot?.revision !== change.snapshot.revision || snapshot?.data?.session.status !== change.snapshot.data?.session.status;
-      if (stateChanged) receivedAt = now();
       snapshot = change.snapshot;
+      if (stateChanged) rebaseDisplay();
       if (change.error) { notice = errorMessage({ code: change.error }); diagnostic = true; }
       else if (diagnostic || stateChanged) { notice = ""; diagnostic = false; }
       render();
@@ -60,12 +69,12 @@ export function createFocusControls(ports: { command(command: FocusCommand): Pro
       try {
         const result = await ports.command(command);
         if (disposed || token !== generation) return;
-        if (!snapshot || result.revision >= snapshot.revision) { snapshot = result; receivedAt = now(); }
+        if (!snapshot || result.revision > snapshot.revision) { snapshot = result; rebaseDisplay(); }
       } catch (error) { if (!disposed && token === generation) { notice = errorMessage(error); diagnostic = false; } }
       finally { if (!disposed && token === generation) { busy = false; render(); } }
     },
     tick: render,
-    error(error: unknown) { if (!disposed && visible) { notice = errorMessage(error); diagnostic = false; render(); } },
+    error(error: unknown) { if (!disposed && visible) { notice = errorMessage(error); diagnostic = true; render(); } },
     close() { generation++; busy = false; visible = false; notice = ""; },
     reopen() { generation++; busy = false; visible = true; notice = ""; render(); },
     dispose() { disposed = true; generation++; },

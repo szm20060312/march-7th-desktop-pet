@@ -54,3 +54,28 @@ it("does not resurrect a delayed diagnostic read after same-revision recovery", 
   expect(select.mock.calls.every(([change]) => change.error === null)).toBe(true);
   connection.dispose();
 });
+
+it("ignores a failed old read after a newer focus event succeeds", async () => {
+  let event!: (value: unknown) => void; let fail!: (reason: unknown) => void;
+  const invoke = vi.fn(() => new Promise((_, no) => { fail = no; }));
+  const select = vi.fn(); const reportError = vi.fn();
+  const connection = connectFocus({ select, reportError, transport: { invoke, listen: async (_name, callback) => { event = callback; return () => {}; } } });
+  await flush(); event({ snapshot: snapshot(3), completedNow: false, error: null });
+  fail(Error("old read failed")); await flush();
+  expect(select.mock.lastCall?.[0].snapshot.revision).toBe(3);
+  expect(reportError).not.toHaveBeenCalled();
+  connection.dispose();
+});
+
+it("invalidates a pending read across close and reopen even without a focus event", async () => {
+  let failOld!: (reason: unknown) => void;
+  const current = { snapshot: snapshot(3), completedNow: false, error: null };
+  const invoke = vi.fn().mockImplementationOnce(() => new Promise((_, no) => { failOld = no; })).mockResolvedValue(current);
+  const select = vi.fn(); const reportError = vi.fn();
+  const connection = connectFocus({ select, reportError, transport: { invoke, listen: async () => () => {} } });
+  await flush(); connection.close(); await connection.reopen();
+  expect(select.mock.lastCall?.[0]).toEqual(current);
+  failOld(Error("old window")); await flush();
+  expect(reportError).not.toHaveBeenCalled();
+  connection.dispose();
+});

@@ -184,6 +184,19 @@ describe("local backup entry stays separate from reminder drafts", () => {
 
 describe("focus settings entry uses the committed Rust state", () => {
   const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 1, session }, error: null, stopped: false }, completedNow: false, error: null });
+  it("ignores an initial focus read failure after close and a successful reopened read", async () => {
+    let failOld!: (reason: unknown) => void;
+    const current = focus(3, { status: "idle" });
+    native.invoke.mockImplementation(name => name === "get_focus" ? new Promise((yes, no) => {
+      if (!failOld) failOld = no; else yes(current);
+    }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush();
+    dom.get("close-settings").dispatch("click"); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    expect(dom.get("focus-state").textContent).toBe("尚未开始");
+    failOld(Error("old read")); await flush();
+    expect(dom.get("focus-notice").textContent).toBe("");
+  });
   it("finds focus from a newly opened window and again from an already open window, ignoring stale intent", async () => {
     const scroll = vi.fn(); (dom.get("focus-section") as ElementDouble & { scrollIntoView: typeof scroll }).scrollIntoView = scroll;
     await import("./settings"); await flush();
@@ -204,7 +217,7 @@ describe("focus settings entry uses the committed Rust state", () => {
       if (name === "focus_command") {
         const type = args.command.type;
         current = focus(current.snapshot.revision + 1, type === "start" || type === "resume"
-          ? { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: 100 }
+          ? { status: "running", duration_ms: 1_500_000, remaining_ms: 1_500_000, anchor_utc_ms: Date.now() }
           : type === "pause" ? { status: "paused", duration_ms: 1_500_000, remaining_ms: 800_000 }
             : { status: "finished", duration_ms: 1_500_000, outcome: "endedEarly", feedback: "none" });
         return current.snapshot;

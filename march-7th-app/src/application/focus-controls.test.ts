@@ -77,3 +77,38 @@ it("clears a recovered background error even when the durable revision stays the
   expect(render.mock.lastCall?.[0].notice).toBe("");
   controls.dispose();
 });
+
+it("compensates a running snapshot read 50 seconds after its Rust clock anchor", () => {
+  const render = vi.fn();
+  const controls = createFocusControls({ command: vi.fn(), render, now: () => 150_000 });
+  controls.receive({ snapshot: snapshot(9, { status: "running", duration_ms: 60_000, remaining_ms: 60_000, anchor_utc_ms: 100_000 }), completedNow: false, error: null });
+  expect(render.mock.lastCall?.[0].displayRemainingMs).toBe(10_000);
+  controls.dispose();
+});
+
+it("uses monotonic visual progress after receipt and clamps small wall-clock skew and zero", () => {
+  let wall = 150_000; let monotonic = 1000; const render = vi.fn();
+  const controls = createFocusControls({ command: vi.fn(), render, now: () => wall, monotonicNow: () => monotonic });
+  controls.receive({ snapshot: snapshot(9, { status: "running", duration_ms: 60_000, remaining_ms: 60_000, anchor_utc_ms: 100_000 }), completedNow: false, error: null });
+  expect(render.mock.lastCall?.[0].displayRemainingMs).toBe(10_000);
+  wall = 149_500; monotonic += 1000; controls.tick();
+  expect(render.mock.lastCall?.[0].displayRemainingMs).toBe(9000);
+  wall = 200_000; monotonic += 10_000; controls.tick();
+  expect(render.mock.lastCall?.[0].displayRemainingMs).toBe(0);
+  expect(render.mock.lastCall?.[0].snapshot.data.session.status).toBe("running");
+  wall = 99_500;
+  controls.receive({ snapshot: snapshot(10, { status: "running", duration_ms: 60_000, remaining_ms: 60_000, anchor_utc_ms: 100_000 }), completedNow: false, error: null });
+  expect(render.mock.lastCall?.[0].displayRemainingMs).toBe(60_000);
+  controls.dispose();
+});
+
+it("clears a recovered read error on the same durable revision", () => {
+  const render = vi.fn();
+  const controls = createFocusControls({ command: vi.fn(), render, now: () => 1000 });
+  controls.receive({ snapshot: idle, completedNow: false, error: null });
+  controls.error({ code: "workerUnavailable" });
+  expect(render.mock.lastCall?.[0].notice).toContain("暂不可用");
+  controls.receive({ snapshot: idle, completedNow: false, error: null });
+  expect(render.mock.lastCall?.[0].notice).toBe("");
+  controls.dispose();
+});

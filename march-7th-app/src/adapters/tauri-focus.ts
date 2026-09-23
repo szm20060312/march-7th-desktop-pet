@@ -39,7 +39,8 @@ export function parseFocusChange(value: unknown): FocusChange {
 
 export function connectFocus(options: { select(change: FocusChange): void; reportError(error: { stage: "listen" | "snapshot" | "event" | "command"; cause: unknown }): void; transport?: FocusTransport }) {
   const transport = options.transport ?? nativeTransport;
-  let disposed = false; let ready = false; let failed = false; let lastRevision = -1; let eventEpoch = 0;
+  let disposed = false; let ready = false; let failed = false; let visible = true;
+  let lastRevision = -1; let eventEpoch = 0; let windowEpoch = 0; let readEpoch = 0;
   let stop: (() => void) | undefined;
   const report = (stage: "listen" | "snapshot" | "event" | "command", cause: unknown) => { if (!disposed) options.reportError({ stage, cause }); };
   const accept = (value: unknown) => {
@@ -50,14 +51,17 @@ export function connectFocus(options: { select(change: FocusChange): void; repor
     }
   };
   const refresh = async () => {
-    if (disposed || !ready) return;
-    const startedAt = eventEpoch;
+    if (disposed || !ready || !visible) return;
+    const startedAt = eventEpoch; const windowAt = windowEpoch; const readAt = ++readEpoch;
+    const current = () => !disposed && visible && windowAt === windowEpoch && readAt === readEpoch;
     try {
-      const change = parseFocusChange(await transport.invoke("get_focus"));
+      const value = await transport.invoke("get_focus");
+      if (!current()) return;
+      const change = parseFocusChange(value);
       if (startedAt !== eventEpoch && change.snapshot.revision <= lastRevision) return;
       accept(change);
     }
-    catch (cause) { report("snapshot", cause); }
+    catch (cause) { if (current() && startedAt === eventEpoch) report("snapshot", cause); }
   };
   void (async () => {
     try {
@@ -78,6 +82,8 @@ export function connectFocus(options: { select(change: FocusChange): void; repor
   })();
   return {
     refresh,
+    close() { visible = false; windowEpoch++; readEpoch++; },
+    reopen() { visible = true; windowEpoch++; readEpoch++; return refresh(); },
     async command(command: FocusCommand): Promise<FocusSnapshot> {
       if (disposed || !ready || failed) throw Error("Focus connection unavailable");
       try {
