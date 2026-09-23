@@ -5,6 +5,9 @@ pub mod data_directory;
 mod data_lock;
 mod desktop;
 mod local_backup;
+// B3c2 wires the already tested internal import session into settings actions.
+#[allow(dead_code)]
+mod import_session;
 mod platform;
 mod reminders;
 
