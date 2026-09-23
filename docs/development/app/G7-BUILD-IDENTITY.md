@@ -28,6 +28,12 @@ Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没�
 
 来源在构建时采样；构建期间应冻结输入，不允许并发修改后再把程序当作该提交产物。正常测试包流程要求干净检出、先构建再探针。
 
+排查 CI 中的 modified 来源时，可显式设置 `MARCH_BUILD_INPUT_DIAGNOSTICS=1`。仅在身份已经判为 modified 时额外只读查询固定范围，按固定公开标签和 tracked/untracked/ignored 类别输出每范围一条去重汇总；查询失败只输出该固定标签与 unavailable。默认关闭，其他值也关闭，开关变化会使 Cargo 重跑身份脚本。诊断不输出实际文件名、目录、Git 原始输出或环境／配置内容，也不改变身份分类和打包拒绝。范围诊断在两平台原生 CI 构建步骤开启，阶段探针见下文。
+
+第二轮探针仅针对 `frontend-source`，使用同一个无外部依赖的 Node 分类器读取 NUL 分隔状态和实际匹配规则。固定来源标签为 root-rules、app-rules、nested-rules、internal-external-rules；固定规则类别为 dependency-directory、build-output、logs、local-config、editor-metadata、other，条目仅分 file/directory/link/other。数量用 zero/one/few/many（0、1、2–9、10 以上），每次最多展示 8 组，超出用 overflow=yes；单行不超过 1024 字符。查询有 5 秒和 2 MiB 边界，超过 512 个项或查询／解析失败会显示 unavailable/unknown，不能当成空范围。未命中的规则只归 other，不输出原始规则。
+
+同一显式开关在安装前、安装后、前端检查后、Rust/fixture 完成且原生构建前、身份采样时输出阶段摘要；Rust 结束与原生构建前是相邻同一边界，合并记录避免重复。身份采样的 Node 直接子进程限时 20 秒，输出最多读取 1025 字节以判断是否超过 1024 字节，stderr 丢弃；清理或输出收尾最多再等 0.5 秒。仅允许固定词表、单行和数量桶通过，失败回退固定 unavailable。只有此诊断开启才额外需要 Node；缺少 Node 不改变身份判断。阶段摘要是时间点证据，不能直接证明 ignored 项不参与应用构建，也不能据此放宽拒包规则。
+
 ## 分发包核对
 
 `prepare-regression.mjs` 新增必填的本次构建可执行文件参数。Windows 必须与 exe payload 是同一路径；Mac 必须来自 zip 对应 `.app/Contents/MacOS/`。CI 用 Info.plist 的 CFBundleExecutable 确认实际文件，并保留 `ditto` 权限打包流程。探针有 10 秒超时和 16 KiB 输出上限，失败不生成测试包，不自动寻找程序或运行任意导入包。
