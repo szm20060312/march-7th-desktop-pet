@@ -70,7 +70,7 @@ const focusTicker = setInterval(() => focusControls.tick(), 1000);
 const controller = createReminderSettingsController({ render: view.render, command: command => connection.command(command), close: async () => { backup.close(); focusControls.close(); await hideSettingsWindow(); } });
 const connection = connectReminders({
   select: controller.receive,
-  opened() { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.refresh(); },
+  opened(intent) { controller.reopen(); backup.reopen(); focusControls.reopen(); void connection.refresh(); void focusConnection.refresh(); if (intent.target === "focus") document.getElementById("focus-section")?.scrollIntoView?.({ block: "start" }); },
   reportError(error) {
     console.error("Reminder settings connection failed", error);
     // Command feedback belongs to the controller's submitting session. The

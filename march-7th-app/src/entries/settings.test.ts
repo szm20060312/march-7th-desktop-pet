@@ -54,7 +54,7 @@ describe("real settings entry / adapter / controller error ownership", () => {
     native.invoke.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
     edit(30); save(); await flush(); expect(dom.get("save-settings").textContent).toBe("正在保存…");
     dom.get("close-settings").dispatch("click"); await flush(); expect(native.invoke).toHaveBeenCalledWith("hide_reminder_settings");
-    native.invoke.mockResolvedValueOnce(fresh(3)); events.get("reminder-settings-opened")!({ payload: null }); await flush(); edit(50);
+    native.invoke.mockResolvedValueOnce(fresh(3)); events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush(); edit(50);
     if (nextState === "saved") { const saved = fresh(4); saved.settings.snoozeMinutes = 50; native.invoke.mockResolvedValueOnce(saved); save(); await flush(); expect(dom.get("settings-notice").textContent).toBe("设置已保存。"); }
     const notice = dom.get("settings-notice").textContent; const status = dom.get("settings-status").textContent;
     rejectOld(Error("late operation")); await flush();
@@ -106,7 +106,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
     expect(dom.get("export-backup").disabled).toBe(true);
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
     finish(preview); await flush();
     expect(dom.get("backup-preview").hidden).toBe(true);
     expect(dom.get("confirm-import").disabled).toBe(true);
@@ -165,7 +165,7 @@ describe("local backup entry stays separate from reminder drafts", () => {
     native.invoke.mockImplementation(name => name === "export_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
     await import("./settings"); await flush(); dom.get("export-backup").dispatch("click"); await flush();
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
     const before = dom.get("backup-status").textContent;
     finish("saved"); await flush();
     expect(dom.get("backup-status").textContent).toBe(before);
@@ -184,6 +184,19 @@ describe("local backup entry stays separate from reminder drafts", () => {
 
 describe("focus settings entry uses the committed Rust state", () => {
   const focus = (revision: number, session: object) => ({ snapshot: { revision, data: { version: 1, session }, error: null, stopped: false }, completedNow: false, error: null });
+  it("finds focus from a newly opened window and again from an already open window, ignoring stale intent", async () => {
+    const scroll = vi.fn(); (dom.get("focus-section") as ElementDouble & { scrollIntoView: typeof scroll }).scrollIntoView = scroll;
+    await import("./settings"); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    scroll.mockClear();
+    events.get("reminder-settings-opened")!({ payload: { generation: 2, target: "settings" } }); await flush();
+    expect(scroll).not.toHaveBeenCalled();
+    events.get("reminder-settings-opened")!({ payload: { generation: 3, target: "focus" } }); await flush();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "focus" } }); await flush();
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
   it("starts, pauses, resumes, ends early, and never invokes mutating view for display", async () => {
     let current = focus(1, { status: "idle" });
     native.invoke.mockImplementation(async (name, args) => {
@@ -218,7 +231,7 @@ describe("focus settings entry uses the committed Rust state", () => {
     await import("./settings"); await flush();
     dom.get("focus-pause").dispatch("click"); await flush();
     dom.get("close-settings").dispatch("click"); await flush();
-    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    events.get("reminder-settings-opened")!({ payload: { generation: 1, target: "settings" } }); await flush();
     const newer = focus(2, { status: "paused", duration_ms: 1_500_000, remaining_ms: 900_000 });
     events.get("focus-changed")!({ payload: newer }); await flush();
     reject({ code: "writeFailed" }); await flush();

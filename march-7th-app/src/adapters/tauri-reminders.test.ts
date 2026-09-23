@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { connectReminders, connectReminderResponses, createReminderReady, parseReminderSnapshot, type ReminderTransport } from "./tauri-reminders";
+import { connectReminders, connectReminderResponses, createReminderReady, parseReminderSnapshot, parseSettingsOpenIntent, type ReminderTransport } from "./tauri-reminders";
 
 export function snapshot(revision = 1) {
   return { revision, settings: { items: ["water", "move", "eyes"].map(id => ({ id, enabled: false, intervalMinutes: 60 })), activeHours: { kind: "allDay" }, snoozeMinutes: 10 }, progress: ["water", "move", "eyes"].map(id => ({ id, nextDueAt: null, pending: false, autoHandled: false })), paused: false, quiet: null, snoozePending: false, presentation: null, persistence: { status: "saved", code: null }, runtimeError: null, stopped: false };
@@ -13,6 +13,16 @@ function host() {
   return { events, stop, invoke, listen };
 }
 describe("reminder native boundary", () => {
+  it("accepts only targeted settings-open generations and ignores delayed older opens", async () => {
+    expect(parseSettingsOpenIntent({ generation: 4, target: "focus" })).toEqual({ generation: 4, target: "focus" });
+    for (const bad of [null, { generation: 0, target: "focus" }, { generation: 1, target: "other" }, { generation: 1, target: "focus", path: "private" }]) expect(() => parseSettingsOpenIntent(bad)).toThrow();
+    const h = host(); const opened = vi.fn(); const c = connectReminders({ select: vi.fn(), opened, reportError: vi.fn(), transport: h }); await flush();
+    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus" });
+    h.events.get("reminder-settings-opened")!({ generation: 2, target: "settings" });
+    h.events.get("reminder-settings-opened")!({ generation: 1, target: "focus" });
+    expect(opened.mock.calls.map(([intent]) => intent)).toEqual([{ generation: 1, target: "focus" }, { generation: 2, target: "settings" }]);
+    c.dispose();
+  });
   it("validates required fields, complete unique identities and scalar bounds; canonicalizes ID order", () => {
     const raw = snapshot(); raw.settings.items.reverse(); raw.progress.reverse();
     expect(parseReminderSnapshot(raw).settings.items.map(i => i.id)).toEqual(["water", "move", "eyes"]);

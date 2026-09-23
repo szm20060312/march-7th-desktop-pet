@@ -29,6 +29,7 @@ struct State {
     reminder_visible: bool,
     reminder_attempts: u16,
     settings: SettingsUi,
+    settings_focus_target: bool,
     settings_settle: Option<(u64, Observation, Placement)>,
     settings_attempts: u16,
     settings_reflow: bool,
@@ -101,6 +102,13 @@ fn running<R: Runtime>(ui: &Ui<R>) -> bool {
     !ui.stopped.load(Ordering::Acquire)
 }
 
+fn settings_open_payload(generation: u64, focus_target: bool) -> serde_json::Value {
+    serde_json::json!({
+        "generation": generation,
+        "target": if focus_target { "focus" } else { "settings" },
+    })
+}
+
 pub fn stop<R: Runtime>(app: &AppHandle<R>) {
     crate::local_backup::invalidate_destroyed(app);
     let Some(ui) = app.try_state::<Ui<R>>() else {
@@ -163,6 +171,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
             let exists = app.get_webview_window("settings").is_some();
             let token = {
                 let mut s = ui.state.lock().unwrap();
+                s.settings_focus_target = operation == "focus-settings";
                 s.settings_settle = None;
                 s.settings_attempts = 0;
                 s.settings.request_open(exists)
@@ -717,8 +726,12 @@ fn settle_settings<R: Runtime>(
     if stable && running(&ui) {
         if ui.state.lock().unwrap().settings.may_show(generation) {
             // The only focus call belongs to an explicit tray open, never reflow.
+            let focus_target = ui.state.lock().unwrap().settings_focus_target;
             window
-                .emit("reminder-settings-opened", ())
+                .emit(
+                    "reminder-settings-opened",
+                    settings_open_payload(generation, focus_target),
+                )
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
@@ -825,6 +838,17 @@ fn require_window(actual: &str, expected: &str) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn settings_open_intent_carries_generation_and_focus_target_only() {
+        assert_eq!(
+            super::settings_open_payload(7, true),
+            serde_json::json!({"generation": 7, "target": "focus"})
+        );
+        assert_eq!(
+            super::settings_open_payload(8, false),
+            serde_json::json!({"generation": 8, "target": "settings"})
+        );
+    }
     #[test]
     fn ui_commands_reject_the_wrong_native_caller() {
         for expected in ["settings", "reminder"] {

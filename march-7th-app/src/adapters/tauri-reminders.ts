@@ -9,14 +9,21 @@ export interface ReminderTransport {
 }
 const nativeTransport: ReminderTransport = { invoke, listen: (name, callback) => listen<unknown>(name, event => callback(event.payload)) };
 export type ReminderConnectionError = { stage: "listen" | "snapshot" | "event" | "command"; recovery: "restart" | "retry"; cause: unknown };
+export type SettingsOpenIntent = { generation: number; target: "focus" | "settings" };
+export function parseSettingsOpenIntent(value: unknown): SettingsOpenIntent {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw Error("Invalid settings open event");
+  const fields = value as Record<string, unknown>;
+  if (Object.keys(fields).length !== 2 || !Number.isSafeInteger(fields.generation) || (fields.generation as number) < 1 || !["focus", "settings"].includes(String(fields.target))) throw Error("Invalid settings open event");
+  return fields as SettingsOpenIntent;
+}
 export function connectReminders(options: {
   select(snapshot: ReminderSnapshot): void;
   reportError(error: ReminderConnectionError): void;
-  opened?(): void;
+  opened?(intent: SettingsOpenIntent): void;
   transport?: ReminderTransport;
 }) {
   const transport = options.transport ?? nativeTransport;
-  let disposed = false; let failed = false; let connected = false; let latest: ReminderSnapshot | undefined;
+  let disposed = false; let failed = false; let connected = false; let latest: ReminderSnapshot | undefined; let lastOpenGeneration = 0;
   const subscriptions: (() => void)[] = [];
   const report = (stage: ReminderConnectionError["stage"], cause: unknown) => { if (!disposed) options.reportError({ stage, recovery: stage === "listen" ? "restart" : "retry", cause }); };
   const accept = (value: unknown) => {
@@ -35,7 +42,13 @@ export function connectReminders(options: {
       const stop = await transport.listen("reminders-changed", value => { if (disposed || failed) return; try { accept(value); } catch (cause) { report("event", cause); } });
       if (disposed) { stop(); return; } subscriptions.push(stop);
       if (options.opened) {
-        const stopOpened = await transport.listen("reminder-settings-opened", () => { if (!disposed) options.opened?.(); });
+        const stopOpened = await transport.listen("reminder-settings-opened", value => {
+          if (disposed) return;
+          try {
+            const intent = parseSettingsOpenIntent(value);
+            if (intent.generation > lastOpenGeneration) { lastOpenGeneration = intent.generation; options.opened?.(intent); }
+          } catch (cause) { report("event", cause); }
+        });
         if (disposed) { stopOpened(); return; } subscriptions.push(stopOpened);
       }
     } catch (cause) { failed = true; report("listen", cause); subscriptions.splice(0).forEach(stop => stop()); return; }
