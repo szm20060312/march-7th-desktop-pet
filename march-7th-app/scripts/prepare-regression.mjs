@@ -121,8 +121,8 @@ export function prepareRegression({ target, payloadPath, docsDirectory, outputDi
 function isCliEntry() {
   if (!process.argv[1]) return false;
   try {
-    // Node resolves module aliases; argv can still contain a symlink/junction.
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+    // Node resolves module aliases; argv may retain a junction or 8.3 short name.
+    return realpathSync.native(process.argv[1]) === realpathSync.native(fileURLToPath(import.meta.url));
   } catch {
     // Imported modules may run under eval with an arbitrary, nonexistent argv.
     return false;
