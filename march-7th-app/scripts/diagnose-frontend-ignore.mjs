@@ -4,6 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const phases = new Set(["before-install", "after-install", "after-check", "after-rust-before-native", "identity-sample"]);
+// Porcelain v1 XY combinations from git-status's documented short-format table.
+// Unknown/future states are unavailable, never evidence of an empty scope.
+const porcelainStates = new Set([
+  " M", " A", " D", " T", " R", " C",
+  "M ", "MM", "MT", "MD", "T ", "TM", "TT", "TD", "A ", "AM", "AT", "AD", "D ",
+  "R ", "RM", "RT", "RD", "C ", "CM", "CT", "CD",
+  "DD", "AU", "UD", "UA", "DU", "AA", "UU", "??", "!!",
+]);
 const rules = new Map([
   ["dependency-directory", ["node_modules", "node_modules/", ".pnpm-store/"]],
   ["build-output", ["dist", "dist/", "dist-ssr", "target/", "src-tauri/target/", "coverage/", "/regression-output/"]],
@@ -39,8 +47,9 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
       const record = status[index];
       if (record.length < 4 || record[2] !== " ") return unavailable;
       const flags = record.slice(0, 2);
+      if (!porcelainStates.has(flags)) return unavailable;
       if (flags === "!!") entries.push(path.relative(appRoot, path.resolve(repoRoot, record.slice(3))).split(path.sep).join("/"));
-      if (/[RC]/.test(flags) && ++index >= status.length) return unavailable;
+      if (/[RC]/.test(flags) && (++index >= status.length || status[index] === "")) return unavailable;
     }
     if (entries.length > 512) return unavailable;
     if (entries.length === 0) return `ignored-input phase=${phase} state=ok total=zero groups=none overflow=no`;
@@ -50,7 +59,7 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
     const groups = new Map();
     for (let index = 0; index < entries.length; index++) {
       const [source, line, pattern, entry] = records.slice(index * 4, index * 4 + 4);
-      if (entry !== entries[index] || !/^\d+$/.test(line) || pattern.startsWith("!") || !entry.startsWith("src/")) return unavailable;
+      if (entry !== entries[index] || !source || !/^[1-9]\d*$/.test(line) || !pattern || pattern.startsWith("!") || !entry.startsWith("src/")) return unavailable;
       const location = path.resolve(appRoot, entry);
       if (!location.startsWith(frontend + path.sep)) return unavailable;
       const ruleSource = path.resolve(repoRoot, source);
