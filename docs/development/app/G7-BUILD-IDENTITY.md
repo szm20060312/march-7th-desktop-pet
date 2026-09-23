@@ -32,7 +32,9 @@ Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没�
 
 第二轮探针仅针对 `frontend-source`，使用同一个无外部依赖的 Node 分类器读取 NUL 分隔状态和实际匹配规则。固定来源标签为 root-rules、app-rules、nested-rules、internal-external-rules；固定规则类别为 dependency-directory、build-output、logs、local-config、editor-metadata、other，条目仅分 file/directory/link/other。数量用 zero/one/few/many（0、1、2–9、10 以上），每次最多展示 8 组，超出用 overflow=yes；单行不超过 1024 字符。查询有 5 秒和 2 MiB 边界，超过 512 个项或查询／解析失败会显示 unavailable/unknown，不能当成空范围。未命中的规则只归 other，不输出原始规则。
 
-同一显式开关在安装前、安装后、前端检查后、Rust/fixture 完成且原生构建前、身份采样时输出阶段摘要；Rust 结束与原生构建前是相邻同一边界，合并记录避免重复。身份采样的 Node 直接子进程限时 20 秒，输出最多读取 1025 字节以判断是否超过 1024 字节，stderr 丢弃；清理或输出收尾最多再等 0.5 秒。仅允许固定词表、单行和数量桶通过，失败回退固定 unavailable。只有此诊断开启才额外需要 Node；缺少 Node 不改变身份判断。阶段摘要是时间点证据，不能直接证明 ignored 项不参与应用构建，也不能据此放宽拒包规则。
+同一显式开关在安装前、安装后、前端检查后、Cargo 测试后、Clippy 后、identity fixture 后及身份采样时输出阶段摘要。第三轮将 Rust 阶段拆开，以缩小首次出现或首次查询失败的区间；fixture 后即原生构建前，不再重复。三个测试后探针在对应步骤成功或失败后均可运行，但不继续原本失败的构建／打包。身份采样的 Node 直接子进程限时 20 秒，输出最多读取 1025 字节以判断是否超过 1024 字节，stderr 丢弃；清理或输出收尾最多再等 0.5 秒。仅允许固定词表、单行和数量桶通过，失败回退固定 unavailable。只有此诊断开启才额外需要 Node；缺少 Node 不改变身份判断。阶段摘要是时间点证据，不能直接证明 ignored 项不参与应用构建，也不能据此放宽拒包规则。
+
+unavailable 摘要另带固定 `failureStage`：phase、root、status-query、status-format、limit、ignore-query、ignore-format、path、metadata；Rust 无法取得或验证子进程摘要时为 helper。标签只说明失败的操作位置，不含异常原文或敏感输入，也不表示已经确定根因。路径范围校验在忽略规则查询前执行；任何不确定结果仍保持 unknown，成功摘要不添加失败字段。
 
 ## 分发包核对
 

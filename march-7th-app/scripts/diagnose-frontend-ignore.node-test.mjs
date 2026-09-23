@@ -19,7 +19,7 @@ function fixture(t) {
   return { root, appRoot };
 }
 const phase = "after-check";
-const unavailable = `ignored-input phase=${phase} state=unavailable total=unknown groups=unknown overflow=no`;
+const unavailable = stage => `ignored-input phase=${phase} state=unavailable total=unknown groups=unknown overflow=no failureStage=${stage}`;
 
 test("ignored rule summaries classify actual NUL queries using only fixed vocabulary and coarse counts", t => {
   const { root, appRoot } = fixture(t);
@@ -46,9 +46,9 @@ test("ignored rule summaries distinguish empty, unavailable, disabled and invali
   const failedGit = () => { calls++; throw Error("PRIVATE_GIT_STDERR /user/path ENV=secret"); };
   for (const enabled of [undefined, "", "0", "true"]) assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled, git: failedGit }), "");
   assert.equal(calls, 0);
-  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: failedGit }), unavailable);
-  assert.equal(summarizeFrontendIgnored({ appRoot, phase: "PRIVATE\nPHASE", enabled: "1", git: failedGit }), "ignored-input phase=unknown state=unavailable total=unknown groups=unknown overflow=no");
-  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: () => Buffer.from("PRIVATE_BAD_NUL") }), unavailable);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: failedGit }), unavailable("root"));
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase: "PRIVATE\nPHASE", enabled: "1", git: failedGit }), "ignored-input phase=unknown state=unavailable total=unknown groups=unknown overflow=no failureStage=phase");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: () => Buffer.from("PRIVATE_BAD_NUL") }), unavailable("root"));
 });
 
 test("ignored rule summaries preserve origins when the app directory is an alias", t => {
@@ -67,7 +67,7 @@ test("ignored rule summaries never leak newline names and coarsen large groups",
   assert.equal(line, `ignored-input phase=${phase} state=ok total=many groups=app-rules:local-config:file:many overflow=no`);
   let query = 0;
   const malformed = () => Buffer.from(++query === 1 ? root + "\n" : query === 2 ? "!! app/src/PRIVATE\nNAME.local\0" : "PRIVATE_RULE_SOURCE\0NaN\0PRIVATE_PATTERN\0src/PRIVATE\nNAME.local\0");
-  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: malformed }), unavailable);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: malformed }), unavailable("ignore-format"));
   assert.equal(query, 3, "malformed rule output must be reached after a valid root and status");
 });
 
@@ -91,7 +91,7 @@ test("porcelain rejects unknown states and malformed NUL or rename records at th
     "!! app/src/PRIVATE", "!! \0", "R  app/src/PRIVATE\0", " C app/src/PRIVATE\0\0", Buffer.from([0xff, 0]),
   ]) {
     const probe = injectedRecords(root, status);
-    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable);
+    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable("status-format"));
     assert.deepEqual(probe.calls, ["rev-parse", "status"]);
   }
 });
@@ -137,7 +137,7 @@ test("malformed ignore-rule output fails at the rule query after valid root and 
     "app/.gitignore\0" + "1\0*.local\0src/PRIVATE-other.local\0",
   ]) {
     const probe = injectedRecords(root, "!! app/src/PRIVATE.local\0", record);
-    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable);
+    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable("ignore-format"));
     assert.deepEqual(probe.calls, ["rev-parse", "status", "check-ignore"]);
   }
 });
@@ -157,6 +157,39 @@ test("ignored rule summaries cap groups and fail conservatively above the enumer
   assert.equal(line.includes("PRIVATE"), false);
   let calls = 0;
   const oversized = () => Buffer.from(++calls === 1 ? root + "\n" : Array.from({ length: 513 }, (_, i) => `!! app/src/PRIVATE-${i}\0`).join(""));
-  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: oversized }), unavailable);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: oversized }), unavailable("limit"));
   assert.equal(calls, 2);
+});
+
+test("fixed failure stages identify each failing operation without exposing errors or inputs", t => {
+  const { root, appRoot } = fixture(t);
+  const cases = [
+    { stage: "root", root: "PRIVATE_BAD_ROOT", calls: ["rev-parse"] },
+    { stage: "status-query", fail: "status", calls: ["rev-parse", "status"] },
+    { stage: "status-format", status: "XX app/src/PRIVATE\0", calls: ["rev-parse", "status"] },
+    { stage: "limit", status: Array.from({ length: 513 }, () => "!! app/src/PRIVATE.local\0").join(""), calls: ["rev-parse", "status"] },
+    { stage: "path", status: "!! PRIVATE-OUTSIDE.local\0", calls: ["rev-parse", "status"] },
+    { stage: "ignore-query", fail: "check-ignore", calls: ["rev-parse", "status", "check-ignore"] },
+    { stage: "ignore-format", rule: "PRIVATE_BAD_NUL", calls: ["rev-parse", "status", "check-ignore"] },
+    { stage: "metadata", calls: ["rev-parse", "status", "check-ignore"] },
+  ];
+  for (const scenario of cases) {
+    const calls = [];
+    const git = args => {
+      calls.push(args[0]);
+      if (args[0] === scenario.fail) throw Error("PRIVATE_FAILURE /private/path ENV=secret\nraw error");
+      if (args[0] === "rev-parse") return Buffer.from((scenario.root ?? root) + "\n");
+      if (args[0] === "status") return Buffer.from(scenario.status ?? "!! app/src/PRIVATE.local\0");
+      return Buffer.from(scenario.rule ?? "app/.gitignore\0" + "1\0*.local\0src/PRIVATE.local\0");
+    };
+    const line = summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git });
+    assert.equal(line, unavailable(scenario.stage));
+    assert.deepEqual(calls, scenario.calls);
+    assert.equal(line.includes("PRIVATE"), false);
+    assert.equal(line.split("\n").length, 1);
+    assert.ok(Buffer.byteLength(line) <= 1024);
+  }
+  for (const phase of ["after-cargo-test", "after-clippy", "after-identity-fixture"]) {
+    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=zero groups=none overflow=no`);
+  }
 });

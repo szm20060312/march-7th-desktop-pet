@@ -124,16 +124,31 @@ fn safe_ignored_summary(line: &str) -> bool {
     if line.len() > 1024
         || line.contains('\n')
         || line.contains('\r')
-        || fields.len() != 6
+        || !(6..=7).contains(&fields.len())
         || fields[0] != "ignored-input"
         || fields[1] != "phase=identity-sample"
     {
         return false;
     }
     if fields[2] == "state=unavailable" {
-        return fields[3..] == ["total=unknown", "groups=unknown", "overflow=no"];
+        return fields.len() == 7
+            && fields[3..6] == ["total=unknown", "groups=unknown", "overflow=no"]
+            && [
+                "failureStage=phase",
+                "failureStage=root",
+                "failureStage=status-query",
+                "failureStage=status-format",
+                "failureStage=limit",
+                "failureStage=ignore-query",
+                "failureStage=ignore-format",
+                "failureStage=path",
+                "failureStage=metadata",
+                "failureStage=helper",
+            ]
+            .contains(&fields[6]);
     }
-    if fields[2] != "state=ok"
+    if fields.len() != 6
+        || fields[2] != "state=ok"
         || !["total=zero", "total=one", "total=few", "total=many"].contains(&fields[3])
         || !["overflow=no", "overflow=yes"].contains(&fields[5])
     {
@@ -176,7 +191,7 @@ fn diagnose_ignored_frontend(root: &Path) {
     watch(&script);
     let summary = bounded_ignored_query(root, &script);
     let line = summary.as_deref().map(str::trim).filter(|line| safe_ignored_summary(line))
-        .unwrap_or("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no");
+        .unwrap_or("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=helper");
     println!("cargo:warning={line}");
 }
 

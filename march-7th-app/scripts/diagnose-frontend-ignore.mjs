@@ -3,7 +3,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const phases = new Set(["before-install", "after-install", "after-check", "after-rust-before-native", "identity-sample"]);
+const phases = new Set(["before-install", "after-install", "after-check", "after-cargo-test", "after-clippy", "after-identity-fixture", "identity-sample"]);
 // Porcelain v1 XY combinations from git-status's documented short-format table.
 // Unknown/future states are unavailable, never evidence of an empty scope.
 const porcelainStates = new Set([
@@ -31,43 +31,53 @@ function nulRecords(bytes) {
 export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
   if (enabled !== "1") return "";
   const safePhase = phases.has(phase) ? phase : "unknown";
-  const unavailable = `ignored-input phase=${safePhase} state=unavailable total=unknown groups=unknown overflow=no`;
-  if (safePhase === "unknown") return unavailable;
+  const unavailable = stage => `ignored-input phase=${safePhase} state=unavailable total=unknown groups=unknown overflow=no failureStage=${stage}`;
+  if (safePhase === "unknown") return unavailable("phase");
+  let failureStage = "root";
   try {
     appRoot = realpathSync(appRoot);
     const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
     for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]) delete env[key];
     const query = git ?? ((args, input) => execFileSync("git", args, { cwd: appRoot, input, env, timeout: 5_000, maxBuffer: 2 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }));
     let repoRoot = decode(query(["rev-parse", "--show-toplevel"])).trim();
-    if (!path.isAbsolute(repoRoot) || repoRoot.includes("\0")) return unavailable;
+    if (!path.isAbsolute(repoRoot) || repoRoot.includes("\0")) return unavailable("root");
     repoRoot = realpathSync(repoRoot);
-    const status = nulRecords(query(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--", "src"]));
+    failureStage = "status-query";
+    const statusBytes = query(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--", "src"]);
+    failureStage = "status-format";
+    const status = nulRecords(statusBytes);
     const entries = [];
     for (let index = 0; index < status.length; index++) {
       const record = status[index];
-      if (record.length < 4 || record[2] !== " ") return unavailable;
+      if (record.length < 4 || record[2] !== " ") return unavailable("status-format");
       const flags = record.slice(0, 2);
-      if (!porcelainStates.has(flags)) return unavailable;
+      if (!porcelainStates.has(flags)) return unavailable("status-format");
       if (flags === "!!") entries.push(path.relative(appRoot, path.resolve(repoRoot, record.slice(3))).split(path.sep).join("/"));
-      if (/[RC]/.test(flags) && (++index >= status.length || status[index] === "")) return unavailable;
+      if (/[RC]/.test(flags) && (++index >= status.length || status[index] === "")) return unavailable("status-format");
     }
-    if (entries.length > 512) return unavailable;
+    if (entries.length > 512) return unavailable("limit");
     if (entries.length === 0) return `ignored-input phase=${phase} state=ok total=zero groups=none overflow=no`;
-    const records = nulRecords(query(["check-ignore", "-v", "-z", "--stdin"], Buffer.from(entries.join("\0") + "\0")));
-    if (records.length !== entries.length * 4) return unavailable;
+    failureStage = "path";
     const frontend = path.resolve(appRoot, "src");
+    const locations = entries.map(entry => path.resolve(appRoot, entry));
+    if (entries.some((entry, index) => !entry.startsWith("src/") || !locations[index].startsWith(frontend + path.sep))) return unavailable("path");
+    failureStage = "ignore-query";
+    const ruleBytes = query(["check-ignore", "-v", "-z", "--stdin"], Buffer.from(entries.join("\0") + "\0"));
+    failureStage = "ignore-format";
+    const records = nulRecords(ruleBytes);
+    if (records.length !== entries.length * 4) return unavailable("ignore-format");
     const groups = new Map();
     for (let index = 0; index < entries.length; index++) {
+      failureStage = "ignore-format";
       const [source, line, pattern, entry] = records.slice(index * 4, index * 4 + 4);
-      if (entry !== entries[index] || !source || !/^[1-9]\d*$/.test(line) || !pattern || pattern.startsWith("!") || !entry.startsWith("src/")) return unavailable;
-      const location = path.resolve(appRoot, entry);
-      if (!location.startsWith(frontend + path.sep)) return unavailable;
+      if (entry !== entries[index] || !source || !/^[1-9]\d*$/.test(line) || !pattern || pattern.startsWith("!")) return unavailable("ignore-format");
       const ruleSource = path.resolve(repoRoot, source);
       const origin = ruleSource === path.join(repoRoot, ".gitignore") ? "root-rules"
         : ruleSource === path.resolve(appRoot, ".gitignore") ? "app-rules"
           : ruleSource.startsWith(frontend + path.sep) ? "nested-rules" : "internal-external-rules";
       const rule = [...rules].find(([, patterns]) => patterns.includes(pattern))?.[0] ?? "other";
-      const stat = lstatSync(location);
+      failureStage = "metadata";
+      const stat = lstatSync(locations[index]);
       const kind = stat.isSymbolicLink() ? "link" : stat.isDirectory() ? "directory" : stat.isFile() ? "file" : "other";
       const key = `${origin}:${rule}:${kind}`;
       groups.set(key, (groups.get(key) ?? 0) + 1);
@@ -77,7 +87,7 @@ export function summarizeFrontendIgnored({ appRoot, phase, enabled, git }) {
     return `ignored-input phase=${phase} state=ok total=${bucket(entries.length)} groups=${summary} overflow=${rows.length > 8 ? "yes" : "no"}`;
   } catch {
     // No Git stderr, exception message, path, rule or input content leaves here.
-    return unavailable;
+    return unavailable(failureStage);
   }
 }
 

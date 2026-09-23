@@ -186,16 +186,22 @@ test("opt-in source diagnostics report only bounded fixed scopes and categories 
   assert.equal(disabledAgain.identity, disabled.identity);
   assert.deepEqual(disabledAgain.diagnostics, []);
   assert.deepEqual(disabledAgain.ignored, []);
+  const classifiedFailure = "ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=metadata";
+  writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), `console.log(${JSON.stringify(classifiedFailure)});`);
+  const knownFailure = run("1");
+  assert.equal(knownFailure.identity, disabled.identity);
+  assert.equal(knownFailure.ignored.length, 1);
+  assert.ok(knownFailure.ignored[0].endsWith(classifiedFailure));
   writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), 'console.log("PRIVATE-NAME /private/path raw-config");');
   const unsafeChild = run("1");
   assert.equal(unsafeChild.identity, disabled.identity);
   assert.equal(unsafeChild.ignored.length, 1);
-  assert.ok(unsafeChild.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
-  for (const script of ['console.log("PRIVATE".repeat(1000));', 'console.log("ignored-input phase=identity-sample\\nstate=ok total=zero groups=none overflow=no");', 'setInterval(() => {}, 60000);']) {
+  assert.ok(unsafeChild.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=helper"));
+  for (const script of ['console.log("PRIVATE".repeat(1000));', 'console.log("ignored-input phase=identity-sample\\nstate=ok total=zero groups=none overflow=no");', 'console.log("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=PRIVATE");', 'setInterval(() => {}, 60000);']) {
     writeFileSync(path.join(directory, "scripts/diagnose-frontend-ignore.mjs"), script);
     const bounded = run("1");
     assert.equal(bounded.identity, disabled.identity);
     assert.equal(bounded.ignored.length, 1);
-    assert.ok(bounded.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no"));
+    assert.ok(bounded.ignored[0].endsWith("ignored-input phase=identity-sample state=unavailable total=unknown groups=unknown overflow=no failureStage=helper"));
   }
 });
