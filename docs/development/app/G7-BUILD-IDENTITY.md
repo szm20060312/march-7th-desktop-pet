@@ -36,6 +36,8 @@ Git 必须确认该应用的 `src-tauri/Cargo.toml` 受当前仓库跟踪；没�
 
 unavailable 摘要另带固定 `failureStage`：phase、root、status-query、status-format、limit、ignore-query、ignore-format、path、metadata；Rust 无法取得或验证子进程摘要时为 helper。标签只说明失败的操作位置，不含异常原文或敏感输入，也不表示已经确定根因。路径范围校验在忽略规则查询前执行；任何不确定结果仍保持 unknown，成功摘要不添加失败字段。
 
+第四轮仅修复诊断路径解析：status 和 check-ignore 显式使用同一个已验证仓库根，status 使用 repo-relative literal pathspec，NUL 输入／返回保持 repo-relative，不尝试 app-relative 猜测回退。声明范围仍是本 app 的 `src` 目录，包括经验证的根目录自身。候选路径必须拒绝绝对、盘符相对、`.`／`..` 遍历、空组件及相似前缀；规范化后还比较真实范围目录的设备／文件标识，不能仅凭转小写接受大小写敏感文件系统中的另一个目录。链接解析后越出范围、源根本身是链接、无法取得可靠元数据或规则查询失败均保守 unavailable。该修复不扩大应用构建输入、不改变 sourceState 或拒包，并未证明已解释 CI 中实际的 ignored 项。
+
 ## 分发包核对
 
 `prepare-regression.mjs` 新增必填的本次构建可执行文件参数。Windows 必须与 exe payload 是同一路径；Mac 必须来自 zip 对应 `.app/Contents/MacOS/`。CI 用 Info.plist 的 CFBundleExecutable 确认实际文件，并保留 `ditto` 权限打包流程。探针有 10 秒超时和 16 KiB 输出上限，失败不生成测试包，不自动寻找程序或运行任意导入包。

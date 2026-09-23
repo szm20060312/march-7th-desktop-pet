@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, symlinkSync, renameSync, existsSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { summarizeFrontendIgnored } from "./diagnose-frontend-ignore.mjs";
 
-function fixture(t) {
+function fixture(t, appName = "app") {
   const root = mkdtempSync(path.join(os.tmpdir(), "march7-ignore-class-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const appRoot = path.join(root, "app");
+  const appRoot = path.join(root, appName);
   mkdirSync(path.join(appRoot, "src/nested"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: root, stdio: "pipe" });
   writeFileSync(path.join(root, ".gitignore"), "*.log\nnode_modules/\n");
@@ -20,6 +20,24 @@ function fixture(t) {
 }
 const phase = "after-check";
 const unavailable = stage => `ignored-input phase=${phase} state=unavailable total=unknown groups=unknown overflow=no failureStage=${stage}`;
+
+test("a real ignored source root directory is part of the declared scope", t => {
+  const { root, appRoot } = fixture(t);
+  appendFileSync(path.join(root, ".gitignore"), "app/src/\n");
+  writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=one groups=root-rules:other:directory:one overflow=no`);
+});
+
+test("real Git case-equivalent source entries respect the filesystem scope", t => {
+  const { appRoot } = fixture(t);
+  const source = path.join(appRoot, "src");
+  writeFileSync(path.join(source, "PRIVATE.local"), "private");
+  renameSync(source, path.join(appRoot, "rename-temp"));
+  renameSync(path.join(appRoot, "rename-temp"), path.join(appRoot, "SRC"));
+  const git = (args, input) => execFileSync("git", args.includes("status") ? ["--icase-pathspecs", ...args] : args, { cwd: appRoot, input, stdio: ["pipe", "pipe", "pipe"] });
+  const expected = existsSync(source) ? `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no` : unavailable("path");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git }), expected);
+});
 
 test("ignored rule summaries classify actual NUL queries using only fixed vocabulary and coarse counts", t => {
   const { root, appRoot } = fixture(t);
@@ -65,8 +83,10 @@ test("ignored rule summaries never leak newline names and coarsen large groups",
   if (process.platform !== "win32") writeFileSync(path.join(appRoot, "src/PRIVATE\nnewline.local"), "private");
   const line = summarizeFrontendIgnored({ appRoot, phase, enabled: "1" });
   assert.equal(line, `ignored-input phase=${phase} state=ok total=many groups=app-rules:local-config:file:many overflow=no`);
+  const recordName = process.platform === "win32" ? "PRIVATE-NAME.local" : "PRIVATE\nNAME.local";
+  writeFileSync(path.join(appRoot, "src", recordName), "private");
   let query = 0;
-  const malformed = () => Buffer.from(++query === 1 ? root + "\n" : query === 2 ? "!! app/src/PRIVATE\nNAME.local\0" : "PRIVATE_RULE_SOURCE\0NaN\0PRIVATE_PATTERN\0src/PRIVATE\nNAME.local\0");
+  const malformed = () => Buffer.from(++query === 1 ? root + "\n" : query === 2 ? `!! app/src/${recordName}\0` : `PRIVATE_RULE_SOURCE\nNAME\0NaN\0PRIVATE_PATTERN\0app/src/${recordName}\0`);
   assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: malformed }), unavailable("ignore-format"));
   assert.equal(query, 3, "malformed rule output must be reached after a valid root and status");
 });
@@ -74,10 +94,12 @@ test("ignored rule summaries never leak newline names and coarsen large groups",
 function injectedRecords(root, status, ruleOutput) {
   const calls = [];
   const git = args => {
-    calls.push(args[0]);
-    if (args[0] === "rev-parse") return Buffer.from(root + "\n");
-    if (args[0] === "status") return Buffer.isBuffer(status) ? status : Buffer.from(status);
-    if (args[0] === "check-ignore") return Buffer.from(ruleOutput);
+    const command = args[0] === "-C" ? args[2] : args[0];
+    calls.push(command);
+    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync(root), "all record queries must use the verified repository root");
+    if (command === "rev-parse") return Buffer.from(root + "\n");
+    if (command === "status") return Buffer.isBuffer(status) ? status : Buffer.from(status);
+    if (command === "check-ignore") return Buffer.from(ruleOutput);
     throw Error("unexpected query");
   };
   return { git, calls };
@@ -103,7 +125,7 @@ test("porcelain accepts documented tracked untracked ignored and rename/copy sta
   for (const flag of flags) {
     const secondPath = /[RC]/.test(flag) ? "XX PRIVATE-original\nname\0" : "";
     const status = `${flag} app/src/PRIVATE-tracked\0${secondPath}!! app/src/PRIVATE.local\0`;
-    const probe = injectedRecords(root, status, "app/.gitignore\0" + "1\0*.local\0src/PRIVATE.local\0");
+    const probe = injectedRecords(root, status, "app/.gitignore\0" + "1\0*.local\0app/src/PRIVATE.local\0");
     assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no`);
     assert.deepEqual(probe.calls, ["rev-parse", "status", "check-ignore"]);
   }
@@ -127,14 +149,14 @@ test("malformed ignore-rule output fails at the rule query after valid root and 
   const { root, appRoot } = fixture(t);
   writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
   for (const record of [
-    "app/.gitignore\0" + "1\0*.local\0src/PRIVATE.local", // Missing terminating NUL.
+    "app/.gitignore\0" + "1\0*.local\0app/src/PRIVATE.local", // Missing terminating NUL.
     "app/.gitignore\0" + "1\0*.local\0", // Missing path field.
-    "app/.gitignore\0" + "0\0*.local\0src/PRIVATE.local\0",
-    "app/.gitignore\0" + "NaN\0*.local\0src/PRIVATE.local\0",
-    "\0" + "1\0*.local\0src/PRIVATE.local\0",
-    "app/.gitignore\0" + "1\0\0src/PRIVATE.local\0",
-    "app/.gitignore\0" + "1\0!*.local\0src/PRIVATE.local\0",
-    "app/.gitignore\0" + "1\0*.local\0src/PRIVATE-other.local\0",
+    "app/.gitignore\0" + "0\0*.local\0app/src/PRIVATE.local\0",
+    "app/.gitignore\0" + "NaN\0*.local\0app/src/PRIVATE.local\0",
+    "\0" + "1\0*.local\0app/src/PRIVATE.local\0",
+    "app/.gitignore\0" + "1\0\0app/src/PRIVATE.local\0",
+    "app/.gitignore\0" + "1\0!*.local\0app/src/PRIVATE.local\0",
+    "app/.gitignore\0" + "1\0*.local\0app/src/PRIVATE-other.local\0",
   ]) {
     const probe = injectedRecords(root, "!! app/src/PRIVATE.local\0", record);
     assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable("ignore-format"));
@@ -163,6 +185,7 @@ test("ignored rule summaries cap groups and fail conservatively above the enumer
 
 test("fixed failure stages identify each failing operation without exposing errors or inputs", t => {
   const { root, appRoot } = fixture(t);
+  writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
   const cases = [
     { stage: "root", root: "PRIVATE_BAD_ROOT", calls: ["rev-parse"] },
     { stage: "status-query", fail: "status", calls: ["rev-parse", "status"] },
@@ -171,16 +194,17 @@ test("fixed failure stages identify each failing operation without exposing erro
     { stage: "path", status: "!! PRIVATE-OUTSIDE.local\0", calls: ["rev-parse", "status"] },
     { stage: "ignore-query", fail: "check-ignore", calls: ["rev-parse", "status", "check-ignore"] },
     { stage: "ignore-format", rule: "PRIVATE_BAD_NUL", calls: ["rev-parse", "status", "check-ignore"] },
-    { stage: "metadata", calls: ["rev-parse", "status", "check-ignore"] },
+    { stage: "metadata", status: "!! app/src/MISSING.local\0", calls: ["rev-parse", "status"] },
   ];
   for (const scenario of cases) {
     const calls = [];
     const git = args => {
-      calls.push(args[0]);
-      if (args[0] === scenario.fail) throw Error("PRIVATE_FAILURE /private/path ENV=secret\nraw error");
-      if (args[0] === "rev-parse") return Buffer.from((scenario.root ?? root) + "\n");
-      if (args[0] === "status") return Buffer.from(scenario.status ?? "!! app/src/PRIVATE.local\0");
-      return Buffer.from(scenario.rule ?? "app/.gitignore\0" + "1\0*.local\0src/PRIVATE.local\0");
+      const command = args[0] === "-C" ? args[2] : args[0];
+      calls.push(command);
+      if (command === scenario.fail) throw Error("PRIVATE_FAILURE /private/path ENV=secret\nraw error");
+      if (command === "rev-parse") return Buffer.from((scenario.root ?? root) + "\n");
+      if (command === "status") return Buffer.from(scenario.status ?? "!! app/src/PRIVATE.local\0");
+      return Buffer.from(scenario.rule ?? "app/.gitignore\0" + "1\0*.local\0app/src/PRIVATE.local\0");
     };
     const line = summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git });
     assert.equal(line, unavailable(scenario.stage));
@@ -189,7 +213,75 @@ test("fixed failure stages identify each failing operation without exposing erro
     assert.equal(line.split("\n").length, 1);
     assert.ok(Buffer.byteLength(line) <= 1024);
   }
+  rmSync(path.join(appRoot, "src/PRIVATE.local"));
   for (const phase of ["after-cargo-test", "after-clippy", "after-identity-fixture"]) {
     assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=zero groups=none overflow=no`);
   }
+});
+
+test("real queries share one repository cwd, literal scope and repo-relative NUL input", t => {
+  const { root, appRoot } = fixture(t, "app[private]");
+  writeFileSync(path.join(appRoot, "src/PRIVATE.local"), "private");
+  const seen = [];
+  const git = (args, input) => {
+    const command = args[0] === "-C" ? args[2] : args[0];
+    seen.push(command);
+    if (command !== "rev-parse") assert.ok(args[0] === "-C" && args[1] === realpathSync(root), "fixed repository context");
+    if (command === "status") assert.ok(args.at(-1) === ":(literal)app[private]/src", "literal source scope");
+    if (command === "check-ignore") assert.ok(input.equals(Buffer.from("app[private]/src/PRIVATE.local\0")), "repo-relative stdin must match porcelain records");
+    return execFileSync("git", args, { cwd: appRoot, input, stdio: ["pipe", "pipe", "pipe"] });
+  };
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git }), `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:file:one overflow=no`);
+  assert.deepEqual(seen, ["rev-parse", "status", "check-ignore"]);
+});
+
+test("absolute traversal sibling-prefix and app-relative records never escape the declared scope", t => {
+  const { root, appRoot } = fixture(t);
+  for (const directory of [path.join(appRoot, "src"), path.join(appRoot, "src-neighbor"), path.join(root, "src")]) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, "PRIVATE.local"), "private");
+  }
+  for (const entry of [
+    path.join(appRoot, "src/PRIVATE.local"), "/PRIVATE/absolute", "C:\\PRIVATE\\absolute", "C:PRIVATE", "\\\\PRIVATE\\share",
+    "app/src/../src/PRIVATE.local", "app/src/./PRIVATE.local", "app//src/PRIVATE.local", "app\\src\\..\\src\\PRIVATE.local",
+    "app/src-neighbor/PRIVATE.local", "src/PRIVATE.local",
+  ]) {
+    const probe = injectedRecords(root, `!! ${entry}\0`);
+    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable("path"));
+    assert.deepEqual(probe.calls, ["rev-parse", "status"]);
+  }
+  // On case-sensitive volumes, a similarly spelled directory is a different
+  // object and must not be accepted merely because a lowercase prefix matches.
+  const distinctCase = path.join(appRoot, "SRC");
+  if (!existsSync(distinctCase)) {
+    mkdirSync(distinctCase);
+    writeFileSync(path.join(distinctCase, "PRIVATE.local"), "private");
+    const probe = injectedRecords(root, "!! app/SRC/PRIVATE.local\0");
+    assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: probe.git }), unavailable("path"));
+    assert.deepEqual(probe.calls, ["rev-parse", "status"]);
+  }
+});
+
+test("real symlink escapes are rejected while links remaining inside the source root are classifiable", t => {
+  const { root, appRoot } = fixture(t);
+  const outside = path.join(root, "outside");
+  mkdirSync(outside);
+  writeFileSync(path.join(outside, "PRIVATE.local"), "private");
+  const link = path.join(appRoot, "src/PRIVATE-link.local");
+  const kind = process.platform === "win32" ? "junction" : "dir";
+  symlinkSync(outside, link, kind);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), unavailable("path"));
+  const child = injectedRecords(root, "!! app/src/PRIVATE-link.local/PRIVATE.local\0");
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1", git: child.git }), unavailable("path"));
+  assert.deepEqual(child.calls, ["rev-parse", "status"]);
+  rmSync(link, { recursive: true, force: true });
+  const inside = path.join(appRoot, "src/inside");
+  mkdirSync(inside);
+  writeFileSync(path.join(inside, "PRIVATE-content"), "private");
+  symlinkSync(inside, link, kind);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), `ignored-input phase=${phase} state=ok total=one groups=app-rules:local-config:link:one overflow=no`);
+  rmSync(link, { recursive: true, force: true });
+  renameSync(path.join(appRoot, "src"), path.join(appRoot, "source-original"));
+  symlinkSync(outside, path.join(appRoot, "src"), kind);
+  assert.equal(summarizeFrontendIgnored({ appRoot, phase, enabled: "1" }), unavailable("path"));
 });
