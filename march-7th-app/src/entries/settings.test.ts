@@ -72,6 +72,68 @@ describe("real settings entry / adapter / controller error ownership", () => {
 });
 
 describe("local backup entry stays separate from reminder drafts", () => {
+  const preview = { ticket: 7, preview: { createdAtUtcMs: 100, selectedCharacterId: "raiden-shogun", hasDesktopPlacement: true, reminders: { items: [{ id: "water", enabled: true, intervalMinutes: 60 }, { id: "move", enabled: false, intervalMinutes: 45 }, { id: "eyes", enabled: true, intervalMinutes: 30 }], activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10, pendingCount: 2, paused: true, quietUntilUtcMs: null, snoozePending: false } } };
+  it("previews limited coverage, confirms only on explicit action, and preserves reminder draft", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "confirm_local_backup" ? Promise.resolve({ transactionId: "abc", restartRequired: true }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); edit(37);
+    dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(false);
+    expect(dom.get("import-character").textContent).toContain("雷电将军");
+    expect(dom.get("import-pending").textContent).toContain("待处理 2 项");
+    expect(native.invoke.mock.calls.some(([name]) => name === "confirm_local_backup")).toBe(false);
+    dom.get("confirm-import").dispatch("click"); await flush();
+    expect(native.invoke).toHaveBeenCalledWith("confirm_local_backup", { ticket: 7 });
+    expect(dom.get("backup-status").textContent).toContain("下次启动");
+    expect(dom.get("snooze-minutes").value).toBe("37");
+  });
+  it("invalidates late selection after close and keeps export and import mutually disabled", async () => {
+    let finish!: (value: unknown) => void;
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("export-backup").disabled).toBe(true);
+    dom.get("close-settings").dispatch("click"); await flush();
+    events.get("reminder-settings-opened")!({ payload: null }); await flush();
+    finish(preview); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(true);
+    expect(dom.get("confirm-import").disabled).toBe(true);
+  });
+  it("cancels a preview and never confirms, then accepts a fresh selection", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "cancel_local_backup" ? Promise.resolve(undefined) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    dom.get("cancel-import").dispatch("click"); await flush();
+    expect(native.invoke).toHaveBeenCalledWith("cancel_local_backup", { ticket: 7 });
+    expect(native.invoke.mock.calls.some(([name]) => name === "confirm_local_backup")).toBe(false);
+    expect(dom.get("backup-preview").hidden).toBe(true);
+    dom.get("import-backup").dispatch("click"); await flush();
+    expect(native.invoke.mock.calls.filter(([name]) => name === "select_local_backup")).toHaveLength(2);
+  });
+  it.each([
+    ["backupTooLarge", "2 MiB"], ["backupUnsupportedVersion", "更新"],
+    ["backupChecksumMismatch", "校验失败"], ["pendingImportExists", "已有待导入"],
+    ["dataSetWriteFailed", "原数据未改变"],
+  ])("shows bounded import error %s without disturbing drafts", async (code, expected) => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve(preview) : name === "confirm_local_backup" ? Promise.reject({ code }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); edit(38);
+    dom.get("import-backup").dispatch("click"); await flush();
+    dom.get("confirm-import").dispatch("click"); await flush();
+    expect(dom.get("backup-status").textContent).toContain(expected);
+    expect(dom.get("snooze-minutes").value).toBe("38");
+    expect(dom.get("settings-notice").textContent).toBe("");
+  });
+  it("rejects a malformed native preview instead of showing or confirming it", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.resolve({ ticket: 7, preview: { reminders: { items: [] } } }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-preview").hidden).toBe(true);
+    expect(dom.get("backup-status").textContent).toContain("无法预览");
+    dom.get("confirm-import").dispatch("click"); await flush();
+    expect(native.invoke.mock.calls.some(([name]) => name === "confirm_local_backup")).toBe(false);
+  });
+  it("shows an existing pending import before opening a new preview", async () => {
+    native.invoke.mockImplementation(name => name === "select_local_backup" ? Promise.reject({ code: "pendingImportExists" }) : Promise.resolve(fresh()));
+    await import("./settings"); await flush(); dom.get("import-backup").dispatch("click"); await flush();
+    expect(dom.get("backup-status").textContent).toContain("先正常退出并重新打开");
+    expect(dom.get("backup-preview").hidden).toBe(true);
+  });
   it("disables repeat export and preserves an unsaved reminder draft", async () => {
     let finish!: (value: unknown) => void;
     native.invoke.mockImplementation(name => name === "export_local_backup" ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(fresh()));
