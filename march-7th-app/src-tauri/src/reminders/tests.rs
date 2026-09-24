@@ -34,9 +34,13 @@ fn simultaneous_due_is_one_batch_and_never_repeats() {
     e.step(None, time(MINUTE)).unwrap();
     assert!(e.data.progress.iter().all(|p| p.pending && p.auto_handled));
     assert_eq!(e.presentation.as_ref().unwrap().items, IDS);
-    e.step(None, time(MINUTE + 10_000)).unwrap();
+    assert_eq!(
+        e.presentation.as_ref().unwrap().closes_at,
+        Some(MINUTE + 120_000)
+    );
+    e.step(None, time(MINUTE + 119_999)).unwrap();
     assert!(e.presentation.is_some());
-    e.step(None, time(MINUTE + AUTO_PRESENTATION_MS)).unwrap();
+    e.step(None, time(MINUTE + 120_000)).unwrap();
     assert!(e.presentation.is_none());
     e.step(None, time(99 * MINUTE)).unwrap();
     assert!(e.presentation.is_none());
@@ -58,12 +62,12 @@ fn opening_choices_grants_time_to_act_without_repeating_or_completing_the_remind
     .unwrap();
     assert_eq!(
         e.presentation.as_ref().unwrap().closes_at,
-        Some(MINUTE + 90_000)
+        Some(MINUTE + 150_000)
     );
     assert!(e.data.progress.iter().all(|item| item.pending));
-    e.step(None, time(MINUTE + 89_999)).unwrap();
+    e.step(None, time(MINUTE + 149_999)).unwrap();
     assert!(e.presentation.is_some());
-    e.step(None, time(MINUTE + 90_000)).unwrap();
+    e.step(None, time(MINUTE + 150_000)).unwrap();
     assert!(e.presentation.is_none());
     assert!(e.data.progress.iter().all(|item| item.pending));
     assert_eq!(
@@ -71,7 +75,7 @@ fn opening_choices_grants_time_to_act_without_repeating_or_completing_the_remind
             Some(Command::ExtendChoices {
                 presentation_id: id
             }),
-            time(MINUTE + 90_001),
+            time(MINUTE + 150_001),
         )
         .unwrap_err()
         .code,
@@ -96,6 +100,8 @@ fn snooze_defers_all_pending_across_pause_and_consumes_once() {
     assert_eq!(e.presentation.as_ref().unwrap().items, IDS);
     assert!(!e.data.snooze_pending);
     e.step(None, time(14 * MINUTE)).unwrap();
+    assert!(e.presentation.is_some());
+    e.step(None, time(15 * MINUTE)).unwrap();
     assert!(e.presentation.is_none());
 }
 
@@ -204,12 +210,14 @@ fn new_due_extends_batch_without_extending_deadline_and_does_not_readd_old() {
     .unwrap();
     e.step(None, time(3 * MINUTE + 1)).unwrap();
     let p = e.presentation.clone().unwrap();
-    assert_eq!(p.items, vec![Id::Eyes]);
+    assert_eq!(p.items, vec![Id::Move, Id::Eyes]);
     e.step(None, time(3 * MINUTE + 5)).unwrap();
     let joined = e.presentation.as_ref().unwrap();
     assert_eq!(joined.id, p.id);
     assert_eq!(joined.closes_at, p.closes_at);
-    assert_eq!(joined.items, vec![Id::Eyes, Id::Water]);
+    assert_eq!(joined.items, vec![Id::Move, Id::Eyes, Id::Water]);
+    e.step(None, time(4 * MINUTE)).unwrap();
+    assert!(e.presentation.is_none());
 }
 #[test]
 fn snooze_covers_new_due_and_remembers_applied_duration_after_settings_change() {

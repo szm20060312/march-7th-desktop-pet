@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const MAX_UTC: i64 = 253_402_300_799_999;
 pub const MINUTE: i64 = 60_000;
-pub const AUTO_PRESENTATION_MS: i64 = 45_000;
-const CHOICES_GRACE_MS: i64 = 60_000;
+pub const AUTO_PRESENTATION_MS: i64 = 120_000;
+const CHOICES_GRACE_MS: i64 = 120_000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Id {
