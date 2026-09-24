@@ -1,12 +1,18 @@
+mod atomic_file;
+pub mod build_info;
+mod characters;
+pub mod data_directory;
+mod data_lock;
+mod desktop;
+pub mod focus;
+mod import_session;
+mod local_backup;
+mod local_import;
 mod platform;
+mod reminders;
 
 use serde::Serialize;
-use std::{thread, time::Duration};
-use tauri::{
-    menu::{MenuBuilder, MenuEvent, MenuItem},
-    tray::TrayIconBuilder,
-    App, AppHandle, Manager, Runtime,
-};
+use tauri::Manager;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,64 +39,61 @@ fn cursor_relative_to_window(window: tauri::WebviewWindow) -> Result<CursorSampl
     })
 }
 
-fn setup_status_bar<R: Runtime>(app: &mut App<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "显示三月七", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide", "隐藏三月七", true, None::<&str>)?;
-    let move_to_current_space = MenuItem::with_id(
-        app,
-        "move-to-current-space",
-        "切换到当前桌面",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, "quit", "退出 March 7th", true, None::<&str>)?;
-    let menu = MenuBuilder::new(app)
-        .items(&[&show, &hide, &move_to_current_space, &quit])
-        .build()?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::AssetNotFound("default tray icon".into()))?;
-
-    TrayIconBuilder::new()
-        .icon(icon)
-        .menu(&menu)
-        .on_menu_event(handle_status_bar_menu)
-        .build(app)?;
-    Ok(())
-}
-
-fn handle_status_bar_menu<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
-    match event.id().as_ref() {
-        "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-            }
-        }
-        "hide" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.hide();
-            }
-        }
-        "move-to-current-space" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.hide();
-                thread::spawn(move || {
-                    thread::sleep(Duration::from_millis(80));
-                    let _ = window.show();
-                });
-            }
-        }
-        "quit" => app.exit(0),
-        _ => {}
-    }
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| Ok(setup_status_bar(app)?))
-        .invoke_handler(tauri::generate_handler![cursor_relative_to_window])
-        .run(tauri::generate_context!())
-        .expect("error while running March 7th");
+    let app = desktop::configure(tauri::Builder::default())
+        .manage(std::sync::Mutex::new(local_backup::LocalDataGate::default()))
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let characters = characters::setup(app)?;
+            let reminders = reminders::setup(app)?;
+            focus::native::setup(app)?;
+            desktop::setup(app, &characters, &reminders)
+        })
+        .invoke_handler(tauri::generate_handler![
+            build_info::get_build_info,
+            focus::native::get_focus,
+            focus::native::focus_command,
+            cursor_relative_to_window,
+            characters::native::get_selected_character,
+            characters::native::select_character,
+            reminders::native::get_reminders,
+            reminders::native::reminder_command,
+            reminders::ui::reminder_ui_ready,
+            reminders::native::open_reminder_choices,
+            reminders::ui::hide_reminder_settings,
+            local_backup::export_local_backup,
+            local_import::select_local_backup,
+            local_import::confirm_local_backup,
+            local_import::cancel_local_backup
+        ])
+        .build(app_context())
+        .expect("error while building March 7th");
+
+    // Tauri 2 runs setup on the event loop's Ready event, not in build().
+    // Qualify here so a duplicate never enters that loop or starts any service.
+    let directory = match data_directory::acquire(app.path().app_config_dir().ok()) {
+        Ok(directory) => directory,
+        Err(data_directory::AlreadyRunning) => return,
+    };
+    if let Some(code) = directory.diagnostic() {
+        eprintln!("March 7th configuration unavailable ({code}); session-only/read-only mode");
+    }
+    app.manage(directory);
+    app.run(|app, event| {
+        if matches!(
+            &event,
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+        ) {
+            focus::native::stop(app);
+            characters::stop(app);
+            reminders::ui::stop(app);
+            reminders::stop(app);
+        }
+        desktop::on_run_event(app, event);
+    });
 }

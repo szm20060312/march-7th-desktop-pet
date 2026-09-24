@@ -1,0 +1,77 @@
+{
+  "defaultId": "march-7th",
+  "characters": [
+    {
+      "id": "march-7th",
+      "displayName": "三月七",
+      "atlas": {
+        "src": "/assets/march-7th/spritesheet.webp",
+        "cellWidth": 192,
+        "cellHeight": 208,
+        "columns": 8,
+        "rows": 11
+      },
+      "clips": {
+        "idle": { "row": 0, "frameCount": 6, "frameIntervalMs": 280 },
+        "movingRight": { "row": 1, "frameCount": 8, "frameIntervalMs": 90 },
+        "movingLeft": { "row": 2, "frameCount": 8, "frameIntervalMs": 90 },
+        "wave": { "row": 3, "frameCount": 4, "frameIntervalMs": 180 },
+        "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
+      },
+      "look": { "firstRow": 9, "directionCount": 16 },
+      "waterOffer": { "src": "/assets/march-7th/water-offer.png", "sourceWidth": 1189, "sourceHeight": 1323, "columns": 2, "rows": 2, "frameCount": 4, "frameIntervalMs": 220 },
+      "phrases": {
+        "click": ["咱在呢！", "今天也一起加油吧。"],
+        "doubleClick": ["嘿，精神满满！", "准备好出发啦！"],
+        "reminderDue": ["嘿，歇一下吧！", "有件小事到点啦！"],
+        "reminderCompleted": ["好耶，先歇一小会儿！", "做完啦，咱慢慢来！"],
+        "reminderSnoozed": ["收到，咱晚点再说！", "好呀，先忙你的！"],
+        "focusCompleted": ["完成啦，歇一会儿吧", "辛苦啦，伸个懒腰吧"],
+        "taskCompleted": ["这件事完成啦，辛苦啦", "做完一件事，慢慢来"],
+        "taskAbandoned": ["先放下也没关系", "换个节奏，我还在"]
+      },
+      "reminderPrompts": {
+        "water": ["先喝口水吧，咱们再继续！", "别忙忘了，补口水呀！"],
+        "move": ["起身走走，换换心情呀！", "站起来活动一下吧！"],
+        "eyes": ["眼睛歇歇，看看远方吧！", "别盯太久，望望远处呀！"],
+        "multiple": ["有几件小事，咱慢慢来！", "几件事到点啦，一件件来！"]
+      }
+    },
+    {
+      "id": "raiden-shogun",
+      "displayName": "雷电将军",
+      "atlas": {
+        "src": "/assets/raiden-shogun/spritesheet.webp",
+        "cellWidth": 192,
+        "cellHeight": 208,
+        "columns": 8,
+        "rows": 11
+      },
+      "clips": {
+        "idle": { "row": 0, "frameCount": 6, "frameIntervalMs": 280 },
+        "movingRight": { "row": 1, "frameCount": 8, "frameIntervalMs": 90 },
+        "movingLeft": { "row": 2, "frameCount": 8, "frameIntervalMs": 90 },
+        "wave": { "row": 3, "frameCount": 4, "frameIntervalMs": 180 },
+        "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
+      },
+      "look": { "firstRow": 9, "directionCount": 16 },
+      "waterOffer": { "src": "/assets/raiden-shogun/water-offer.png", "sourceWidth": 1205, "sourceHeight": 1306, "columns": 2, "rows": 2, "frameCount": 4, "frameIntervalMs": 220 },
+      "phrases": {
+        "click": ["我在。", "此刻，与你同在。"],
+        "doubleClick": ["精神尚可。", "稍作舒展，也好。"],
+        "reminderDue": ["此刻，宜稍作休整。", "有事到时，且从容。"],
+        "reminderCompleted": ["已完成，继续从容行事。", "休整片刻，自有裨益。"],
+        "reminderSnoozed": ["暂缓即可，我会记下。", "此刻不便，稍后再议。"],
+        "focusCompleted": ["此刻，宜稍作休息", "专注已毕，且缓一缓"],
+        "taskCompleted": ["此事已毕，且从容", "有所完成，便值得停留"],
+        "taskAbandoned": ["暂且放下，无须勉强", "此刻停步，亦是选择"]
+      },
+      "reminderPrompts": {
+        "water": ["先饮水，再继续手头之事。", "饮水片刻，随后继续。"],
+        "move": ["久坐无益，起身片刻。", "起身活动，再从容继续。"],
+        "eyes": ["目光移远，稍作休息。", "让双目暂离屏幕。"],
+        "multiple": ["有几件事，逐一处理即可。", "诸事可缓，先顾眼前。"]
+      }
+    }
+  ]
+}
