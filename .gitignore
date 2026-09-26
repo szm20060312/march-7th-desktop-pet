@@ -10,3 +10,9 @@ src-tauri/target/
 coverage/
 .obsidian/
 .pnpm-store/
+
+# Local coordination exports only; not a confidentiality or history-cleanup mechanism.
+/.local-notes/
+/internal-notes/
+/feishu-export/
+/feishu-import/
