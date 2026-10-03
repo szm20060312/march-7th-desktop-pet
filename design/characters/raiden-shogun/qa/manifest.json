@@ -1,0 +1,787 @@
+{
+  "status": "preview-candidate-static-reviewed-native-pending",
+  "format": "desktop-app-atlas",
+  "codexCompatible": false,
+  "cellWidth": 192,
+  "cellHeight": 208,
+  "columns": 8,
+  "rows": 11,
+  "unusedRows": [
+    5,
+    6,
+    7,
+    8
+  ],
+  "sources": {
+    "idle": {
+      "file": "idle-source.png",
+      "sha256": "3e30cee9432d9c14f1bfe94759e78b84d19284c9e1fc94f9a37cd59f779837e1",
+      "scale": 0.31088082901554404,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            30,
+            75,
+            369,
+            660
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            148,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            385,
+            75,
+            728,
+            660
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            738,
+            75,
+            1079,
+            660
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1090,
+            75,
+            1431,
+            660
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1445,
+            75,
+            1788,
+            660
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1805,
+            75,
+            2146,
+            660
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            149,
+            200
+          ]
+        }
+      ]
+    },
+    "running-right": {
+      "file": "running-right-source.png",
+      "sha256": "b882c07f2a58479d7e96ba53c31df6906ab1b9950f6e88a7474ca1a676afb36e",
+      "scale": 0.6040268456375839,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            38,
+            217,
+            249,
+            530
+          ],
+          "outputAlphaBounds": [
+            32,
+            12,
+            159,
+            196
+          ]
+        },
+        {
+          "sourceBounds": [
+            292,
+            217,
+            498,
+            530
+          ],
+          "outputAlphaBounds": [
+            34,
+            12,
+            158,
+            199
+          ]
+        },
+        {
+          "sourceBounds": [
+            558,
+            217,
+            769,
+            530
+          ],
+          "outputAlphaBounds": [
+            32,
+            11,
+            159,
+            199
+          ]
+        },
+        {
+          "sourceBounds": [
+            831,
+            217,
+            1040,
+            530
+          ],
+          "outputAlphaBounds": [
+            33,
+            11,
+            159,
+            190
+          ]
+        },
+        {
+          "sourceBounds": [
+            1094,
+            217,
+            1314,
+            530
+          ],
+          "outputAlphaBounds": [
+            29,
+            11,
+            162,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1357,
+            217,
+            1581,
+            530
+          ],
+          "outputAlphaBounds": [
+            28,
+            11,
+            163,
+            199
+          ]
+        },
+        {
+          "sourceBounds": [
+            1637,
+            217,
+            1852,
+            530
+          ],
+          "outputAlphaBounds": [
+            31,
+            11,
+            161,
+            199
+          ]
+        },
+        {
+          "sourceBounds": [
+            1897,
+            217,
+            2109,
+            530
+          ],
+          "outputAlphaBounds": [
+            32,
+            12,
+            160,
+            200
+          ]
+        }
+      ]
+    },
+    "running-left": {
+      "file": "running-left-v2-source.png",
+      "sha256": "43b94442bf1e937e8f0feaad72f32846b2c57a277ea668bfa346b725af23dde2",
+      "scale": 0.5555555555555556,
+      "extraction": "alpha-components",
+      "ignoredDetachedAlphaPixels": 184,
+      "frames": [
+        {
+          "sourceBounds": [
+            49,
+            213,
+            324,
+            551
+          ],
+          "outputAlphaBounds": [
+            20,
+            13,
+            171,
+            198
+          ]
+        },
+        {
+          "sourceBounds": [
+            303,
+            213,
+            577,
+            551
+          ],
+          "outputAlphaBounds": [
+            21,
+            14,
+            171,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            573,
+            213,
+            840,
+            551
+          ],
+          "outputAlphaBounds": [
+            22,
+            14,
+            169,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            825,
+            213,
+            1094,
+            551
+          ],
+          "outputAlphaBounds": [
+            22,
+            12,
+            169,
+            187
+          ]
+        },
+        {
+          "sourceBounds": [
+            1090,
+            213,
+            1368,
+            551
+          ],
+          "outputAlphaBounds": [
+            20,
+            18,
+            173,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1348,
+            213,
+            1635,
+            551
+          ],
+          "outputAlphaBounds": [
+            17,
+            16,
+            175,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1636,
+            213,
+            1900,
+            551
+          ],
+          "outputAlphaBounds": [
+            23,
+            12,
+            169,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1897,
+            213,
+            2161,
+            551
+          ],
+          "outputAlphaBounds": [
+            23,
+            14,
+            169,
+            197
+          ]
+        }
+      ]
+    },
+    "waving": {
+      "file": "waving-source.png",
+      "sha256": "9fcf9917f583b1d924293f186bfe7961b8a360f8ca636a25499fc6417b2ab1d0",
+      "scale": 0.2861685214626391,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            157,
+            45,
+            536,
+            679
+          ],
+          "outputAlphaBounds": [
+            42,
+            19,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            641,
+            45,
+            1020,
+            679
+          ],
+          "outputAlphaBounds": [
+            42,
+            19,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1141,
+            45,
+            1517,
+            679
+          ],
+          "outputAlphaBounds": [
+            42,
+            19,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1629,
+            45,
+            2004,
+            679
+          ],
+          "outputAlphaBounds": [
+            42,
+            19,
+            149,
+            200
+          ]
+        }
+      ]
+    },
+    "jumping": {
+      "file": "jumping-source.png",
+      "sha256": "5d9a9abc1836625d74de29c4053fc2856379bdf099751ae8069c9442823c2604",
+      "scale": 0.2936378466557912,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            46,
+            40,
+            418,
+            680
+          ],
+          "outputAlphaBounds": [
+            41,
+            17,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            463,
+            40,
+            864,
+            680
+          ],
+          "outputAlphaBounds": [
+            37,
+            25,
+            155,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            876,
+            40,
+            1280,
+            680
+          ],
+          "outputAlphaBounds": [
+            36,
+            12,
+            155,
+            189
+          ]
+        },
+        {
+          "sourceBounds": [
+            1285,
+            40,
+            1700,
+            680
+          ],
+          "outputAlphaBounds": [
+            35,
+            26,
+            157,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1750,
+            40,
+            2122,
+            680
+          ],
+          "outputAlphaBounds": [
+            41,
+            18,
+            150,
+            200
+          ]
+        }
+      ]
+    },
+    "look-a": {
+      "file": "look-a-source.png",
+      "sha256": "0121c356656d95a8abc6d6ea9aa01b7d65effe596c19e036c0a264c94ea28fea",
+      "scale": 0.4444444444444444,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            26,
+            179,
+            263,
+            590
+          ],
+          "outputAlphaBounds": [
+            43,
+            17,
+            148,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            296,
+            179,
+            527,
+            590
+          ],
+          "outputAlphaBounds": [
+            44,
+            17,
+            147,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            565,
+            179,
+            795,
+            590
+          ],
+          "outputAlphaBounds": [
+            45,
+            17,
+            147,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            830,
+            179,
+            1056,
+            590
+          ],
+          "outputAlphaBounds": [
+            46,
+            17,
+            146,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1097,
+            179,
+            1327,
+            590
+          ],
+          "outputAlphaBounds": [
+            45,
+            17,
+            147,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1366,
+            179,
+            1596,
+            590
+          ],
+          "outputAlphaBounds": [
+            45,
+            18,
+            147,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1633,
+            179,
+            1865,
+            590
+          ],
+          "outputAlphaBounds": [
+            44,
+            19,
+            147,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1901,
+            179,
+            2134,
+            590
+          ],
+          "outputAlphaBounds": [
+            44,
+            20,
+            148,
+            200
+          ]
+        }
+      ]
+    },
+    "look-b": {
+      "file": "look-b-source.png",
+      "sha256": "d0b95998d1c295b2b1c4de41332977cfa2858a2a6c9c38e7b0979fba5e59c624",
+      "scale": 0.41189931350114417,
+      "extraction": "separated-columns",
+      "ignoredDetachedAlphaPixels": 0,
+      "frames": [
+        {
+          "sourceBounds": [
+            19,
+            174,
+            280,
+            616
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            287,
+            174,
+            548,
+            616
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            557,
+            174,
+            815,
+            616
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            822,
+            174,
+            1081,
+            616
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1095,
+            174,
+            1355,
+            616
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1366,
+            174,
+            1623,
+            616
+          ],
+          "outputAlphaBounds": [
+            43,
+            18,
+            149,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1627,
+            174,
+            1892,
+            616
+          ],
+          "outputAlphaBounds": [
+            41,
+            18,
+            150,
+            200
+          ]
+        },
+        {
+          "sourceBounds": [
+            1898,
+            174,
+            2157,
+            616
+          ],
+          "outputAlphaBounds": [
+            42,
+            18,
+            149,
+            200
+          ]
+        }
+      ]
+    }
+  },
+  "animations": {
+    "idle": {
+      "row": 0,
+      "frameCount": 6,
+      "frameIntervalMs": 280
+    },
+    "running-right": {
+      "row": 1,
+      "frameCount": 8,
+      "frameIntervalMs": 90
+    },
+    "running-left": {
+      "row": 2,
+      "frameCount": 8,
+      "frameIntervalMs": 90
+    },
+    "waving": {
+      "row": 3,
+      "frameCount": 4,
+      "frameIntervalMs": 180
+    },
+    "jumping": {
+      "row": 4,
+      "frameCount": 5,
+      "frameIntervalMs": 140
+    },
+    "look-a": {
+      "row": 9,
+      "frameCount": 8,
+      "frameIntervalMs": 350
+    },
+    "look-b": {
+      "row": 10,
+      "frameCount": 8,
+      "frameIntervalMs": 350
+    }
+  },
+  "atlasSha256": "21b0ba8efbeb4c52f3dcd19c69fafdd21dab770cdc9b79bee0210cfeaf7d57e0",
+  "frameCount": 47,
+  "review": {
+    "static": "visual-review.md",
+    "browser": "browser-review.md",
+    "native": "pending",
+    "warnings": [
+      "22.5/337.5 horizontal gaze cues weak",
+      "184 detached alpha pixels excluded by component extraction; nature not independently confirmed",
+      "Full motion quality and native behavior pending"
+    ]
+  }
+}

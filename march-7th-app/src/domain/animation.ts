@@ -1,7 +1,7 @@
 import type { CharacterDefinition } from "./character";
 
 export type Point = Readonly<{ x: number; y: number }>;
-export type SpriteFrame = Readonly<{ row: number; column: number }>;
+export type SpriteFrame = Readonly<{ row: number; column: number; asset?: "waterOffer" }>;
 export type HorizontalDirection = "left" | "right";
 export type CursorSample = Point & Readonly<{ windowX: number; windowY: number }>;
 

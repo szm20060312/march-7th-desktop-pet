@@ -4,13 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="transparent" />
-    <title>March 7th</title>
+    <title>桌面伙伴</title>
     <link rel="stylesheet" href="/src/styles.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
-    <main id="pet-stage" class="pet-stage" aria-label="March 7th desktop pet">
-      <div id="pet-sprite" class="pet-sprite" role="img" aria-label="March 7th"></div>
+    <main id="pet-stage" class="pet-stage" aria-label="桌面伙伴">
+      <p id="pet-message" class="pet-message" aria-live="polite" hidden></p>
+      <div id="pet-sprite" class="pet-sprite pet-base-sprite" role="img" aria-label="桌面伙伴"></div>
+      <div id="pet-offer-sprite" class="pet-sprite pet-offer-sprite" aria-hidden="true"></div>
     </main>
   </body>
 </html>

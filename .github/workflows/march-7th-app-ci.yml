@@ -49,3 +49,5 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.rust_target }}
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.rust_target }} --all-targets -- -D warnings
+      - name: Verify actual cross-process directory locks and exit recovery
+        run: node --test scripts/data-directory.node-test.mjs
