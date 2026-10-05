@@ -94,10 +94,12 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### 文档
 
+公开仓库保留参与开发所需的规范、问题与验证依据；团队内部排期和执行流水不作为贡献前置条件。旧 TODO 与 Windows 交接参考仍可从文档索引访问，不代表最新分支状态。
+
 - [开发文档索引](docs/README.md)
 - [开发计划](docs/development/app/ROADMAP.md)
-- [双平台 TODO](docs/development/app/TODO.md)
-- [Windows 开发交接](docs/development/app/WINDOWS-HANDOFF.md)
+- [公开协作与资料边界](docs/COLLABORATION.md)
+- [跨平台验证指南](docs/development/app/PLATFORM-VALIDATION.md)
 - [v0.2.0 阶段报告](docs/development/app/STAGE-0.2.0.md)
 - [动画与视觉基线](docs/development/codex-pet/BASELINE.md)
 - [交互状态映射](docs/development/codex-pet/INTERACTIONS.md)
@@ -196,10 +198,12 @@ Prebuilt packages will be published through GitHub Releases.
 
 ### Documentation
 
+Public documentation must be sufficient to contribute without access to the team workspace. Dated TODO and Windows handoff references remain available through the documentation index; they do not establish the state of another branch.
+
 - [Documentation index](docs/README.md)
 - [Development roadmap](docs/development/app/ROADMAP.md)
-- [Cross-platform TODO](docs/development/app/TODO.md)
-- [Windows development handoff](docs/development/app/WINDOWS-HANDOFF.md)
+- [Public collaboration and documentation boundaries](docs/COLLABORATION.md)
+- [Cross-platform validation guide](docs/development/app/PLATFORM-VALIDATION.md)
 - [v0.2.0 milestone report](docs/development/app/STAGE-0.2.0.md)
 - [Animation and visual baseline](docs/development/codex-pet/BASELINE.md)
 - [Interaction state mapping](docs/development/codex-pet/INTERACTIONS.md)
