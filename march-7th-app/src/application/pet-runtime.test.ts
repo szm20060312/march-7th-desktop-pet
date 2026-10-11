@@ -123,13 +123,13 @@ describe("pet runtime lifecycle", () => {
     expect(h.view.showPhrase).toHaveBeenLastCalledWith("先喝口水吧，咱们再继续！");
     expect([...h.delays.values()].some(delay => delay.ms === 3_000)).toBe(false);
     paint(10_000);
-    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 1, column: 1 });
+    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 2, column: 3 });
     expect(h.view.clearPhrase).not.toHaveBeenCalled();
-    h.setNow(10_000); runtime.endReminder(); paint(10_220);
-    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 1, column: 0 });
+    h.setNow(10_000); runtime.endReminder(); paint(10_080);
+    expect(h.view.render).toHaveBeenLastCalledWith({ asset: "waterOffer", row: 2, column: 2 });
     expect(h.view.clearPhrase).not.toHaveBeenCalled();
-    const returnDelay = [...h.delays.values()].find(delay => delay.ms === 880)!;
-    returnDelay.callback(); paint(10_880);
+    const returnDelay = [...h.delays.values()].find(delay => delay.ms === 960)!;
+    returnDelay.callback(); paint(10_960);
     expect(h.view.clearPhrase).toHaveBeenCalledOnce();
     expect(h.view.render).toHaveBeenLastCalledWith(expect.not.objectContaining({ asset: "waterOffer" }));
     runtime.stop();
@@ -138,7 +138,7 @@ describe("pet runtime lifecycle", () => {
     const h = harness(); const runtime = h.start();
     runtime.respond("reminderDue", "先喝口水吧，咱们再继续！", "offerWater");
     h.setNow(1_000); runtime.endReminder();
-    const oldClear = [...h.delays.values()].find(delay => delay.ms === 880)!;
+    const oldClear = [...h.delays.values()].find(delay => delay.ms === 960)!;
     runtime.respond("reminderCompleted");
     oldClear.callback();
     expect(h.view.showPhrase).toHaveBeenLastCalledWith("好耶，先歇一小会儿！");
