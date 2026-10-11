@@ -14,7 +14,7 @@ describe("compiled character catalog", () => {
     expect(defaultCharacter).toBe(characterCatalog.characters[0]);
   });
 
-  it("keeps every declared frame inside the reviewed 8 by 11 atlas", () => {
+  it("keeps every declared frame inside its configured atlas", () => {
     for (const character of characterCatalog.characters) {
       expect(character.atlas).toMatchObject({ cellWidth: 192, cellHeight: 208, columns: 8, rows: 11 });
       expect(character.clips).toEqual({
@@ -26,7 +26,9 @@ describe("compiled character catalog", () => {
       });
       expect(character.look).toEqual({ firstRow: 9, directionCount: 16 });
       expect(Object.values(character.clips).every(clip => clip.row < 5)).toBe(true);
-      expect(character.waterOffer).toMatchObject({ src: `/assets/${character.id}/water-offer.png`, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: 220 });
+      expect(character.waterOffer).toMatchObject(character.id === 'march-7th'
+        ? { src: '/assets/march-7th/water-offer.png', columns: 4, rows: 3, frameCount: 12, frameIntervalMs: 80 }
+        : { src: '/assets/raiden-shogun/water-offer.png', columns: 2, rows: 2, frameCount: 4, frameIntervalMs: 220 });
     }
   });
 

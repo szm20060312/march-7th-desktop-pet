@@ -19,7 +19,7 @@ export class PetModel {
   private idleFrame = 0;
   private nextIdleFrameAt: number;
   private oneShot: Readonly<{ action: OneShotAction; clip: AnimationClip; startedAt: number }> | null = null;
-  private returningWaterSince: number | null = null;
+  private returningWaterSince: Readonly<{ startedAt: number; firstFrame: number }> | null = null;
 
   constructor(
     private readonly character: CharacterDefinition,
@@ -85,9 +85,9 @@ export class PetModel {
     }
     if (this.returningWaterSince !== null) {
       const offer = this.character.waterOffer;
-      const elapsed = Math.max(0, now - this.returningWaterSince);
-      if (elapsed < offer.frameCount * offer.frameIntervalMs) {
-        const frame = offer.frameCount - 1 - Math.floor(elapsed / offer.frameIntervalMs);
+      const elapsed = Math.max(0, now - this.returningWaterSince.startedAt);
+      if (elapsed < (this.returningWaterSince.firstFrame + 1) * offer.frameIntervalMs) {
+        const frame = this.returningWaterSince.firstFrame - Math.floor(elapsed / offer.frameIntervalMs);
         return { asset: "waterOffer", row: Math.floor(frame / offer.columns), column: frame % offer.columns };
       }
       this.returningWaterSince = null;
@@ -113,10 +113,13 @@ export class PetModel {
     return true;
   }
 
-  endOfferWater(now: number): void {
-    if (this.oneShot?.action !== "offerWater") return;
+  endOfferWater(now: number): number {
+    if (this.oneShot?.action !== "offerWater") return 0;
+    const offer = this.character.waterOffer;
+    const firstFrame = Math.min(offer.frameCount - 1, Math.floor(Math.max(0, now - this.oneShot.startedAt) / offer.frameIntervalMs));
     this.oneShot = null;
-    this.returningWaterSince = now;
+    this.returningWaterSince = { startedAt: now, firstFrame };
+    return (firstFrame + 1) * offer.frameIntervalMs;
   }
 
   private movementClip() {

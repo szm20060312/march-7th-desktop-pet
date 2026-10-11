@@ -56,6 +56,12 @@ body {
   opacity: 0;
 }
 
+/* The redrawn sheet shares its idle frame. Crossfading would overlap
+   the outbound and returned hand poses instead of making a clean swap. */
+.pet-stage[data-character-id="march-7th"] .pet-sprite {
+  transition: none;
+}
+
 .pet-message {
   position: absolute;
   z-index: 2;
@@ -111,4 +117,3 @@ body {
   }
   .pet-base-sprite, .pet-offer-sprite { transition: none; }
 }
-

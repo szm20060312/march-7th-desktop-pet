@@ -22,6 +22,7 @@ describe("DOM pet view", () => {
     const body = element();
     const view = createDomPetView(sprite.node, element().node, stage.node, message.node, body.node);
     view.configure(march7th);
+    expect(stage.dataset.characterId).toBe("march-7th");
     view.render({ row: 1, column: 2 });
     expect(sprite.style.backgroundSize).toBe("1536px 2288px");
     expect(sprite.style.backgroundPosition).toBe("-384px -208px");
@@ -31,6 +32,8 @@ describe("DOM pet view", () => {
     expect(sprite.style.backgroundImage).toBe('url("/test.webp")');
     expect(sprite.style.backgroundPosition).toBe("-192px -208px");
     expect(sprite.attributes.get("aria-label")).toBe("Test");
+    view.configure({ ...march7th, id: "raiden-shogun" });
+    expect(stage.dataset.characterId).toBe("raiden-shogun");
   });
   it("keeps response text and presentation errors separate and uses text content", () => {
     const sprite = element();
@@ -56,7 +59,7 @@ describe("DOM pet view", () => {
     view.render({ asset: "waterOffer", row: 1, column: 0 });
     expect(sprite.style.backgroundImage).toBe('url("/assets/march-7th/spritesheet.webp")');
     expect(offer.style.backgroundImage).toBe('url("/assets/march-7th/water-offer.png")');
-    expect(offer.style.backgroundSize).toBe("384px 416px");
+    expect(offer.style.backgroundSize).toBe("768px 624px");
     expect(offer.style.backgroundPosition).toBe("0px -208px");
     expect(sprite.style.opacity).toBe("0");
     expect(offer.style.opacity).toBe("1");

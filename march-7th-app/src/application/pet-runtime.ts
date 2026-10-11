@@ -119,13 +119,13 @@ export function startPetRuntime(options: {
   };
 
   const endReminder = () => {
-    model.endOfferWater(scheduler.now());
+    const returnDuration = model.endOfferWater(scheduler.now());
     if (phraseContext !== "reminderDue") return;
     if (phraseTimerId !== undefined) scheduler.cancelDelay(phraseTimerId);
     phraseTimerId = scheduler.setDelay(() => {
       phraseTimerId = undefined;
       if (!stopped && phraseContext === "reminderDue") clearPhrase();
-    }, character.waterOffer.frameCount * character.waterOffer.frameIntervalMs);
+    }, returnDuration);
   };
 
   return { stop, respond, endReminder };
