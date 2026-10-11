@@ -1,5 +1,6 @@
 import { directionFrame, horizontalDirection, type CursorSample, type HorizontalDirection, type Point, type SpriteFrame } from "./animation";
-import type { AnimationClip, CharacterDefinition, OneShotAction } from "./character";
+import { waterOfferClip, waterOfferFrame, type AnimationClip, type CharacterDefinition, type OneShotAction } from "./character";
+import { SequencedPlayback } from "./sequenced-playback";
 
 export const DEFAULT_PET_BEHAVIOR = Object.freeze({
   lookDeadzonePx: 20,
@@ -10,6 +11,7 @@ type PetBehavior = typeof DEFAULT_PET_BEHAVIOR;
 
 /** Owns one pet's animation state. All time and coordinates are supplied by callers. */
 export class PetModel {
+  private readonly sequenced: SequencedPlayback | null;
   private cursor: Point | null = null;
   private previousWindow: Point | null = null;
   private direction: HorizontalDirection = "right";
@@ -26,12 +28,14 @@ export class PetModel {
     now: number,
     private readonly behavior: PetBehavior = DEFAULT_PET_BEHAVIOR,
   ) {
+    this.sequenced = character.presentation ? new SequencedPlayback(character, character.presentation, now, behavior) : null;
     this.nextIdleFrameAt = now + character.clips.idle.frameIntervalMs;
   }
 
-  isMoving(now: number): boolean { return now < this.movingUntil; }
+  isMoving(now: number): boolean { return this.sequenced ? this.sequenced.isMoving(now) : now < this.movingUntil; }
 
   acceptSample(sample: CursorSample, now: number): void {
+    if (this.sequenced) { this.sequenced.acceptSample(sample, now); return; }
     const position = { x: sample.windowX, y: sample.windowY };
     if (this.previousWindow) {
       const dx = position.x - this.previousWindow.x;
@@ -54,9 +58,10 @@ export class PetModel {
     if (!this.isMoving(now)) this.cursor = { x: sample.x, y: sample.y };
   }
 
-  sampleUnavailable(): void { this.cursor = null; }
+  sampleUnavailable(): void { if (this.sequenced) this.sequenced.sampleUnavailable(); else this.cursor = null; }
 
-  beginDrag(now: number): void {
+  beginDrag(now: number, directionHint?: HorizontalDirection): void {
+    if (this.sequenced) { this.sequenced.beginDrag(now, directionHint); return; }
     this.oneShot = null;
     this.returningWaterSince = null;
     this.cursor = null;
@@ -65,6 +70,7 @@ export class PetModel {
   }
 
   frameAt(now: number, center: Point): SpriteFrame {
+    if (this.sequenced) return this.sequenced.frameAt(now, center);
     if (this.isMoving(now)) {
       const clip = this.movementClip();
       if (now >= this.nextMovementFrameAt) {
@@ -78,17 +84,17 @@ export class PetModel {
       const column = Math.floor(Math.max(0, now - this.oneShot.startedAt) / clip.frameIntervalMs);
       if (this.oneShot.action === "offerWater") {
         const frame = Math.min(column, clip.frameCount - 1);
-        return { asset: "waterOffer", row: Math.floor(frame / this.character.waterOffer.columns), column: frame % this.character.waterOffer.columns };
+        return waterOfferFrame(this.character.waterOffer, frame);
       }
       if (column < clip.frameCount) return { row: clip.row, column };
       this.oneShot = null;
     }
     if (this.returningWaterSince !== null) {
-      const offer = this.character.waterOffer;
+      const offer = waterOfferClip(this.character.waterOffer);
       const elapsed = Math.max(0, now - this.returningWaterSince);
       if (elapsed < offer.frameCount * offer.frameIntervalMs) {
         const frame = offer.frameCount - 1 - Math.floor(elapsed / offer.frameIntervalMs);
-        return { asset: "waterOffer", row: Math.floor(frame / offer.columns), column: frame % offer.columns };
+        return waterOfferFrame(this.character.waterOffer, frame);
       }
       this.returningWaterSince = null;
     }
@@ -103,20 +109,25 @@ export class PetModel {
     return { row: clip.row, column: this.idleFrame };
   }
 
-  respond(action: OneShotAction, now: number): boolean {
+  respond(action: OneShotAction, now: number, onStarted?: () => void): boolean {
+    if (this.sequenced) return this.sequenced.respond(action, now, onStarted);
     if (this.isMoving(now)) return false;
     this.returningWaterSince = null;
     const clip = action === "offerWater"
-      ? { row: 0, frameCount: this.character.waterOffer.frameCount, frameIntervalMs: this.character.waterOffer.frameIntervalMs }
+      ? waterOfferClip(this.character.waterOffer)
       : this.character.clips[action] ?? this.character.clips.idle;
     this.oneShot = { action, clip, startedAt: now };
+    onStarted?.();
     return true;
   }
 
-  endOfferWater(now: number): void {
-    if (this.oneShot?.action !== "offerWater") return;
+  endOfferWater(now: number): number | null {
+    if (this.sequenced) return this.sequenced.endOfferWater(now);
+    if (this.oneShot?.action !== "offerWater") return null;
     this.oneShot = null;
     this.returningWaterSince = now;
+    const offer = waterOfferClip(this.character.waterOffer);
+    return offer.frameCount * offer.frameIntervalMs;
   }
 
   private movementClip() {

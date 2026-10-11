@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { march7th } from "../characters/march-7th";
 import { createDomPetView } from "./dom-pet-view";
 
@@ -15,6 +15,60 @@ function element() {
 }
 
 describe("DOM pet view", () => {
+  it("uses the current frame's visible bounds with four logical pixels of room, without resizing the sprite", async () => {
+    const sprite = element(); const offer = element();
+    const load = vi.fn().mockResolvedValue({ main: [
+      { left: 50, top: 10, right: 145, bottom: 202 },
+      { left: 25, top: 20, right: 176, bottom: 185 },
+    ] });
+    const view = createDomPetView(sprite.node, offer.node, element().node, element().node, element().node, load);
+    view.configure({ ...march7th, interaction: { pointerRegion: { kind: "visibleBounds", paddingPx: 4 } } });
+    view.setPointerRegionEnabled!(true);
+    await Promise.resolve();
+    view.render({ row: 0, column: 0 });
+    expect(view.containsPointer!({ x: 30, y: 100 })).toBe(false);
+    expect(view.containsPointer!({ x: 70, y: 32 })).toBe(true);
+    expect(view.containsPointer!({ x: 69, y: 32 })).toBe(false);
+    view.render({ row: 0, column: 1 });
+    expect(view.containsPointer!({ x: 70, y: 100 })).toBe(true);
+    expect(view.containsPointer!({ x: 120, y: 216 })).toBe(false);
+    expect(sprite.style.width).toBe("192px");
+    expect(sprite.style.height).toBe("208px");
+    view.setPointerRegionEnabled!(false);
+    expect(view.containsPointer!({ x: 0, y: 0 })).toBe(true);
+  });
+
+  it("ignores late bounds from a previous character and restores legacy full-window interaction", async () => {
+    let resolve!: (value: unknown) => void;
+    const load = vi.fn().mockReturnValue(new Promise(yes => { resolve = yes; }));
+    const view = createDomPetView(element().node, element().node, element().node, element().node, element().node, load);
+    view.configure({ ...march7th, interaction: { pointerRegion: { kind: "visibleBounds", paddingPx: 4 } } });
+    view.setPointerRegionEnabled!(true);
+    view.configure(march7th);
+    resolve({ main: [{ left: 50, top: 10, right: 145, bottom: 202 }] });
+    await Promise.resolve();
+    expect(view.containsPointer!({ x: 0, y: 0 })).toBe(true);
+  });
+
+  it("keeps main-atlas actions on the same visible sprite with no opacity transition and restores legacy styles on switch", () => {
+    const sprite = element(); const offer = element();
+    const view = createDomPetView(sprite.node, offer.node, element().node, element().node, element().node);
+    view.configure({ ...march7th, waterOffer: { kind: "mainAtlas", clip: { row: 5, frameCount: 8, frameIntervalMs: 140 } } });
+    for (let column = 0; column < 8; column++) {
+      view.render({ row: 5, column });
+      expect(sprite.style.opacity).toBe("1");
+      expect(sprite.style.backgroundPosition).toBe(`${-column * 192}px -1040px`);
+      expect(offer.style.opacity).toBe("0");
+      expect(offer.style.display).toBe("none");
+    }
+    expect(sprite.style.transition).toBe("none");
+    view.configure(march7th);
+    expect(sprite.style.transition).toBe("");
+    expect(offer.style.display).toBe("");
+    view.render({ asset: "waterOffer", row: 0, column: 1 });
+    expect(sprite.style.opacity).toBe("0");
+    expect(offer.style.opacity).toBe("1");
+  });
   it("renders the configured atlas and invalidates its frame cache on reconfiguration", () => {
     const sprite = element();
     const stage = element();

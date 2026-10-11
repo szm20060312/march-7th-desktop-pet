@@ -59,6 +59,8 @@ pub fn run() {
             focus::native::get_focus,
             focus::native::focus_command,
             cursor_relative_to_window,
+            #[cfg(target_os = "windows")]
+            desktop::set_pet_pointer_passthrough,
             characters::native::get_selected_character,
             characters::native::select_character,
             reminders::native::get_reminders,

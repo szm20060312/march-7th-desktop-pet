@@ -19,7 +19,7 @@ function target() {
   };
 }
 
-function harness() {
+function harness(policy?: { accepts: (point: { x: number; y: number }) => boolean }) {
   let now = 0;
   let id = 0;
   const delays = new Map<number, { at: number; callback: () => void }>();
@@ -41,7 +41,7 @@ function harness() {
   }) as unknown as HTMLElement;
   const input = createDomPetGestures(stageNode, documentTarget.node as unknown as Document, windowTarget.node as unknown as Window, scheduler);
   const handlers = { click: vi.fn(), doubleClick: vi.fn(), drag: vi.fn() };
-  const dispose = input.subscribe(handlers);
+  const dispose = input.subscribe(handlers, policy);
   const pointer = (pointerId: number, x: number, y: number, extra: Record<string, unknown> = {}) => ({
     pointerId, clientX: x, clientY: y, button: 0, isPrimary: true, preventDefault: vi.fn(), ...extra,
   });
@@ -53,6 +53,60 @@ function harness() {
 }
 
 describe("DOM pet gestures", () => {
+  it.each([
+    { dx: -6, dy: 0, hint: "left" },
+    { dx: 6, dy: 0, hint: "right" },
+    { dx: 0, dy: 6, hint: undefined },
+  ])("reports the horizontal hint from the movement that crosses the drag threshold ($dx,$dy)", ({ dx, dy, hint }) => {
+    const h = harness();
+    h.stage.node.dispatch("pointerdown", h.pointer(1, 100, 100));
+    h.documentTarget.node.dispatch("pointermove", h.pointer(1, 100 + dx / 2, 100 + dy / 2));
+    expect(h.handlers.drag).not.toHaveBeenCalled();
+    h.documentTarget.node.dispatch("pointermove", h.pointer(1, 100 + dx, 100 + dy));
+    expect(h.handlers.drag).toHaveBeenCalledOnce();
+    expect(h.handlers.drag.mock.calls[0][0]).toBe(hint);
+    h.dispose();
+  });
+
+  it("does not capture, click or drag when the press starts in transparent space", () => {
+    const h = harness({ accepts: point => point.x >= 50 && point.x <= 150 });
+    h.stage.node.dispatch("pointerdown", h.pointer(1, 15, 100));
+    expect(h.capture.size).toBe(0);
+    h.documentTarget.node.dispatch("pointermove", h.pointer(1, 60, 100));
+    h.documentTarget.node.dispatch("pointerup", h.pointer(1, 60, 100));
+    h.advance(300);
+    expect(h.handlers.click).not.toHaveBeenCalled();
+    expect(h.handlers.doubleClick).not.toHaveBeenCalled();
+    expect(h.handlers.drag).not.toHaveBeenCalled();
+  });
+
+  it("keeps a press on the character captured when dragging across transparent space", () => {
+    const h = harness({ accepts: point => point.x >= 50 && point.x <= 150 });
+    h.stage.node.dispatch("pointerdown", h.pointer(1, 100, 100));
+    expect(h.capture.has(1)).toBe(true);
+    h.documentTarget.node.dispatch("pointermove", h.pointer(1, 170, 100));
+    expect(h.handlers.drag).toHaveBeenCalledOnce();
+    h.documentTarget.node.dispatch("pointerup", h.pointer(1, 170, 100));
+    h.advance(300);
+    expect(h.handlers.click).not.toHaveBeenCalled();
+  });
+
+  it("keeps single and double clicks on the character with the compact policy enabled", () => {
+    const h = harness({ accepts: point => point.x >= 50 && point.x <= 150 });
+    h.stage.node.dispatch("pointerdown", h.pointer(1, 100, 100));
+    h.documentTarget.node.dispatch("pointerup", h.pointer(1, 100, 100));
+    h.advance(300);
+    expect(h.handlers.click).toHaveBeenCalledOnce();
+    h.stage.node.dispatch("pointerdown", h.pointer(2, 100, 100));
+    h.documentTarget.node.dispatch("pointerup", h.pointer(2, 100, 100));
+    h.advance(100);
+    h.stage.node.dispatch("pointerdown", h.pointer(3, 100, 100));
+    h.documentTarget.node.dispatch("pointerup", h.pointer(3, 100, 100));
+    h.advance(300);
+    expect(h.handlers.click).toHaveBeenCalledOnce();
+    expect(h.handlers.doubleClick).toHaveBeenCalledOnce();
+  });
+
   it("waits 300 ms before emitting a single click", () => {
     const h = harness();
     h.stage.node.dispatch("pointerdown", h.pointer(1, 10, 10));

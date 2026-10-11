@@ -1,4 +1,5 @@
 import type { PetGestureHandlers, PetGestureInput, Scheduler } from "../application/ports";
+import { horizontalDirection } from "../domain/animation";
 
 const DOUBLE_CLICK_MS = 300;
 const DRAG_THRESHOLD_PX = 6;
@@ -13,7 +14,7 @@ export function createDomPetGestures(
   scheduler: Scheduler,
 ): PetGestureInput {
   return {
-    subscribe(handlers: PetGestureHandlers) {
+    subscribe(handlers: PetGestureHandlers, policy) {
       let active: ActivePointer | null = null;
       let previousRelease: Release | null = null;
       let clickTimer: number | undefined;
@@ -41,18 +42,20 @@ export function createDomPetGestures(
       };
       const down = (event: PointerEvent) => {
         if (disposed || event.button !== 0 || !event.isPrimary || active) return;
+        if (policy && !policy.accepts({ x: event.clientX, y: event.clientY })) return;
         active = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
         try { stage.setPointerCapture(event.pointerId); } catch { /* capture is best effort */ }
       };
       const move = (event: PointerEvent) => {
         if (!active || event.pointerId !== active.pointerId) return;
         if (Math.hypot(event.clientX - active.x, event.clientY - active.y) < DRAG_THRESHOLD_PX) return;
+        const directionHint = horizontalDirection(event.clientX - active.x, 0) ?? undefined;
         const pointerId = active.pointerId;
         active = null;
         cancelClick();
         releaseCapture(pointerId);
         event.preventDefault();
-        handlers.drag();
+        handlers.drag(directionHint);
       };
       const up = (event: PointerEvent) => {
         if (!active || event.pointerId !== active.pointerId) return;

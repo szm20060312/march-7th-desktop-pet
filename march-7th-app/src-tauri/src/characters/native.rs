@@ -60,6 +60,10 @@ fn reconcile<R: Runtime>(app: &AppHandle<R>, emit: bool) {
         return;
     };
     // Called on the main thread, after snapshot releases its state lock.
+    #[cfg(target_os = "windows")]
+    if let Err(error) = crate::desktop::refresh_pointer_policy(app) {
+        eprintln!("Character pointer policy update failed: {error}");
+    }
     for (id, item) in &native.items {
         if let Err(error) = item.set_checked(*id == snapshot.selected_character_id) {
             eprintln!("Character menu update failed: {error}");

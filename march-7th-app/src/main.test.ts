@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { characterCatalog } from "./characters/catalog";
+import { atlasBitmapDimensions } from "./domain/character";
 
-const native = vi.hoisted(() => ({ invoke: vi.fn(), startDragging: vi.fn(), listen: vi.fn(), getSelection: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, args?: unknown) => command === "get_selected_character" ? native.getSelection() : native.invoke(command, args) }));
+function decodedAssetSize(src: string) {
+  for (const character of characterCatalog.characters) {
+    if (src === character.atlas.src) return atlasBitmapDimensions(character.atlas);
+    if (character.waterOffer.kind !== "mainAtlas" && src === character.waterOffer.src) return { width: character.waterOffer.sourceWidth, height: character.waterOffer.sourceHeight };
+  }
+  throw new Error(`Unexpected image in test: ${src}`);
+}
+
+const native = vi.hoisted(() => ({ invoke: vi.fn(), pointerPassthrough: vi.fn(), startDragging: vi.fn(), listen: vi.fn(), getSelection: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, args?: unknown) => command === "get_selected_character" ? native.getSelection() : command === "set_pet_pointer_passthrough" ? native.pointerPassthrough(args) : native.invoke(command, args) }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: native.startDragging }),
 }));
@@ -43,6 +53,7 @@ beforeEach(() => {
   native.listen.mockReset().mockResolvedValue(vi.fn());
   native.getSelection.mockReset().mockResolvedValue({ selectedCharacterId: "march-7th", revision: 0, persistence: "default" });
   native.invoke.mockReset().mockResolvedValue(sample());
+  native.pointerPassthrough.mockReset().mockImplementation(async ({ ignore }) => ignore);
   native.startDragging.mockReset().mockResolvedValue(undefined);
   now = 0;
   timers = new Map();
@@ -83,7 +94,7 @@ beforeEach(() => {
     private path = "";
     naturalWidth = 1536;
     naturalHeight = 2288;
-    set src(value: string) { this.path = value; if (value.endsWith("water-offer.png")) { this.naturalWidth = value.includes("raiden-shogun") ? 1205 : 1189; this.naturalHeight = value.includes("raiden-shogun") ? 1306 : 1323; } }
+    set src(value: string) { this.path = value; const size = decodedAssetSize(value); this.naturalWidth = size.width; this.naturalHeight = size.height; }
     get src() { return this.path; }
     decode = vi.fn().mockResolvedValue(undefined);
   });
@@ -199,7 +210,7 @@ describe("desktop pet behavior at the entry point", () => {
     let fail = true;
     vi.stubGlobal("Image", class {
       private path = ""; naturalWidth = 1536; naturalHeight = 2288;
-      set src(value: string) { this.path = value; if (value.endsWith("water-offer.png")) { this.naturalWidth = value.includes("raiden-shogun") ? 1205 : 1189; this.naturalHeight = value.includes("raiden-shogun") ? 1306 : 1323; } }
+      set src(value: string) { this.path = value; const size = decodedAssetSize(value); this.naturalWidth = size.width; this.naturalHeight = size.height; }
       get src() { return this.path; }
       decode = async () => { if (fail) throw Error("simulated atlas failure"); };
     });

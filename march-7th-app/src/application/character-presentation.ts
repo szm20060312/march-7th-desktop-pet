@@ -1,4 +1,5 @@
 import type { CharacterCatalog, CharacterDefinition, OneShotAction, ResponseContext } from "../domain/character";
+import { atlasBitmapDimensions } from "../domain/character";
 import type { ReminderId } from "../domain/reminder";
 import { reminderPrompt } from "../domain/reminder-prompt";
 import type { AtlasPreloader, PresentationStatus } from "./ports";
@@ -44,15 +45,15 @@ export function createCharacterPresentationController(options: {
     }
 
     try {
-      const [size, offerSize] = await Promise.all([preloadAtlas(character.atlas.src), preloadAtlas(character.waterOffer.src)]);
+      const offer = character.waterOffer;
+      const [size, offerSize] = await Promise.all([preloadAtlas(character.atlas.src), offer.kind === "mainAtlas" ? Promise.resolve(null) : preloadAtlas(offer.src)]);
       if (destroyed || token !== request || snapshot.revision !== latestRevision) return false;
-      const expectedWidth = character.atlas.cellWidth * character.atlas.columns;
-      const expectedHeight = character.atlas.cellHeight * character.atlas.rows;
+      const { width: expectedWidth, height: expectedHeight } = atlasBitmapDimensions(character.atlas);
       if (size.width !== expectedWidth || size.height !== expectedHeight) {
         throw new Error(`图集尺寸应为 ${expectedWidth}×${expectedHeight}，实际为 ${size.width}×${size.height}`);
       }
-      if (offerSize.width !== character.waterOffer.sourceWidth || offerSize.height !== character.waterOffer.sourceHeight) {
-        throw new Error(`递杯图集尺寸应为 ${character.waterOffer.sourceWidth}×${character.waterOffer.sourceHeight}`);
+      if (offer.kind !== "mainAtlas" && offerSize && (offerSize.width !== offer.sourceWidth || offerSize.height !== offer.sourceHeight)) {
+        throw new Error(`递杯图集尺寸应为 ${offer.sourceWidth}×${offer.sourceHeight}`);
       }
       const previousCharacter = activeId ? findCharacter(activeId) ?? null : null;
       runtime?.stop();

@@ -11,6 +11,18 @@ struct Point {
 #[link(name = "user32")]
 unsafe extern "system" {
     fn GetCursorPos(point: *mut Point) -> i32;
+    fn GetAsyncKeyState(key: i32) -> i16;
+    fn GetSystemMetrics(index: i32) -> i32;
+}
+
+pub fn primary_button_down() -> bool {
+    // Respect the user's primary-button setting without changing any system setting.
+    let key = if unsafe { GetSystemMetrics(23) } != 0 {
+        0x02
+    } else {
+        0x01
+    };
+    unsafe { GetAsyncKeyState(key) < 0 }
 }
 
 pub fn cursor_position() -> Result<ScreenPoint, String> {

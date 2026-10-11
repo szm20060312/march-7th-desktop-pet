@@ -40,22 +40,33 @@
     {
       "id": "raiden-shogun",
       "displayName": "雷电将军",
+      "interaction": { "pointerRegion": { "kind": "visibleBounds", "paddingPx": 4 } },
       "atlas": {
         "src": "/assets/raiden-shogun/spritesheet.webp",
         "cellWidth": 192,
         "cellHeight": 208,
-        "columns": 8,
-        "rows": 11
+        "columns": 30,
+        "rows": 11,
+        "pixelDensity": 2
       },
       "clips": {
-        "idle": { "row": 0, "frameCount": 6, "frameIntervalMs": 280 },
-        "movingRight": { "row": 1, "frameCount": 8, "frameIntervalMs": 90 },
-        "movingLeft": { "row": 2, "frameCount": 8, "frameIntervalMs": 90 },
-        "wave": { "row": 3, "frameCount": 4, "frameIntervalMs": 180 },
-        "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
+        "idle": { "row": 0, "frameCount": 30, "frameIntervalMs": 56 },
+        "movingRight": { "row": 1, "frameCount": 30, "frameIntervalMs": 24 },
+        "movingLeft": { "row": 2, "frameCount": 30, "frameIntervalMs": 24 },
+        "wave": { "row": 3, "frameCount": 30, "frameIntervalMs": 27 },
+        "jump": { "row": 4, "frameCount": 30, "frameIntervalMs": 24 }
       },
       "look": { "firstRow": 9, "directionCount": 16 },
-      "waterOffer": { "src": "/assets/raiden-shogun/water-offer.png", "sourceWidth": 1205, "sourceHeight": 1306, "columns": 2, "rows": 2, "frameCount": 4, "frameIntervalMs": 220 },
+      "waterOffer": { "kind": "mainAtlas", "clip": { "row": 5, "frameCount": 30, "frameIntervalMs": 37 } },
+      "presentation": {
+        "neutralFrame": { "row": 0, "column": 0 },
+        "neutralHoldMs": 80,
+        "finishRunBeforeExit": true,
+        "movementTransitions": {
+          "right": { "row": 6, "frameCount": 30, "frameIntervalMs": 8 },
+          "left": { "row": 7, "frameCount": 30, "frameIntervalMs": 8 }
+        }
+      },
       "phrases": {
         "click": ["我在。", "此刻，与你同在。"],
         "doubleClick": ["精神尚可。", "稍作舒展，也好。"],

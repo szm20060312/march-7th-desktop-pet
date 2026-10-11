@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { march7th } from "../characters/march-7th";
-import type { CursorSample } from "../domain/animation";
+import type { CursorSample, HorizontalDirection } from "../domain/animation";
 import type { PetGestureHandlers, PetView, Scheduler } from "./ports";
 import { startPetRuntime } from "./pet-runtime";
+import type { CharacterDefinition } from "../domain/character";
+import { connectReminderResponses, type ReminderTransport } from "../adapters/tauri-reminders";
+
+const sequencedCharacter: CharacterDefinition = {
+  ...march7th,
+  clips: { ...march7th.clips, wave: { row: 3, frameCount: 8, frameIntervalMs: 100 }, jump: { row: 4, frameCount: 8, frameIntervalMs: 90 } },
+  waterOffer: { kind: "mainAtlas", clip: { row: 5, frameCount: 8, frameIntervalMs: 140 } },
+  presentation: { neutralFrame: { row: 0, column: 0 }, neutralHoldMs: 80,
+    movementTransitions: { right: { row: 6, frameCount: 4, frameIntervalMs: 60 }, left: { row: 7, frameCount: 4, frameIntervalMs: 60 } } },
+};
 
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
 const cursor = { x: 100, y: 0, windowX: 0, windowY: 0 };
@@ -35,12 +45,128 @@ function harness() {
   const reportError = vi.fn();
   return { view, host, scheduler, gestures, reportError, delays, frames, unsubscribe,
     setNow: (value: number) => { now = value; },
-    gesture: (name: keyof PetGestureHandlers) => gestureHandlers[name](),
-    start: () => startPetRuntime({ character: march7th, view, gestures, host, scheduler, reportError }),
+    gesture: (name: keyof PetGestureHandlers, hint?: HorizontalDirection) => gestureHandlers[name](hint),
+    start: (character: CharacterDefinition = march7th) => startPetRuntime({ character, view, gestures, host, scheduler, reportError }),
   };
 }
 
 describe("pet runtime lifecycle", () => {
+  it("uses the drag hint before native cursor/drag promises settle and starts native dragging immediately", async () => {
+    const h = harness(); const pendingCursor = deferred<CursorSample>(); const pendingDrag = deferred<void>();
+    h.host.sampleCursor.mockReturnValue(pendingCursor.promise);
+    h.host.startDragging.mockReturnValue(pendingDrag.promise);
+    const runtime = h.start(sequencedCharacter);
+    h.gesture("drag", "left");
+    expect(h.host.startDragging).toHaveBeenCalledOnce();
+    const draw = [...h.frames.values()][0];
+    h.setNow(16); draw(16);
+    expect(h.view.render).toHaveBeenLastCalledWith({ row: 7, column: 0 });
+    runtime.stop();
+    pendingDrag.resolve(undefined); pendingCursor.resolve(cursor); await flush();
+    expect(h.delays.size).toBe(0);
+  });
+
+  it.each(["complete", "snoozeAll"] as const)("accepts a later distinct manual %s after cup feedback ends while transport deduplicates revisions", async type => {
+    const h = harness(); const runtime = h.start(sequencedCharacter);
+    const events = new Map<string, (value: unknown) => void>();
+    const transport: ReminderTransport = { invoke: vi.fn(), listen: async (name, callback) => { events.set(name, callback); return () => { events.delete(name); }; } };
+    const accepted: boolean[] = [];
+    const disconnect = connectReminderResponses({ transport, reportError: h.reportError,
+      respond: response => { accepted.push(runtime.respond(response.type === "complete" ? "reminderCompleted" : "reminderSnoozed")); } });
+    await flush();
+    const emit = events.get("reminder-response")!;
+    const paint = (now: number) => { h.setNow(now); [...h.frames.values()][0](now); };
+    runtime.respond("reminderDue", "喝口水", "offerWater");
+    paint(280); runtime.endReminder();
+    emit({ revision: 40, type: "complete", id: "water" });
+    emit({ revision: 40, type: "complete", id: "water" });
+    paint(780); paint(1580);
+    emit(type === "complete" ? { revision: 39, type, id: "eyes" } : { revision: 39, type });
+    emit(type === "complete" ? { revision: 39, type, id: "eyes" } : { revision: 39, type });
+    paint(1580);
+    expect(accepted).toEqual([true, true]);
+    expect(h.view.render).toHaveBeenLastCalledWith({ row: type === "complete" ? 4 : 3, column: 0 });
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toEqual([["喝口水"], ["好耶，先歇一小会儿！"], [type === "complete" ? "做完啦，咱慢慢来！" : "收到，咱晚点再说！"]]);
+    disconnect(); runtime.stop();
+  });
+  it.each([march7th, sequencedCharacter])("clears a non-water reminder after its native end for $id", character => {
+    const h = harness(); const runtime = h.start(character);
+    runtime.respond("reminderDue", "起来走走");
+    runtime.endReminder();
+    const delayedClear = [...h.delays.values()].find(delay => delay.ms > 33)!;
+    expect(delayedClear).toBeDefined();
+    delayedClear.callback();
+    expect(h.view.clearPhrase).toHaveBeenCalledOnce();
+    runtime.stop();
+  });
+  it("does not show stale reminder text when a non-water reminder ends before its queued action starts", () => {
+    const h = harness(); const runtime = h.start(sequencedCharacter);
+    runtime.respond("click");
+    h.setNow(100); runtime.respond("reminderDue", "起来走走");
+    h.setNow(200); runtime.endReminder(); runtime.endReminder();
+    h.setNow(880); [...h.frames.values()][0](880);
+    expect(h.view.render).toHaveBeenLastCalledWith({ row: 3, column: 0 });
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toEqual([["咱在呢！"]]);
+    runtime.stop();
+  });
+  it.each(["endFirst", "responseFirst"])("returns the main-atlas cup once before transport-deduplicated feedback with %s event order", async order => {
+    const h = harness(); const runtime = h.start(sequencedCharacter);
+    const events = new Map<string, (value: unknown) => void>();
+    const accepted: boolean[] = [];
+    const transport: ReminderTransport = { invoke: vi.fn(), listen: async (name, callback) => { events.set(name, callback); return () => { events.delete(name); }; } };
+    const disconnect = connectReminderResponses({ transport, reportError: h.reportError,
+      respond: () => { accepted.push(runtime.respond("reminderCompleted")); } });
+    await flush();
+    const emit = () => events.get("reminder-response")!({ revision: 40, type: "complete", id: "water" });
+    const paint = (now: number) => { h.setNow(now); [...h.frames.values()][0](now); };
+    runtime.respond("reminderDue", "喝口水", "offerWater");
+    paint(280);
+    if (order === "endFirst") runtime.endReminder();
+    emit();
+    expect(accepted).toEqual([true]);
+    if (order === "responseFirst") runtime.endReminder();
+    runtime.endReminder();
+    emit();
+    expect(accepted).toEqual([true]);
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("喝口水");
+    paint(280); expect(h.view.render).toHaveBeenLastCalledWith({ row: 5, column: 2 });
+    paint(700); expect(h.view.render).toHaveBeenLastCalledWith({ row: 0, column: 0 });
+    paint(780); expect(h.view.render).toHaveBeenLastCalledWith({ row: 4, column: 0 });
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toEqual([["喝口水"], ["好耶，先歇一小会儿！"]]);
+    const oldReturn = [...h.delays.values()].find(delay => delay.ms === 500);
+    oldReturn?.callback();
+    expect(h.view.clearPhrase).not.toHaveBeenCalled();
+    paint(1580);
+    emit();
+    expect(accepted).toEqual([true]);
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toHaveLength(2);
+    disconnect(); runtime.stop();
+  });
+  it("shows only the latest queued phrase when its action starts and initiates native drag without waiting", () => {
+    const h = harness(); const runtime = h.start(sequencedCharacter);
+    runtime.respond("click");
+    h.setNow(100); runtime.respond("click");
+    h.setNow(200); runtime.respond("doubleClick");
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toEqual([["咱在呢！"]]);
+    h.setNow(880); [...h.frames.values()][0](880);
+    expect(h.view.render).toHaveBeenLastCalledWith({ row: 4, column: 0 });
+    expect(vi.mocked(h.view.showPhrase).mock.calls).toEqual([["咱在呢！"], ["嘿，精神满满！"]]);
+    h.setNow(1000); runtime.respond("click");
+    h.gesture("drag");
+    expect(h.host.startDragging).toHaveBeenCalledOnce();
+    [...h.frames.values()][0](1000);
+    expect(h.view.render).toHaveBeenLastCalledWith({ row: 4, column: 1 });
+    const queued = [...h.frames.values()][0];
+    runtime.stop();
+    const paints = vi.mocked(h.view.render).mock.calls.length;
+    const phrases = vi.mocked(h.view.showPhrase).mock.calls.length;
+    queued(5000);
+    runtime.endReminder();
+    expect(runtime.respond("click")).toBe(false);
+    expect(h.view.render).toHaveBeenCalledTimes(paints);
+    expect(h.view.showPhrase).toHaveBeenCalledTimes(phrases);
+    expect(h.delays.size).toBe(0);
+  });
   it("does not overlap slow IPC and waits until it completes before scheduling", async () => {
     const h = harness();
     const pending = deferred<CursorSample>();
@@ -166,6 +292,92 @@ describe("pet runtime lifecycle", () => {
     h.gesture("drag");
     expect(runtime.respond("click")).toBe(false);
     expect(h.view.showPhrase).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+  it("requests native passthrough only for blank space on a capable Windows host", async () => {
+    const h = harness();
+    const containsPointer = vi.fn().mockReturnValue(false);
+    const setPointerRegionEnabled = vi.fn();
+    const setPointerPassthrough = vi.fn().mockImplementation(async (ignore: boolean) => ignore);
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled }, host: { ...h.host, setPointerPassthrough }, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    expect(setPointerRegionEnabled).toHaveBeenCalledWith(true);
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(true, character.id);
+    containsPointer.mockReturnValue(true);
+    [...h.delays.values()].find(delay => delay.ms === 33)!.callback();
+    await flush();
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(false, character.id);
+    runtime.stop();
+  });
+
+  it("restores native input on stop and fences a late passthrough result", async () => {
+    const h = harness(); const pending = deferred<boolean>();
+    const containsPointer = vi.fn().mockReturnValue(false);
+    const setPointerRegionEnabled = vi.fn();
+    const setPointerPassthrough = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(false);
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled }, host: { ...h.host, setPointerPassthrough }, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    runtime.stop();
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(false, character.id, false);
+    pending.resolve(true); await flush();
+    expect(setPointerPassthrough).toHaveBeenCalledTimes(2);
+    expect(h.delays.size).toBe(0);
+    expect(setPointerRegionEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps the previous interaction path when the host has no Windows pointer capability", async () => {
+    const h = harness(); const enabled = vi.fn(); const containsPointer = vi.fn().mockReturnValue(false);
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled: enabled }, host: h.host, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    expect(enabled).not.toHaveBeenCalledWith(true);
+    expect(containsPointer).not.toHaveBeenCalled();
+    h.gesture("click");
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("咱在呢！");
+    runtime.stop();
+  });
+
+  it("falls back to ordinary input when the native pointer policy fails", async () => {
+    const h = harness();
+    const enabled = vi.fn(); const containsPointer = vi.fn().mockReturnValue(false);
+    const setPointerPassthrough = vi.fn().mockRejectedValueOnce(new Error("native unavailable")).mockResolvedValue(false);
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled: enabled }, host: { ...h.host, setPointerPassthrough }, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    expect(h.reportError).toHaveBeenCalledWith("pointer-region", expect.any(Error));
+    expect(enabled).toHaveBeenLastCalledWith(false);
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(false, character.id, false);
+    h.gesture("click");
+    expect(h.view.showPhrase).toHaveBeenLastCalledWith("咱在呢！");
+    runtime.stop();
+  });
+  it("rechecks a suppressed passthrough during held input and clears the request when the cursor returns to the body", async () => {
+    const h = harness(); const containsPointer = vi.fn().mockReturnValue(false);
+    const setPointerPassthrough = vi.fn().mockResolvedValue(false);
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled: vi.fn() }, host: { ...h.host, setPointerPassthrough }, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    [...h.delays.values()].find(delay => delay.ms === 33)!.callback(); await flush();
+    expect(setPointerPassthrough).toHaveBeenCalledTimes(2);
+    containsPointer.mockReturnValue(true);
+    [...h.delays.values()].find(delay => delay.ms === 33)!.callback(); await flush();
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(false, character.id);
+    runtime.stop();
+  });
+
+  it("restores native input for an unavailable cursor sample without permanently disabling the measured region", async () => {
+    const h = harness(); const enabled = vi.fn(); const containsPointer = vi.fn().mockReturnValue(false);
+    const setPointerPassthrough = vi.fn().mockImplementation(async (ignore: boolean) => ignore);
+    h.host.sampleCursor.mockRejectedValueOnce(new Error("cursor unavailable"));
+    const character = { ...march7th, interaction: { pointerRegion: { kind: "visibleBounds" as const, paddingPx: 4 } } };
+    const runtime = startPetRuntime({ character, view: { ...h.view, containsPointer, setPointerRegionEnabled: enabled }, host: { ...h.host, setPointerPassthrough }, gestures: h.gestures, scheduler: h.scheduler, reportError: h.reportError });
+    await flush();
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(false, character.id, false);
+    expect(enabled).toHaveBeenLastCalledWith(true);
+    [...h.delays.values()].find(delay => delay.ms === 33)!.callback(); await flush();
+    expect(setPointerPassthrough).toHaveBeenLastCalledWith(true, character.id);
     runtime.stop();
   });
   it("routes gesture clicks through the explicit response entry", () => {

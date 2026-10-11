@@ -1,9 +1,11 @@
-import type { CursorSample, Point, SpriteFrame } from "../domain/animation";
+import type { CursorSample, HorizontalDirection, Point, SpriteFrame } from "../domain/animation";
 import type { CharacterDefinition } from "../domain/character";
 
 export interface PetHost {
   sampleCursor(): Promise<CursorSample>;
   startDragging(): Promise<void>;
+  /** Only offered by hosts supporting native, selective pointer passthrough. */
+  setPointerPassthrough?(ignore: boolean, characterId: string, enabled?: boolean): Promise<boolean>;
 }
 export interface PetView {
   configure(character: CharacterDefinition): void;
@@ -13,14 +15,16 @@ export interface PetView {
   showPhrase(text: string): void;
   clearPhrase(): void;
   setPresentationError(message: string | null): void;
+  setPointerRegionEnabled?(enabled: boolean): void;
+  containsPointer?(point: Point): boolean;
 }
 export interface PetGestureHandlers {
   click(): void;
   doubleClick(): void;
-  drag(): void;
+  drag(directionHint?: HorizontalDirection): void;
 }
 export interface PetGestureInput {
-  subscribe(handlers: PetGestureHandlers): () => void;
+  subscribe(handlers: PetGestureHandlers, policy?: Readonly<{ accepts(point: Point): boolean }>): () => void;
 }
 export interface Scheduler {
   now(): number;

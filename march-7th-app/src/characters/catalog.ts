@@ -2,6 +2,8 @@ import type {
   AnimationClip,
   CharacterCatalog,
   CharacterDefinition,
+  CharacterPresentation,
+  WaterOffer,
   ReminderTopic,
   ResponseContext,
 } from "../domain/character";
@@ -55,6 +57,10 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   const cellHeight = positiveInteger(atlasData.cellHeight, `${path}.atlas.cellHeight`);
   const columns = positiveInteger(atlasData.columns, `${path}.atlas.columns`);
   const rows = positiveInteger(atlasData.rows, `${path}.atlas.rows`);
+  if (atlasData.pixelDensity !== undefined && atlasData.pixelDensity !== 1 && atlasData.pixelDensity !== 2) {
+    throw new Error(`${path}.atlas.pixelDensity must be 1 or 2`);
+  }
+  const pixelDensity = atlasData.pixelDensity as 1 | 2 | undefined;
 
   const clipData = object(record.clips, `${path}.clips`);
   const parsedClips: Partial<Record<(typeof clipNames)[number], AnimationClip>> = {};
@@ -71,14 +77,52 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   if (firstRow + Math.ceil(directionCount / columns) > rows) throw new Error(`${path}.look exceeds atlas rows`);
 
   const offerData = object(record.waterOffer, `${path}.waterOffer`);
-  const offerSrc = string(offerData.src, `${path}.waterOffer.src`);
-  if (offerSrc !== `/assets/${id}/water-offer.png`) throw new Error(`${path}.waterOffer path must be a local built-in asset`);
-  const sourceWidth = positiveInteger(offerData.sourceWidth, `${path}.waterOffer.sourceWidth`);
-  const sourceHeight = positiveInteger(offerData.sourceHeight, `${path}.waterOffer.sourceHeight`);
-  if (offerData.columns !== 2 || offerData.rows !== 2 || offerData.frameCount !== 4) throw new Error(`${path}.waterOffer must be a complete 2x2 action`);
-  const offerInterval = positiveInteger(offerData.frameIntervalMs, `${path}.waterOffer.frameIntervalMs`);
+  let waterOffer: WaterOffer;
+  if (offerData.kind === "mainAtlas") {
+    waterOffer = { kind: "mainAtlas", clip: parseClip(offerData.clip, `${path}.waterOffer.clip`, columns, rows) };
+  } else {
+    if (offerData.kind !== undefined && offerData.kind !== "separate") throw new Error(`${path}.waterOffer.kind is invalid`);
+    const offerSrc = string(offerData.src, `${path}.waterOffer.src`);
+    if (offerSrc !== `/assets/${id}/water-offer.png`) throw new Error(`${path}.waterOffer path must be a local built-in asset`);
+    const sourceWidth = positiveInteger(offerData.sourceWidth, `${path}.waterOffer.sourceWidth`);
+    const sourceHeight = positiveInteger(offerData.sourceHeight, `${path}.waterOffer.sourceHeight`);
+    if (offerData.columns !== 2 || offerData.rows !== 2 || offerData.frameCount !== 4) throw new Error(`${path}.waterOffer must be a complete 2x2 action`);
+    const offerInterval = positiveInteger(offerData.frameIntervalMs, `${path}.waterOffer.frameIntervalMs`);
+    waterOffer = { ...(offerData.kind === "separate" ? { kind: "separate" as const } : {}), src: offerSrc, sourceWidth, sourceHeight, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: offerInterval };
+  }
+
+  let presentation: CharacterPresentation | undefined;
+  if (record.presentation !== undefined) {
+    const settings = object(record.presentation, `${path}.presentation`);
+    const neutral = object(settings.neutralFrame, `${path}.presentation.neutralFrame`);
+    const row = nonNegativeInteger(neutral.row, `${path}.presentation.neutralFrame.row`);
+    const column = nonNegativeInteger(neutral.column, `${path}.presentation.neutralFrame.column`);
+    if (row >= rows || column >= columns) throw new Error(`${path}.presentation.neutralFrame exceeds atlas`);
+    const transitions = object(settings.movementTransitions, `${path}.presentation.movementTransitions`);
+    if (settings.finishRunBeforeExit !== undefined && typeof settings.finishRunBeforeExit !== "boolean") {
+      throw new Error(`${path}.presentation.finishRunBeforeExit must be a boolean`);
+    }
+    presentation = {
+      neutralFrame: { row, column },
+      neutralHoldMs: positiveInteger(settings.neutralHoldMs, `${path}.presentation.neutralHoldMs`),
+      movementTransitions: {
+        left: parseClip(transitions.left, `${path}.presentation.movementTransitions.left`, columns, rows),
+        right: parseClip(transitions.right, `${path}.presentation.movementTransitions.right`, columns, rows),
+      },
+      ...(settings.finishRunBeforeExit !== undefined ? { finishRunBeforeExit: settings.finishRunBeforeExit as boolean } : {}),
+    };
+  }
 
   const phraseData = object(record.phrases, `${path}.phrases`);
+  let interaction: CharacterDefinition["interaction"];
+  if (record.interaction !== undefined) {
+    const settings = object(record.interaction, `${path}.interaction`);
+    const region = object(settings.pointerRegion, `${path}.interaction.pointerRegion`);
+    if (region.kind !== "visibleBounds") throw new Error(`${path}.interaction.pointerRegion.kind is invalid`);
+    const paddingPx = nonNegativeInteger(region.paddingPx, `${path}.interaction.pointerRegion.paddingPx`);
+    if (paddingPx > 12) throw new Error(`${path}.interaction.pointerRegion.paddingPx exceeds the allowed margin`);
+    interaction = { pointerRegion: { kind: "visibleBounds", paddingPx } };
+  }
   const phrases: Partial<Record<ResponseContext, readonly string[]>> = {};
   for (const context of responseContexts) {
     const values = phraseData[context];
@@ -106,7 +150,7 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   return {
     id,
     displayName,
-    atlas: { src, cellWidth, cellHeight, columns, rows },
+    atlas: { src, cellWidth, cellHeight, columns, rows, ...(pixelDensity !== undefined ? { pixelDensity } : {}) },
     clips: {
       idle: parsedClips.idle!,
       movingLeft: parsedClips.movingLeft!,
@@ -115,7 +159,9 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
       jump: parsedClips.jump,
     },
     look: { firstRow, directionCount },
-    waterOffer: { src: offerSrc, sourceWidth, sourceHeight, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: offerInterval },
+    waterOffer,
+    ...(presentation ? { presentation } : {}),
+    ...(interaction ? { interaction } : {}),
     phrases,
     reminderPrompts,
   };

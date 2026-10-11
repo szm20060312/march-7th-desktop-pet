@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { characterCatalog } from "../characters/catalog";
-import type { CharacterDefinition } from "../domain/character";
+import { atlasBitmapDimensions, type CharacterDefinition } from "../domain/character";
 import { createCharacterPresentationController, type SelectedCharacterSnapshot } from "./character-presentation";
 
 function deferred<T>() {
@@ -27,16 +27,37 @@ function harness(initial: SelectedCharacterSnapshot = { characterId: "march-7th"
   const status = { setPresentationError: vi.fn() };
   const reportError = vi.fn();
   const controller = createCharacterPresentationController({ catalog: characterCatalog, initial, preloadAtlas, createRuntime, status, reportError });
-  const finish = async (id: string, size = { width: 1536, height: 2288 }) => {
+  const finish = async (id: string, size?: { width: number; height: number }) => {
     const character = characterCatalog.characters.find(item => item.id === id)!;
-    loads.get(character.atlas.src)!.resolve(size);
-    loads.get(character.waterOffer.src)!.resolve({ width: character.waterOffer.sourceWidth, height: character.waterOffer.sourceHeight });
+    loads.get(character.atlas.src)!.resolve(size ?? atlasBitmapDimensions(character.atlas));
+    if (character.waterOffer.kind !== "mainAtlas") loads.get(character.waterOffer.src)!.resolve({ width: character.waterOffer.sourceWidth, height: character.waterOffer.sourceHeight });
     await flush();
   };
   return { controller, preloadAtlas, createRuntime, runtimes, status, reportError, loads, finish };
 }
 
 describe("character presentation controller", () => {
+  it("preloads only the main image for a main-atlas cup and still validates its decoded size", async () => {
+    const source = characterCatalog.characters[1];
+    const character: CharacterDefinition = { ...source, waterOffer: { kind: "mainAtlas", clip: { row: 5, frameCount: 8, frameIntervalMs: 140 } } };
+    const preloadAtlas = vi.fn().mockResolvedValue(atlasBitmapDimensions(source.atlas));
+    const createRuntime = vi.fn(() => ({ stop: vi.fn(), respond: vi.fn(), endReminder: vi.fn() }));
+    const status = { setPresentationError: vi.fn() };
+    const controller = createCharacterPresentationController({ catalog: { defaultId: character.id, characters: [character] },
+      initial: { characterId: character.id, revision: 1 }, preloadAtlas, createRuntime, status, reportError: vi.fn() });
+    await flush();
+    expect(preloadAtlas.mock.calls).toEqual([[source.atlas.src]]);
+    expect(createRuntime).toHaveBeenCalledWith(character);
+    controller.destroy();
+    preloadAtlas.mockResolvedValue({ width: 1, height: 1 });
+    createRuntime.mockClear();
+    const failed = createCharacterPresentationController({ catalog: { defaultId: character.id, characters: [character] },
+      initial: { characterId: character.id, revision: 1 }, preloadAtlas, createRuntime, status, reportError: vi.fn() });
+    await flush();
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请重试。");
+    failed.destroy();
+  });
   it("validates decoded atlas dimensions before starting the initial runtime", async () => {
     const h = harness();
     expect(h.createRuntime).not.toHaveBeenCalled();
@@ -91,7 +112,8 @@ describe("character presentation controller", () => {
 
     const failed = h.controller.select({ characterId: "raiden-shogun", revision: 3 });
     h.loads.get("/assets/raiden-shogun/spritesheet.webp")!.resolve({ width: 1, height: 1 });
-    h.loads.get("/assets/raiden-shogun/water-offer.png")!.resolve({ width: 1205, height: 1306 });
+    const offer = characterCatalog.characters.find(item => item.id === "raiden-shogun")!.waterOffer;
+    if (offer.kind !== "mainAtlas") h.loads.get(offer.src)!.resolve({ width: offer.sourceWidth, height: offer.sourceHeight });
     await failed;
     expect(h.runtimes[h.runtimes.length - 1].character.id).toBe("march-7th");
     expect(h.status.setPresentationError).toHaveBeenLastCalledWith("无法显示雷电将军，请重试。");

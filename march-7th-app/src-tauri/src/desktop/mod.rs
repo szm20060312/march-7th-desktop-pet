@@ -1,5 +1,7 @@
 pub(crate) mod coordinates;
 pub(crate) mod geometry;
+#[cfg(target_os = "windows")]
+mod pointer_policy;
 mod state;
 mod store;
 pub(crate) use store::imported_has_placement;
@@ -54,6 +56,10 @@ struct Desktop<R: Runtime> {
     interaction: CheckMenuItem<R>,
     click_through: CheckMenuItem<R>,
     status: MenuItem<R>,
+    #[cfg(target_os = "windows")]
+    pointer_policy: Mutex<pointer_policy::PointerPolicy>,
+    #[cfg(target_os = "windows")]
+    pointer_characters: std::collections::HashSet<String>,
 }
 
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -148,6 +154,10 @@ pub fn setup<R: Runtime>(
         interaction,
         click_through,
         status,
+        #[cfg(target_os = "windows")]
+        pointer_policy: Mutex::new(pointer_policy::PointerPolicy::default()),
+        #[cfg(target_os = "windows")]
+        pointer_characters: visible_bounds_characters()?,
     });
     let handle = app.handle().clone();
     std::thread::Builder::new()
@@ -309,6 +319,30 @@ fn change_mode<R: Runtime>(app: &AppHandle<R>, next: Mode) -> Result<(), String>
     let desktop = app.state::<Desktop<R>>();
     let mut mode = desktop.shared.session.lock().unwrap().mode;
     let result = mode.change(next, |ignore| {
+        #[cfg(target_os = "windows")]
+        {
+            let selected = crate::characters::native::snapshot(app);
+            let mut policy = desktop.pointer_policy.lock().unwrap();
+            let allowed = selected.as_ref().is_some_and(|snapshot| {
+                desktop
+                    .pointer_characters
+                    .contains(&snapshot.selected_character_id)
+                    && policy.owned_by(&snapshot.selected_character_id)
+            });
+            policy
+                .refresh(
+                    allowed,
+                    crate::platform::primary_button_down(),
+                    ignore,
+                    |effective| {
+                        main_window(app)?
+                            .set_ignore_cursor_events(effective)
+                            .map_err(|e| e.to_string())
+                    },
+                )
+                .map(|_| ())
+        }
+        #[cfg(not(target_os = "windows"))]
         main_window(app)?
             .set_ignore_cursor_events(ignore)
             .map_err(|e| e.to_string())
@@ -324,6 +358,103 @@ fn change_mode<R: Runtime>(app: &AppHandle<R>, next: Mode) -> Result<(), String>
         }
     }
     result
+}
+
+#[cfg(target_os = "windows")]
+fn visible_bounds_characters() -> Result<std::collections::HashSet<String>, Box<dyn Error>> {
+    let catalog: serde_json::Value =
+        serde_json::from_str(include_str!("../../../src/characters/catalog.json"))?;
+    Ok(catalog["characters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|character| {
+            let region = &character["interaction"]["pointerRegion"];
+            if region["kind"].as_str() == Some("visibleBounds")
+                && region["paddingPx"]
+                    .as_u64()
+                    .is_some_and(|padding| padding <= 12)
+            {
+                character["id"].as_str().map(str::to_owned)
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+/** Only the main window may change this transient policy; preferences are untouched. */
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_pet_pointer_passthrough<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    character_id: String,
+    enabled: bool,
+    ignore: bool,
+    sequence: u64,
+) -> Result<bool, String> {
+    if window.label() != MAIN_WINDOW_LABEL {
+        return Err("pointer policy requires the main window".into());
+    }
+    let desktop = app.state::<Desktop<R>>();
+    let (running, mode) = {
+        let session = desktop.shared.session.lock().unwrap();
+        (session.lifecycle == Lifecycle::Running, session.mode)
+    };
+    if !running {
+        return Err("pointer policy is stopping".into());
+    }
+    let selected = crate::characters::native::snapshot(&app);
+    let allowed = enabled
+        && desktop.pointer_characters.contains(&character_id)
+        && selected
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.selected_character_id == character_id);
+    let result = desktop.pointer_policy.lock().unwrap().request(
+        pointer_policy::PointerRequest {
+            sequence,
+            owner: &character_id,
+            allowed,
+            ignore,
+            button_down: crate::platform::primary_button_down(),
+            manual_ignore: mode == Mode::ClickThrough,
+        },
+        |effective| {
+            window
+                .set_ignore_cursor_events(effective)
+                .map_err(|error| error.to_string())
+        },
+    );
+    result
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn refresh_pointer_policy<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let Some(desktop) = app.try_state::<Desktop<R>>() else {
+        return Ok(());
+    };
+    let mode = desktop.shared.session.lock().unwrap().mode;
+    let selected = crate::characters::native::snapshot(app);
+    let mut policy = desktop.pointer_policy.lock().unwrap();
+    let allowed = selected.as_ref().is_some_and(|snapshot| {
+        desktop
+            .pointer_characters
+            .contains(&snapshot.selected_character_id)
+            && policy.owned_by(&snapshot.selected_character_id)
+    });
+    policy
+        .refresh(
+            allowed,
+            crate::platform::primary_button_down(),
+            mode == Mode::ClickThrough,
+            |effective| {
+                main_window(app)?
+                    .set_ignore_cursor_events(effective)
+                    .map_err(|error| error.to_string())
+            },
+        )
+        .map(|_| ())
 }
 fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if crate::reminders::ui::handle_window_event(window, event) {
