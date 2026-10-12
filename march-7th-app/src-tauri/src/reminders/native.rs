@@ -34,9 +34,21 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Err
     let path = app.state::<DataDirectory>().path(DataFile::Reminders);
     let handle = app.handle().clone();
     let started = Instant::now();
-    let service = Service::start(
+    let policy_handle = app.handle().clone();
+    let service = Service::start_with_water_hold(
         Store::new(path),
         move || sample(started),
+        move || {
+            #[cfg(target_os = "windows")]
+            {
+                crate::characters::native::water_hold_ms(&policy_handle)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = &policy_handle;
+                super::model::AUTO_PRESENTATION_MS
+            }
+        },
         move |change| {
             let handle = handle.clone();
             let queued = handle.clone();

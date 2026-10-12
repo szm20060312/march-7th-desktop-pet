@@ -128,6 +128,16 @@ function delayRaidenDecode() {
 }
 
 describe("desktop pet behavior at the entry point", () => {
+  it("keeps the cup and phrase until the native end even beyond two minutes", async () => {
+    native.getSelection.mockResolvedValue({ selectedCharacterId: "raiden-shogun", revision: 1, persistence: "saved" });
+    await boot();
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1]({ payload: { presentationId: 21, items: ["water"] } });
+    expect(paint(299_999)).toBe("5:29");
+    expect(message.hidden).toBe(false);
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")![1]({ payload: { presentationId: 21 } });
+    expect(paint(301_500)).not.toMatch(/^5:/);
+  });
+
   it("retains a live Raiden water prompt while the initial native selection is pending", async () => {
     let select!: (value: unknown) => void;
     native.getSelection.mockReturnValue(new Promise(resolve => { select = resolve; }));

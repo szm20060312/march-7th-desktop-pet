@@ -28,6 +28,82 @@ fn engine() -> Engine {
     .unwrap();
     e
 }
+fn water_only_engine() -> Engine {
+    let mut e = engine();
+    let mut settings = enabled();
+    for item in &mut settings.items {
+        item.enabled = item.id == Id::Water;
+    }
+    e.step(Some(Command::UpdateSettings { settings }), time(0))
+        .unwrap();
+    e
+}
+#[test]
+fn configured_water_hold_stays_visible_for_five_minutes_then_ends_once() {
+    let mut e = water_only_engine();
+    e.set_water_hold_ms(300_000);
+    e.step(None, time(MINUTE)).unwrap();
+    assert_eq!(
+        e.presentation.as_ref().unwrap().closes_at,
+        Some(MINUTE + 300_000)
+    );
+    e.step(None, time(MINUTE + 120_000)).unwrap();
+    assert!(e.presentation.is_some());
+    e.step(None, time(MINUTE + 299_999)).unwrap();
+    assert!(e.presentation.is_some());
+    e.step(None, time(MINUTE + 300_000)).unwrap();
+    assert!(e.presentation.is_none());
+    e.step(None, time(MINUTE + 600_000)).unwrap();
+    assert!(e.presentation.is_none());
+    assert!(e.data.progress[0].pending);
+}
+#[test]
+fn configured_water_hold_completion_ends_early_without_waiting_for_timeout() {
+    let mut e = water_only_engine();
+    e.set_water_hold_ms(300_000);
+    e.step(None, time(MINUTE)).unwrap();
+    assert_eq!(
+        e.step(
+            Some(Command::Complete { id: Id::Water }),
+            time(MINUTE + 30_000)
+        )
+        .unwrap(),
+        Some(Response::Complete { id: Id::Water })
+    );
+    assert!(e.presentation.is_none());
+    assert!(!e.data.progress[0].pending);
+}
+#[test]
+fn configured_water_hold_is_not_shortened_by_opening_choices() {
+    let mut e = water_only_engine();
+    e.set_water_hold_ms(300_000);
+    e.step(None, time(MINUTE)).unwrap();
+    let id = e.presentation.as_ref().unwrap().id;
+    e.step(
+        Some(Command::ExtendChoices {
+            presentation_id: id,
+        }),
+        time(MINUTE + 30_000),
+    )
+    .unwrap();
+    assert!(e.presentation.as_ref().unwrap().closes_at.unwrap() >= MINUTE + 300_000);
+}
+#[test]
+fn configured_water_hold_keeps_non_water_at_the_legacy_duration() {
+    let mut e = engine();
+    let mut settings = enabled();
+    for item in &mut settings.items {
+        item.enabled = item.id == Id::Move;
+    }
+    e.step(Some(Command::UpdateSettings { settings }), time(0))
+        .unwrap();
+    e.set_water_hold_ms(300_000);
+    e.step(None, time(MINUTE)).unwrap();
+    assert_eq!(
+        e.presentation.as_ref().unwrap().closes_at,
+        Some(MINUTE + 120_000)
+    );
+}
 #[test]
 fn simultaneous_due_is_one_batch_and_never_repeats() {
     let mut e = engine();

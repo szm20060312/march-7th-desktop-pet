@@ -7,11 +7,16 @@ const responseContexts = ["click", "doubleClick", "reminderDue", "reminderComple
 describe("compiled character catalog", () => {
   it("opts only Raiden into loading-safe reminders and water during focus", () => {
     expect((characterCatalog.characters[0] as any).reminderPresentation).toBeUndefined();
-    expect((characterCatalog.characters[1] as any).reminderPresentation).toEqual({ deferUntilReady: true, waterDuringFocus: true });
+    expect((characterCatalog.characters[1] as any).reminderPresentation).toEqual({ deferUntilReady: true, waterDuringFocus: true, waterHoldMs: 300_000 });
     for (const invalid of [{ deferUntilReady: "yes", waterDuringFocus: true }, { deferUntilReady: true, waterDuringFocus: 1 }]) {
       const data = structuredClone(catalogData) as any;
       data.characters[1].reminderPresentation = invalid;
       expect(() => parseCharacterCatalog(data)).toThrow(/reminderPresentation/);
+    }
+    for (const waterHoldMs of [0, 119_999, 300_001, 300_000.5, "300000"]) {
+      const data = structuredClone(catalogData) as any;
+      data.characters[1].reminderPresentation.waterHoldMs = waterHoldMs;
+      expect(() => parseCharacterCatalog(data)).toThrow(/waterHoldMs/);
     }
   });
 

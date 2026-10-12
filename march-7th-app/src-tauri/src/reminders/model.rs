@@ -157,8 +157,12 @@ pub struct Engine {
     pub presentation: Option<Presentation>,
     next_id: u64,
     pub protected: bool,
+    water_hold_ms: i64,
 }
 impl Engine {
+    pub fn set_water_hold_ms(&mut self, duration: i64) {
+        self.water_hold_ms = duration.clamp(AUTO_PRESENTATION_MS, 300_000);
+    }
     pub fn new(data: Data, protected: bool) -> Result<Self, Error> {
         data.validate()?;
         Ok(Self {
@@ -166,6 +170,7 @@ impl Engine {
             presentation: None,
             next_id: 0,
             protected,
+            water_hold_ms: AUTO_PRESENTATION_MS,
         })
     }
     // Commit a whole transition only after all input and arithmetic validation.
@@ -216,6 +221,11 @@ impl Engine {
         }
     }
     fn present(&mut self, mode: Mode, items: Vec<Id>, time: Time) -> Result<(), Error> {
+        let duration = if items.contains(&Id::Water) {
+            self.water_hold_ms
+        } else {
+            AUTO_PRESENTATION_MS
+        };
         self.next_id = self
             .next_id
             .checked_add(1)
@@ -226,14 +236,14 @@ impl Engine {
             mode,
             items,
             closes_at: if mode == Mode::Automatic {
-                Some(add_utc(time.utc_ms, AUTO_PRESENTATION_MS)?)
+                Some(add_utc(time.utc_ms, duration)?)
             } else {
                 None
             },
             monotonic_deadline: if mode == Mode::Automatic {
                 Some(
                     time.monotonic_ms
-                        .checked_add(AUTO_PRESENTATION_MS as u64)
+                        .checked_add(duration as u64)
                         .filter(|v| *v <= MAX_SAFE)
                         .ok_or(Error::new("invalidTime"))?,
                 )
@@ -346,13 +356,27 @@ impl Engine {
                     .as_mut()
                     .filter(|p| p.id == presentation_id && p.mode == Mode::Automatic)
                     .ok_or(Error::new("stalePresentation"))?;
-                presentation.closes_at = Some(add_utc(time.utc_ms, CHOICES_GRACE_MS)?);
-                presentation.monotonic_deadline = Some(
-                    time.monotonic_ms
-                        .checked_add(CHOICES_GRACE_MS as u64)
-                        .filter(|v| *v <= MAX_SAFE)
-                        .ok_or(Error::new("invalidTime"))?,
-                );
+                let retain_long_hold = self.water_hold_ms > AUTO_PRESENTATION_MS
+                    && presentation.items.contains(&Id::Water);
+                let grace_utc = add_utc(time.utc_ms, CHOICES_GRACE_MS)?;
+                presentation.closes_at = Some(if retain_long_hold {
+                    presentation.closes_at.unwrap_or(grace_utc).max(grace_utc)
+                } else {
+                    grace_utc
+                });
+                let grace_monotonic = time
+                    .monotonic_ms
+                    .checked_add(CHOICES_GRACE_MS as u64)
+                    .filter(|v| *v <= MAX_SAFE)
+                    .ok_or(Error::new("invalidTime"))?;
+                presentation.monotonic_deadline = Some(if retain_long_hold {
+                    presentation
+                        .monotonic_deadline
+                        .unwrap_or(grace_monotonic)
+                        .max(grace_monotonic)
+                } else {
+                    grace_monotonic
+                });
             }
             Some(Command::Dismiss { presentation_id })
                 if self

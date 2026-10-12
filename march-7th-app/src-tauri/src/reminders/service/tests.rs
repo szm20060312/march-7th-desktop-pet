@@ -158,6 +158,42 @@ struct MemoryStore {
     writes: Arc<AtomicUsize>,
     fail: Arc<AtomicUsize>,
 }
+#[test]
+fn worker_uses_the_character_water_duration_on_its_initial_due_presentation() {
+    let mut fixture = Engine::new(Data::default(), false).unwrap();
+    fixture
+        .step(
+            Some(Command::UpdateSettings {
+                settings: enabled(),
+            }),
+            time(0),
+        )
+        .unwrap();
+    fixture.step(None, time(MINUTE)).unwrap();
+    for p in &mut fixture.data.progress {
+        p.auto_handled = false;
+    }
+    let (events, received) = mpsc::channel();
+    let service = Service::start_with_water_hold(
+        MemoryStore {
+            data: fixture.data,
+            writes: Arc::new(AtomicUsize::new(0)),
+            fail: Arc::new(AtomicUsize::new(0)),
+        },
+        || Ok(time(MINUTE)),
+        || 300_000,
+        move |change| {
+            let _ = events.send(change.snapshot);
+        },
+    )
+    .unwrap();
+    let shown = received.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(
+        shown.presentation.unwrap().closes_at,
+        Some(MINUTE + 300_000)
+    );
+    service.stop();
+}
 impl Storage for MemoryStore {
     fn load(&mut self) -> (Data, Persistence) {
         (

@@ -123,6 +123,22 @@ pub(crate) fn water_during_focus<R: Runtime>(app: &AppHandle<R>) -> bool {
             .allows_water_during_focus(&snapshot.selected_character_id)
     })
 }
+#[cfg(target_os = "windows")]
+pub(crate) fn water_hold_ms<R: Runtime>(app: &AppHandle<R>) -> i64 {
+    let Some(native) = app.try_state::<NativeCharacters<R>>() else {
+        return 120_000;
+    };
+    native
+        .service
+        .running_snapshot()
+        .map(|snapshot| {
+            native
+                .service
+                .catalog
+                .water_hold_ms(&snapshot.selected_character_id)
+        })
+        .unwrap_or(120_000)
+}
 #[tauri::command]
 pub async fn select_character<R: Runtime>(
     app: AppHandle<R>,

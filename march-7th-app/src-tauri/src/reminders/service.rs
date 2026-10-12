@@ -163,9 +163,18 @@ pub struct Service {
     shared: Arc<Shared>,
 }
 impl Service {
+    #[cfg(test)]
     pub fn start<S: Storage + 'static>(
         store: S,
         clock: impl FnMut() -> Result<Time, Error> + Send + 'static,
+        notify: impl Fn(Change) + Send + 'static,
+    ) -> Result<Self, Error> {
+        Self::start_with_water_hold(store, clock, || AUTO_PRESENTATION_MS, notify)
+    }
+    pub fn start_with_water_hold<S: Storage + 'static>(
+        store: S,
+        clock: impl FnMut() -> Result<Time, Error> + Send + 'static,
+        water_hold: impl Fn() -> i64 + Send + 'static,
         notify: impl Fn(Change) + Send + 'static,
     ) -> Result<Self, Error> {
         let shared = Arc::new(Shared {
@@ -178,7 +187,7 @@ impl Service {
         let worker = shared.clone();
         std::thread::Builder::new()
             .name("reminders".into())
-            .spawn(move || run_worker(worker, store, clock, notify))
+            .spawn(move || run_worker(worker, store, clock, water_hold, notify))
             .map_err(|_| Error::new("workerUnavailable"))?;
         Ok(Self { shared })
     }
@@ -242,6 +251,7 @@ fn run_worker<S: Storage>(
     shared: Arc<Shared>,
     store: S,
     mut clock: impl FnMut() -> Result<Time, Error>,
+    water_hold: impl Fn() -> i64,
     notify: impl Fn(Change),
 ) {
     let mut core = Core::load(store); // Startup file reads also stay off the UI thread.
@@ -256,6 +266,7 @@ fn run_worker<S: Storage>(
     {
         return;
     }
+    core.engine.set_water_hold_ms(water_hold());
     let initial = core
         .pump(None, clock())
         .ok()
@@ -308,6 +319,7 @@ fn run_worker<S: Storage>(
             }
             return;
         }
+        core.engine.set_water_hold_ms(water_hold());
         let result = core.pump(request.as_ref().map(|r| r.command.clone()), clock());
         let reply = match result {
             Ok(change) => {

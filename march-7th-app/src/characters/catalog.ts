@@ -118,10 +118,14 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   if (record.reminderPresentation !== undefined) {
     const settings = object(record.reminderPresentation, `${path}.reminderPresentation`);
     if (typeof settings.deferUntilReady !== "boolean" || typeof settings.waterDuringFocus !== "boolean"
-      || Object.keys(settings).some(key => key !== "deferUntilReady" && key !== "waterDuringFocus")) {
+      || Object.keys(settings).some(key => key !== "deferUntilReady" && key !== "waterDuringFocus" && key !== "waterHoldMs")) {
       throw new Error(`${path}.reminderPresentation must contain boolean capabilities`);
     }
-    reminderPresentation = { deferUntilReady: settings.deferUntilReady, waterDuringFocus: settings.waterDuringFocus };
+    if (settings.waterHoldMs !== undefined && (!Number.isInteger(settings.waterHoldMs) || (settings.waterHoldMs as number) < 120_000 || (settings.waterHoldMs as number) > 300_000)) {
+      throw new Error(`${path}.reminderPresentation.waterHoldMs must be between 120000 and 300000`);
+    }
+    reminderPresentation = { deferUntilReady: settings.deferUntilReady, waterDuringFocus: settings.waterDuringFocus,
+      ...(settings.waterHoldMs !== undefined ? { waterHoldMs: settings.waterHoldMs as number } : {}) };
   }
   let interaction: CharacterDefinition["interaction"];
   if (record.interaction !== undefined) {

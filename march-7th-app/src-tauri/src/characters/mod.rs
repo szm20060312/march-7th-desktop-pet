@@ -26,6 +26,8 @@ pub struct ReminderPresentation {
     #[serde(rename = "deferUntilReady")]
     _defer_until_ready: bool,
     pub water_during_focus: bool,
+    #[serde(default)]
+    pub water_hold_ms: Option<i64>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,10 +42,14 @@ impl Catalog {
                 .map_err(|_| "invalid built-in character catalog")?;
         let mut ids = std::collections::HashSet::new();
         if !catalog.contains(&catalog.default_id)
-            || catalog
-                .characters
-                .iter()
-                .any(|c| c.id.is_empty() || c.display_name.is_empty() || !ids.insert(&c.id))
+            || catalog.characters.iter().any(|c| {
+                c.id.is_empty()
+                    || c.display_name.is_empty()
+                    || !ids.insert(&c.id)
+                    || c.reminder_presentation
+                        .water_hold_ms
+                        .is_some_and(|ms| !(120_000..=300_000).contains(&ms))
+            })
         {
             return Err("invalid built-in character identities".into());
         }
@@ -56,6 +62,13 @@ impl Catalog {
         self.characters
             .iter()
             .any(|c| c.id == id && c.reminder_presentation.water_during_focus)
+    }
+    fn water_hold_ms(&self, id: &str) -> i64 {
+        self.characters
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.reminder_presentation.water_hold_ms)
+            .unwrap_or(120_000)
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]

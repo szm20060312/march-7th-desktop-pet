@@ -34,6 +34,9 @@ fn only_the_opted_in_builtin_character_allows_water_during_focus() {
     assert!(!c.allows_water_during_focus("march-7th"));
     assert!(c.allows_water_during_focus("raiden-shogun"));
     assert!(!c.allows_water_during_focus("unknown"));
+    assert_eq!(c.water_hold_ms("raiden-shogun"), 300_000);
+    assert_eq!(c.water_hold_ms("march-7th"), 120_000);
+    assert_eq!(c.water_hold_ms("unknown"), 120_000);
     assert!(
         c.characters
             .iter()

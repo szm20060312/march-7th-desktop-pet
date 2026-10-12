@@ -41,7 +41,7 @@
       "id": "raiden-shogun",
       "displayName": "雷电将军",
       "interaction": { "pointerRegion": { "kind": "visibleBounds", "paddingPx": 4 } },
-      "reminderPresentation": { "deferUntilReady": true, "waterDuringFocus": true },
+      "reminderPresentation": { "deferUntilReady": true, "waterDuringFocus": true, "waterHoldMs": 300000 },
       "atlas": {
         "src": "/assets/raiden-shogun/spritesheet.webp",
         "cellWidth": 192,
