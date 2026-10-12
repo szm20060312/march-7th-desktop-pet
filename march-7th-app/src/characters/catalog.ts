@@ -114,6 +114,15 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   }
 
   const phraseData = object(record.phrases, `${path}.phrases`);
+  let reminderPresentation: CharacterDefinition["reminderPresentation"];
+  if (record.reminderPresentation !== undefined) {
+    const settings = object(record.reminderPresentation, `${path}.reminderPresentation`);
+    if (typeof settings.deferUntilReady !== "boolean" || typeof settings.waterDuringFocus !== "boolean"
+      || Object.keys(settings).some(key => key !== "deferUntilReady" && key !== "waterDuringFocus")) {
+      throw new Error(`${path}.reminderPresentation must contain boolean capabilities`);
+    }
+    reminderPresentation = { deferUntilReady: settings.deferUntilReady, waterDuringFocus: settings.waterDuringFocus };
+  }
   let interaction: CharacterDefinition["interaction"];
   if (record.interaction !== undefined) {
     const settings = object(record.interaction, `${path}.interaction`);
@@ -160,6 +169,7 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
     },
     look: { firstRow, directionCount },
     waterOffer,
+    ...(reminderPresentation ? { reminderPresentation } : {}),
     ...(presentation ? { presentation } : {}),
     ...(interaction ? { interaction } : {}),
     phrases,

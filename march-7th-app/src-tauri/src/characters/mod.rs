@@ -17,6 +17,15 @@ use store::Store;
 pub struct Character {
     pub id: String,
     pub display_name: String,
+    #[serde(default)]
+    pub reminder_presentation: ReminderPresentation,
+}
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReminderPresentation {
+    #[serde(rename = "deferUntilReady")]
+    _defer_until_ready: bool,
+    pub water_during_focus: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +51,11 @@ impl Catalog {
     }
     fn contains(&self, id: &str) -> bool {
         self.characters.iter().any(|c| c.id == id)
+    }
+    fn allows_water_during_focus(&self, id: &str) -> bool {
+        self.characters
+            .iter()
+            .any(|c| c.id == id && c.reminder_presentation.water_during_focus)
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]

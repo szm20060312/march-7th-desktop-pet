@@ -37,6 +37,53 @@ function harness(initial: SelectedCharacterSnapshot = { characterId: "march-7th"
 }
 
 describe("character presentation controller", () => {
+  it("keeps only the latest live reminder for the loading opted-in character", async () => {
+    const h = harness();
+    await h.finish("march-7th");
+    void h.controller.select({ characterId: "raiden-shogun", revision: 2 });
+    expect(h.controller.remind(["water"], 21)).toBe(true);
+    expect(h.controller.remind(["eyes"], 22)).toBe(true);
+    expect(h.runtimes[0].respond).not.toHaveBeenCalled();
+    await h.finish("raiden-shogun");
+    expect(h.runtimes[1].respond.mock.calls).toEqual([["reminderDue", characterCatalog.characters[1].reminderPrompts.eyes[1], undefined]]);
+  });
+
+  it("does not defer legacy March 7th reminders while loading", async () => {
+    const h = harness();
+    expect(h.controller.remind(["water"], 21)).toBe(false);
+    await h.finish("march-7th");
+    expect(h.runtimes[0].respond).not.toHaveBeenCalled();
+  });
+
+  it("cancels a queued reminder when selection changes to another character", async () => {
+    const h = harness({ characterId: "raiden-shogun", revision: 1 });
+    expect(h.controller.remind(["water"], 21)).toBe(true);
+    void h.controller.select({ characterId: "march-7th", revision: 2 });
+    await h.finish("march-7th");
+    await h.finish("raiden-shogun");
+    expect(h.runtimes).toHaveLength(1);
+    expect(h.runtimes[0].character.id).toBe("march-7th");
+    expect(h.runtimes[0].respond).not.toHaveBeenCalled();
+  });
+
+  it("does not resurrect an ended reminder after a failed decode and retry", async () => {
+    const h = harness({ characterId: "raiden-shogun", revision: 1 });
+    expect(h.controller.remind(["water"], 21)).toBe(true);
+    await h.finish("raiden-shogun", { width: 1, height: 1 });
+    h.controller.endReminder();
+    void h.controller.select({ characterId: "raiden-shogun", revision: 1 });
+    await h.finish("raiden-shogun");
+    expect(h.runtimes[0].respond).not.toHaveBeenCalled();
+  });
+
+  it("drops a pending reminder when the controller is destroyed", async () => {
+    const h = harness({ characterId: "raiden-shogun", revision: 1 });
+    expect(h.controller.remind(["water"], 21)).toBe(true);
+    h.controller.destroy();
+    await h.finish("raiden-shogun");
+    expect(h.createRuntime).not.toHaveBeenCalled();
+  });
+
   it("preloads only the main image for a main-atlas cup and still validates its decoded size", async () => {
     const source = characterCatalog.characters[1];
     const character: CharacterDefinition = { ...source, waterOffer: { kind: "mainAtlas", clip: { row: 5, frameCount: 8, frameIntervalMs: 140 } } };

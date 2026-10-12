@@ -16,6 +16,7 @@ struct Signature {
     selected: Option<(u64, Source)>,
     choices_open: Option<u64>,
     stopped: bool,
+    water_only_source: Option<u64>,
 }
 #[derive(Default)]
 pub struct Bubble {
@@ -24,6 +25,7 @@ pub struct Bubble {
     choices_open: Option<u64>,
     signature: Option<Signature>,
     pub revision: u64,
+    water_only_source: Option<u64>,
 }
 pub fn natural_revision(focus: &Change) -> Option<u64> {
     (!focus.snapshot.stopped
@@ -40,6 +42,18 @@ pub fn natural_revision(focus: &Change) -> Option<u64> {
     .then_some(focus.snapshot.revision)
 }
 impl Bubble {
+    fn visible_items(&self, presentation: &Presentation) -> Vec<Id> {
+        presentation
+            .items
+            .iter()
+            .copied()
+            .filter(|id| {
+                self.water_only_source != Some(presentation.id)
+                    || presentation.mode != Mode::Automatic
+                    || *id == Id::Water
+            })
+            .collect()
+    }
     pub fn visible_item_count(&self, raw: &Snapshot) -> usize {
         let Some((_, Source::Reminder(source))) = self.selected else {
             return 0;
@@ -47,18 +61,21 @@ impl Bubble {
         raw.presentation
             .as_ref()
             .filter(|presentation| presentation.id == source)
-            .map_or(0, |presentation| presentation.items.len())
+            .map_or(0, |presentation| self.visible_items(presentation).len())
     }
     pub fn automatic_prompt(&self, raw: &Snapshot, presentation_id: u64) -> Option<Vec<Id>> {
         let (id, Source::Reminder(source)) = self.selected? else {
             return None;
         };
         let presentation = raw.presentation.as_ref()?;
-        (id == presentation_id
-            && source == presentation.id
-            && presentation.mode == Mode::Automatic
-            && !presentation.items.is_empty())
-        .then(|| presentation.items.clone())
+        if id != presentation_id
+            || source != presentation.id
+            || presentation.mode != Mode::Automatic
+        {
+            return None;
+        }
+        let items = self.visible_items(presentation);
+        (!items.is_empty()).then_some(items)
     }
     pub fn open_choices(&mut self, raw: &Snapshot, presentation_id: u64) -> bool {
         if self.automatic_prompt(raw, presentation_id).is_none() {
@@ -74,12 +91,23 @@ impl Bubble {
         let id = self.selected?.0;
         (self.automatic_prompt(raw, id).is_none() || self.choices_open_for(id)).then_some(id)
     }
+    #[cfg(test)]
     pub fn update(
         &mut self,
         reminder: &Snapshot,
         focus: Option<&Change>,
         completion: Option<u64>,
         time: super::model::Time,
+    ) -> bool {
+        self.update_with_policy(reminder, focus, completion, time, false)
+    }
+    pub fn update_with_policy(
+        &mut self,
+        reminder: &Snapshot,
+        focus: Option<&Change>,
+        completion: Option<u64>,
+        time: super::model::Time,
+        water_during_focus: bool,
     ) -> bool {
         let focus_state = match focus {
             // A transient failed write leaves the committed Running session authoritative.
@@ -102,6 +130,24 @@ impl Bubble {
             }
             _ => FocusState::Unavailable,
         };
+        let automatic = reminder
+            .presentation
+            .as_ref()
+            .filter(|p| p.mode == Mode::Automatic);
+        if !water_during_focus || self.water_only_source != automatic.map(|p| p.id) {
+            self.water_only_source = None;
+        }
+        if water_during_focus && focus_state == FocusState::Running {
+            if let Some(p) = automatic.filter(|p| p.items.contains(&Id::Water)) {
+                // Keep the water-only projection for this entire batch, including
+                // after focus pauses or water completes. Other items stay pending.
+                self.water_only_source = Some(p.id);
+            }
+        }
+        let focus_exception = water_during_focus
+            && automatic.is_some_and(|p| {
+                self.water_only_source == Some(p.id) && p.items.contains(&Id::Water)
+            });
         let natural = focus.and_then(natural_revision);
         self.policy.retain_completion(natural);
         let completion = completion.filter(|r| Some(*r) == natural);
@@ -110,9 +156,18 @@ impl Bubble {
                 reminder: if reminder.stopped {
                     None
                 } else {
-                    reminder.presentation.as_ref().map(|p| (p.id, p.mode))
+                    reminder
+                        .presentation
+                        .as_ref()
+                        .filter(|p| {
+                            self.water_only_source != Some(p.id)
+                                || p.mode != Mode::Automatic
+                                || p.items.contains(&Id::Water)
+                        })
+                        .map(|p| (p.id, p.mode))
                 },
                 focus: focus_state,
+                water_during_focus: focus_exception,
                 automatic_allowed: !reminder.stopped
                     && !reminder.paused
                     && reminder.quiet.is_none()
@@ -135,6 +190,7 @@ impl Bubble {
             selected: self.selected,
             choices_open: self.choices_open,
             stopped: reminder.stopped,
+            water_only_source: self.water_only_source,
         };
         if self.signature == Some(signature) {
             return false;
@@ -152,6 +208,7 @@ impl Bubble {
                 .clone()
                 .filter(|p| p.id == source)
                 .map(|mut p| {
+                    p.items = self.visible_items(&p);
                     p.id = id;
                     p
                 }),
@@ -296,6 +353,107 @@ mod tests {
         r.presentation.as_mut().unwrap().mode = Mode::Manual;
         assert_eq!(b.visible_item_count(&r), 3);
         assert_eq!(b.automatic_prompt(&r, 12), None);
+    }
+    fn water_policy_update(b: &mut Bubble, r: &Snapshot, f: &Change, allowed: bool, now: u64) {
+        b.update_with_policy(
+            r,
+            Some(f),
+            None,
+            super::super::model::Time {
+                utc_ms: now as i64 + 1000,
+                monotonic_ms: now,
+                local_minute: 600,
+            },
+            allowed,
+        );
+    }
+    fn running_focus() -> Change {
+        focus(Session::Running {
+            duration_ms: 1_500_000,
+            remaining_ms: 900_000,
+            anchor_utc_ms: 1000,
+        })
+    }
+    #[test]
+    fn water_opt_in_shows_only_water_from_a_mixed_batch_during_focus() {
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let mut b = Bubble::default();
+        water_policy_update(&mut b, &r, &running_focus(), true, 0);
+        let id = b.selected.expect("water must be selected during focus").0;
+        assert_eq!(b.automatic_prompt(&r, id), Some(vec![Id::Water]));
+        assert_eq!(b.visible_item_count(&r), 1);
+        assert_eq!(
+            b.snapshot(&r).unwrap()["presentation"]["items"],
+            serde_json::json!(["water"])
+        );
+        assert_eq!(r.presentation.as_ref().unwrap().items.len(), 3);
+        assert!(b.open_choices(&r, id));
+        pending(&mut r, 10, Mode::Manual);
+        water_policy_update(&mut b, &r, &running_focus(), true, 1);
+        assert_eq!(b.visible_item_count(&r), 3);
+    }
+    #[test]
+    fn water_opt_in_never_enables_legacy_or_non_water_focus_prompts() {
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let mut legacy = Bubble::default();
+        water_policy_update(&mut legacy, &r, &running_focus(), false, 0);
+        assert!(legacy.selected.is_none());
+        r.presentation.as_mut().unwrap().items = vec![Id::Move, Id::Eyes];
+        let mut b = Bubble::default();
+        water_policy_update(&mut b, &r, &running_focus(), true, 0);
+        assert!(b.selected.is_none());
+    }
+    #[test]
+    fn water_opt_in_does_not_release_the_other_items_when_focus_pauses_or_water_completes() {
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let mut b = Bubble::default();
+        water_policy_update(&mut b, &r, &running_focus(), true, 0);
+        let id = b.selected.expect("water must be selected during focus").0;
+        let paused = focus(Session::Paused {
+            duration_ms: 1_500_000,
+            remaining_ms: 900_000,
+        });
+        water_policy_update(&mut b, &r, &paused, true, 1);
+        assert_eq!(b.selected.unwrap().0, id);
+        assert_eq!(b.automatic_prompt(&r, id), Some(vec![Id::Water]));
+        r.presentation.as_mut().unwrap().items = vec![Id::Move, Id::Eyes];
+        r.revision += 1;
+        water_policy_update(&mut b, &r, &paused, true, 2);
+        assert!(b.selected.is_none());
+    }
+    #[test]
+    fn water_opt_in_still_respects_pause_quiet_hours_and_dismissal() {
+        for blocked in 0..3 {
+            let mut r = reminder();
+            pending(&mut r, 9, Mode::Automatic);
+            match blocked {
+                0 => r.paused = true,
+                1 => {
+                    r.quiet = Some(Quiet {
+                        until: 5000,
+                        duration_minutes: 1,
+                    })
+                }
+                _ => r.settings.active_hours = ActiveHours::Daily { start: 0, end: 1 },
+            }
+            let mut b = Bubble::default();
+            water_policy_update(&mut b, &r, &running_focus(), true, 0);
+            assert!(b.selected.is_none());
+        }
+        let mut r = reminder();
+        pending(&mut r, 9, Mode::Automatic);
+        let mut b = Bubble::default();
+        water_policy_update(&mut b, &r, &running_focus(), true, 0);
+        let id = b.selected.expect("water must be selected during focus").0;
+        b.command(Command::Dismiss {
+            presentation_id: id,
+        })
+        .unwrap();
+        water_policy_update(&mut b, &r, &running_focus(), true, 1);
+        assert!(b.selected.is_none());
     }
     #[test]
     fn cup_choices_require_the_live_automatic_presentation_and_clear_when_it_ends() {

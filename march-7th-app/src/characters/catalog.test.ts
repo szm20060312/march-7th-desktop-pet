@@ -5,6 +5,16 @@ import { characterCatalog, defaultCharacter, parseCharacterCatalog } from "./cat
 const responseContexts = ["click", "doubleClick", "reminderDue", "reminderCompleted", "reminderSnoozed"] as const;
 
 describe("compiled character catalog", () => {
+  it("opts only Raiden into loading-safe reminders and water during focus", () => {
+    expect((characterCatalog.characters[0] as any).reminderPresentation).toBeUndefined();
+    expect((characterCatalog.characters[1] as any).reminderPresentation).toEqual({ deferUntilReady: true, waterDuringFocus: true });
+    for (const invalid of [{ deferUntilReady: "yes", waterDuringFocus: true }, { deferUntilReady: true, waterDuringFocus: 1 }]) {
+      const data = structuredClone(catalogData) as any;
+      data.characters[1].reminderPresentation = invalid;
+      expect(() => parseCharacterCatalog(data)).toThrow(/reminderPresentation/);
+    }
+  });
+
   it("enables the compact pointer region only for Raiden without changing March 7th", () => {
     expect(characterCatalog.characters[0].interaction).toBeUndefined();
     expect(characterCatalog.characters[1].interaction).toEqual({ pointerRegion: { kind: "visibleBounds", paddingPx: 4 } });

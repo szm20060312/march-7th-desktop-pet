@@ -50,6 +50,7 @@ export type CharacterDefinition = Readonly<{
   }>;
   look: Readonly<{ firstRow: number; directionCount: number }>;
   waterOffer: WaterOffer;
+  reminderPresentation?: Readonly<{ deferUntilReady: boolean; waterDuringFocus: boolean }>;
   presentation?: CharacterPresentation;
   interaction?: Readonly<{ pointerRegion: Readonly<{ kind: "visibleBounds"; paddingPx: number }> }>;
   phrases: Readonly<Partial<Record<ResponseContext, readonly string[]>>>;

@@ -16,6 +16,7 @@ pub struct Input {
     pub reminder: Option<(u64, Mode)>,
     pub focus: FocusState,
     pub automatic_allowed: bool,
+    pub water_during_focus: bool,
     pub now_ms: u64,
     pub utc_ms: i64,
 }
@@ -51,8 +52,7 @@ impl Coordinator {
         {
             self.completion = None;
         }
-        if input.focus == FocusState::Running
-            || self.was_running
+        if ((input.focus == FocusState::Running || self.was_running) && !input.water_during_focus)
             || self.completion.is_some()
             || completion.is_some()
         {
@@ -65,7 +65,9 @@ impl Coordinator {
             Some(Source::Reminder(id))
         } else if let Some((revision, _, _)) = self.completion {
             Some(Source::Focus(revision))
-        } else if input.focus != FocusState::Running && input.automatic_allowed {
+        } else if (input.focus != FocusState::Running || input.water_during_focus)
+            && input.automatic_allowed
+        {
             input
                 .reminder
                 .filter(|(id, _)| *id > self.suppressed_through)
@@ -119,6 +121,7 @@ mod tests {
             reminder: Some((3, Mode::Automatic)),
             focus: FocusState::Available,
             automatic_allowed: true,
+            water_during_focus: false,
             now_ms: 1_000,
             utc_ms: 1_000,
         }

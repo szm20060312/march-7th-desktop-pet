@@ -112,7 +112,72 @@ async function poll(value: ReturnType<typeof sample>, at: number) {
 }
 function paint(at: number) { now = at; frame(at); return sprite.dataset.frame; }
 
+function delayRaidenDecode() {
+  let resolve!: () => void;
+  const ready = new Promise<void>(yes => { resolve = yes; });
+  vi.stubGlobal("Image", class {
+    private path = "";
+    naturalWidth = 0;
+    naturalHeight = 0;
+    set src(value: string) { this.path = value; const size = decodedAssetSize(value); this.naturalWidth = size.width; this.naturalHeight = size.height; }
+    get src() { return this.path; }
+    decode() { return this.path.includes("raiden-shogun") ? ready : Promise.resolve(); }
+  });
+  native.getSelection.mockResolvedValue({ selectedCharacterId: "raiden-shogun", revision: 1, persistence: "saved" });
+  return resolve;
+}
+
 describe("desktop pet behavior at the entry point", () => {
+  it("retains a live Raiden water prompt while the initial native selection is pending", async () => {
+    let select!: (value: unknown) => void;
+    native.getSelection.mockReturnValue(new Promise(resolve => { select = resolve; }));
+    await boot();
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1]({ payload: { presentationId: 21, items: ["water"] } });
+    select({ selectedCharacterId: "raiden-shogun", revision: 1, persistence: "saved" });
+    await flush();
+    expect(message.hidden).toBe(false);
+    expect(paint(0)).toBe("5:0");
+  });
+
+  it("does not revive a prompt that ends before the initial selection arrives", async () => {
+    let select!: (value: unknown) => void;
+    native.getSelection.mockReturnValue(new Promise(resolve => { select = resolve; }));
+    await boot();
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1]({ payload: { presentationId: 21, items: ["water"] } });
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")![1]({ payload: { presentationId: 21 } });
+    select({ selectedCharacterId: "raiden-shogun", revision: 1, persistence: "saved" });
+    await flush();
+    expect(message.hidden).toBe(true);
+    expect(paint(0)).not.toMatch(/^5:/);
+  });
+
+  it("shows a still-live water reminder once after Raiden finishes decoding", async () => {
+    const decode = delayRaidenDecode();
+    await boot();
+    const prompt = native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1];
+    prompt({ payload: { presentationId: 21, items: ["water"] } });
+    expect(message.hidden).toBe(true);
+    decode();
+    await flush();
+    expect(message.hidden).toBe(false);
+    expect(message.textContent).toBe(characterCatalog.characters[1].reminderPrompts.water[0]);
+    expect(paint(0)).toBe("5:0");
+    expect(paint(1_300)).toBe("5:29");
+    prompt({ payload: { presentationId: 21, items: ["water"] } });
+    expect(paint(1_301)).toBe("5:29");
+  });
+
+  it("does not revive a water reminder that ends while Raiden is decoding", async () => {
+    const decode = delayRaidenDecode();
+    await boot();
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt")![1]({ payload: { presentationId: 21, items: ["water"] } });
+    native.listen.mock.calls.find(call => call[0] === "reminder-prompt-ended")![1]({ payload: { presentationId: 21 } });
+    decode();
+    await flush();
+    expect(message.hidden).toBe(true);
+    expect(paint(0)).not.toMatch(/^5:/);
+  });
+
   it("lets the current character announce each displayed automatic reminder once", async () => {
     await boot();
     const prompt = native.listen.mock.calls.find(call => call[0] === "reminder-prompt")?.[1];

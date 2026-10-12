@@ -25,9 +25,13 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
         let focus = crate::focus::native::current(app);
         let visible = character_visible(app);
         let local = chrono::Local::now();
+        #[cfg(target_os = "windows")]
+        let water_during_focus = crate::characters::native::water_during_focus(app);
+        #[cfg(not(target_os = "windows"))]
+        let water_during_focus = false;
         let mut s = ui.state.lock().unwrap();
         let old = s.reminder.ticket();
-        let changed = s.bubble.update(
+        let changed = s.bubble.update_with_policy(
             &snapshot,
             focus.as_ref(),
             completion,
@@ -36,6 +40,7 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
                 utc_ms: local.timestamp_millis(),
                 local_minute: (local.hour() * 60 + local.minute()) as i32,
             },
+            water_during_focus,
         );
         let revision = s.bubble.revision;
         let ended = s

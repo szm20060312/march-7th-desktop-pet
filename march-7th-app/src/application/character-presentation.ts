@@ -25,8 +25,14 @@ export function createCharacterPresentationController(options: {
   let latestRevision = Number.NEGATIVE_INFINITY;
   let request = 0;
   let destroyed = false;
+  let requestedId: string | null = null;
+  let pendingReminder: { characterId: string; items: readonly ReminderId[]; presentationId: number } | null = null;
 
   const findCharacter = (id: string) => catalog.characters.find(character => character.id === id);
+  const showReminder = (character: CharacterDefinition, items: readonly ReminderId[], presentationId: number) => {
+    const phrase = reminderPrompt(character, items, presentationId);
+    return phrase ? runtime?.respond("reminderDue", phrase, items.includes("water") ? "offerWater" : undefined) ?? false : false;
+  };
 
   const select = async (snapshot: SelectedCharacterSnapshot): Promise<boolean> => {
     if (destroyed || !Number.isSafeInteger(snapshot.revision) || snapshot.revision < latestRevision) return false;
@@ -34,11 +40,15 @@ export function createCharacterPresentationController(options: {
     const token = ++request;
     const character = findCharacter(snapshot.characterId);
     if (!character) {
+      pendingReminder = null;
+      requestedId = null;
       const error = new Error(`unknown character id: ${snapshot.characterId}`);
       reportError(null, error);
       if (!destroyed && token === request) status.setPresentationError("无法显示所选角色，请重试。");
       return false;
     }
+    requestedId = character.id;
+    if (pendingReminder && pendingReminder.characterId !== requestedId) pendingReminder = null;
     if (activeId === character.id) {
       status.setPresentationError(null);
       return true;
@@ -74,6 +84,9 @@ export function createCharacterPresentationController(options: {
         throw error;
       }
       status.setPresentationError(null);
+      const deferredReminder = pendingReminder;
+      pendingReminder = null;
+      if (deferredReminder?.characterId === character.id) showReminder(character, deferredReminder.items, deferredReminder.presentationId);
       return true;
     } catch (error) {
       if (destroyed || token !== request || snapshot.revision !== latestRevision) return false;
@@ -89,14 +102,21 @@ export function createCharacterPresentationController(options: {
     select,
     respond(context: ResponseContext) { return runtime?.respond(context) ?? false; },
     remind(items: readonly ReminderId[], presentationId: number) {
+      const requested = requestedId ? findCharacter(requestedId) : null;
+      if (requested?.reminderPresentation?.deferUntilReady && activeId !== requested.id) {
+        if (!reminderPrompt(requested, items, presentationId)) return false;
+        pendingReminder = { characterId: requested.id, items: [...items], presentationId };
+        return true;
+      }
       const character = activeId ? findCharacter(activeId) : null;
-      const phrase = character && reminderPrompt(character, items, presentationId);
-      return phrase ? runtime?.respond("reminderDue", phrase, items.includes("water") ? "offerWater" : undefined) ?? false : false;
+      return character ? showReminder(character, items, presentationId) : false;
     },
-    endReminder() { runtime?.endReminder(); },
+    endReminder() { pendingReminder = null; runtime?.endReminder(); },
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      pendingReminder = null;
+      requestedId = null;
       request++;
       runtime?.stop();
       runtime = null;

@@ -3,7 +3,7 @@ import { preloadBrowserAtlas } from "./adapters/browser-atlas-preloader";
 import { createDomPetGestures } from "./adapters/dom-pet-gestures";
 import { createDomPetView } from "./adapters/dom-pet-view";
 import { connectCharacterSelection } from "./adapters/tauri-characters";
-import { connectFocusResponses, connectReminderPromptEnds, connectReminderPrompts, connectReminderResponses, connectTaskResponses, openReminderChoices } from "./adapters/tauri-reminders";
+import { connectFocusResponses, connectReminderPromptEnds, connectReminderPrompts, connectReminderResponses, connectTaskResponses, openReminderChoices, type ReminderPromptEvent } from "./adapters/tauri-reminders";
 import { createTauriHost } from "./adapters/tauri-host";
 import { createCharacterPresentationController } from "./application/character-presentation";
 import { startPetRuntime } from "./application/pet-runtime";
@@ -30,6 +30,11 @@ let presentation: ReturnType<typeof createCharacterPresentationController> | und
 let activeReminderPrompt: number | null = null;
 let openingReminderChoices = false;
 let disposed = false;
+let waitingForSelectionPrompt: ReminderPromptEvent | null = null;
+const deliverReminderPrompt = (event: ReminderPromptEvent) => {
+  if (!presentation) { waitingForSelectionPrompt = event; return; }
+  if (presentation.remind(event.items, event.presentationId)) activeReminderPrompt = event.presentationId;
+};
 const onPetClick = () => {
   if (activeReminderPrompt === null) return false;
   if (openingReminderChoices) return true;
@@ -65,6 +70,9 @@ const disconnect = connectCharacterSelection({
         reportError: (operation, error) => console.error(`Pet ${operation} failed`, error),
       }),
     });
+    const waiting = waitingForSelectionPrompt;
+    waitingForSelectionPrompt = null;
+    if (waiting) deliverReminderPrompt(waiting);
   },
 });
 const disconnectReminderResponses = connectReminderResponses({
@@ -72,11 +80,12 @@ const disconnectReminderResponses = connectReminderResponses({
   reportError: error => console.error("Reminder response connection failed", error),
 });
 const disconnectReminderPrompts = connectReminderPrompts({
-  remind(event) { if (presentation?.remind(event.items, event.presentationId)) activeReminderPrompt = event.presentationId; },
+  remind: deliverReminderPrompt,
   reportError: error => console.error("Reminder prompt connection failed", error),
 });
 const disconnectReminderPromptEnds = connectReminderPromptEnds({
   ended(id) {
+    if (waitingForSelectionPrompt?.presentationId === id) waitingForSelectionPrompt = null;
     if (activeReminderPrompt !== id) return;
     activeReminderPrompt = null;
     presentation?.endReminder();
@@ -93,6 +102,7 @@ const disconnectTaskResponses = connectTaskResponses({
 });
 const dispose = () => {
   disposed = true;
+  waitingForSelectionPrompt = null;
   disconnectTaskResponses();
   disconnectFocusResponses();
   disconnect();

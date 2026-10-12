@@ -29,6 +29,27 @@ fn catalog() -> Catalog {
     Catalog::builtin().unwrap()
 }
 #[test]
+fn only_the_opted_in_builtin_character_allows_water_during_focus() {
+    let c = catalog();
+    assert!(!c.allows_water_during_focus("march-7th"));
+    assert!(c.allows_water_during_focus("raiden-shogun"));
+    assert!(!c.allows_water_during_focus("unknown"));
+    assert!(
+        c.characters
+            .iter()
+            .find(|c| c.id == "raiden-shogun")
+            .unwrap()
+            .reminder_presentation
+            ._defer_until_ready
+    );
+    for invalid in [
+        serde_json::json!({"deferUntilReady":"yes","waterDuringFocus":true}),
+        serde_json::json!({"deferUntilReady":true}),
+    ] {
+        assert!(serde_json::from_value::<ReminderPresentation>(invalid).is_err());
+    }
+}
+#[test]
 fn unavailable_directory_keeps_character_selection_session_only() {
     use crate::data_directory::{acquire, DataFile};
     let directory = acquire(None).unwrap();
