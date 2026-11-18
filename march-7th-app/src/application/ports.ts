@@ -4,6 +4,7 @@ import type { CharacterDefinition } from "../domain/character";
 export interface PetHost {
   sampleCursor(): Promise<CursorSample>;
   startDragging(): Promise<void>;
+  showContextMenu?(): Promise<void>;
 }
 export interface PetView {
   configure(character: CharacterDefinition): void;
@@ -18,6 +19,7 @@ export interface PetGestureHandlers {
   click(): void;
   doubleClick(): void;
   drag(): void;
+  contextMenu?(): void;
 }
 export interface PetGestureInput {
   subscribe(handlers: PetGestureHandlers): () => void;

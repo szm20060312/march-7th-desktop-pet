@@ -83,8 +83,15 @@ export function createDomPetGestures(
         cancelActive(event.pointerId);
       };
       const blur = () => cancelActive();
+      const contextMenu = (event: Event) => {
+        event.preventDefault();
+        if (disposed) return;
+        cancelActive();
+        handlers.contextMenu?.();
+      };
 
       stage.addEventListener("pointerdown", down);
+      stage.addEventListener("contextmenu", contextMenu);
       documentTarget.addEventListener("pointermove", move);
       documentTarget.addEventListener("pointerup", up);
       documentTarget.addEventListener("pointercancel", cancelPointer);
@@ -97,6 +104,7 @@ export function createDomPetGestures(
         disposed = true;
         cancelActive();
         stage.removeEventListener("pointerdown", down);
+        stage.removeEventListener("contextmenu", contextMenu);
         documentTarget.removeEventListener("pointermove", move);
         documentTarget.removeEventListener("pointerup", up);
         documentTarget.removeEventListener("pointercancel", cancelPointer);

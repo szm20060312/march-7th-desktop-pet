@@ -22,7 +22,7 @@ export function startPetRuntime(options: {
   view: PetView;
   gestures: PetGestureInput;
   scheduler: Scheduler;
-  reportError: (operation: "drag", error: unknown) => void;
+  reportError: (operation: "drag" | "contextMenu", error: unknown) => void;
   onPetClick?: () => boolean;
 }) {
   const { character, host, view, gestures, scheduler, reportError } = options;
@@ -103,6 +103,10 @@ export function startPetRuntime(options: {
       model.beginDrag(scheduler.now());
       // Native drag completion is not a reliable end-of-movement signal.
       void host.startDragging().catch(error => { if (!stopped) reportError("drag", error); });
+    },
+    contextMenu: () => {
+      if (stopped) return;
+      void host.showContextMenu?.().catch(error => { if (!stopped) reportError("contextMenu", error); });
     },
   });
 

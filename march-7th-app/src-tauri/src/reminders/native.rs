@@ -82,6 +82,11 @@ fn emit_change<R: Runtime>(app: &AppHandle<R>, change: Change) {
         eprintln!("Reminder snapshot event unavailable");
     }
     if let Some(response) = change.response {
+        crate::debug_console::emit(
+            app,
+            "reminder",
+            format!("response rev={revision} {:?}", response),
+        );
         if app
             .emit("reminder-response", ResponseEvent { revision, response })
             .is_err()

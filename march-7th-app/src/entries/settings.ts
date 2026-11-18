@@ -3,6 +3,7 @@ import { connectReminders } from "../adapters/tauri-reminders";
 import { hideSettingsWindow } from "../adapters/tauri-reminder-window";
 import { createReminderSettingsController } from "../application/reminder-settings";
 import { mountBuildInfo } from "../adapters/dom-build-info";
+import { mountDevConsole } from "../adapters/dom-dev-console";
 import { cancelLocalBackup, confirmLocalBackup, exportLocalBackup, selectLocalBackup } from "../adapters/tauri-local-backup";
 import { createLocalBackupController, type BackupPreview } from "../application/local-backup";
 import { createDomFocusControls } from "../adapters/dom-focus-controls";
@@ -81,6 +82,7 @@ const connection = connectReminders({
 });
 const unbind = view.bind(controller);
 const disposeBuildInfo = mountBuildInfo(document);
-function dispose() { clearInterval(focusTicker); focusConnection.dispose(); focusControls.dispose(); unbindFocus(); connection.dispose(); controller.dispose(); backup.dispose(); backupButton.removeEventListener("click", onBackupClick); importButton.removeEventListener("click", onImportClick); confirmImportButton.removeEventListener("click", onConfirmImport); cancelImportButton.removeEventListener("click", onCancelImport); unbind(); disposeBuildInfo(); window.removeEventListener("pagehide", dispose); }
+const disposeDevConsole = mountDevConsole(document);
+function dispose() { clearInterval(focusTicker); focusConnection.dispose(); focusControls.dispose(); unbindFocus(); connection.dispose(); controller.dispose(); backup.dispose(); backupButton.removeEventListener("click", onBackupClick); importButton.removeEventListener("click", onImportClick); confirmImportButton.removeEventListener("click", onConfirmImport); cancelImportButton.removeEventListener("click", onCancelImport); unbind(); disposeDevConsole(); disposeBuildInfo(); window.removeEventListener("pagehide", dispose); }
 window.addEventListener("pagehide", dispose, { once: true });
 import.meta.hot?.dispose(dispose);

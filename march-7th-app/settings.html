@@ -86,6 +86,24 @@
         <dt>来源状态</dt><dd id="build-state"></dd>
       </dl>
       <p class="hint">用于核对测试包；不代表正式发布或验收通过。</p>
+      <section id="dev-console" class="dev-console" aria-label="开发者调试控制台" hidden>
+        <h3>开发者调试控制台</h3>
+        <div class="dev-actions">
+          <button type="button" data-debug-action="wave">挥手</button>
+          <button type="button" data-debug-action="jump">跳跃</button>
+          <button type="button" data-debug-action="offerWater">递水杯</button>
+          <button type="button" data-debug-action="endWater">收杯</button>
+          <button type="button" data-debug-action="reminderPrompt:water">模拟喝水提醒</button>
+          <button type="button" data-debug-action="reminderPrompt:move">模拟起身提醒</button>
+          <button type="button" data-debug-action="reminderPrompt:eyes">模拟护眼提醒</button>
+        </div>
+        <div class="dev-toolbar">
+          <button id="dev-refresh" type="button">刷新状态与日志</button>
+          <button id="dev-clear-logs" type="button">清空日志</button>
+        </div>
+        <pre id="dev-log-output" class="dev-output"></pre>
+        <pre id="dev-state-output" class="dev-output"></pre>
+      </section>
     </details>
   </main>
 </body>

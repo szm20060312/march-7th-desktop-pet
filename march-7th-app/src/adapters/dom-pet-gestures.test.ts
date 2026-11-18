@@ -40,7 +40,7 @@ function harness() {
     releasePointerCapture: (pointerId: number) => capture.delete(pointerId),
   }) as unknown as HTMLElement;
   const input = createDomPetGestures(stageNode, documentTarget.node as unknown as Document, windowTarget.node as unknown as Window, scheduler);
-  const handlers = { click: vi.fn(), doubleClick: vi.fn(), drag: vi.fn() };
+  const handlers = { click: vi.fn(), doubleClick: vi.fn(), drag: vi.fn(), contextMenu: vi.fn() };
   const dispose = input.subscribe(handlers);
   const pointer = (pointerId: number, x: number, y: number, extra: Record<string, unknown> = {}) => ({
     pointerId, clientX: x, clientY: y, button: 0, isPrimary: true, preventDefault: vi.fn(), ...extra,
@@ -134,5 +134,14 @@ describe("DOM pet gestures", () => {
     h.advance(300);
     expect(h.handlers.click).not.toHaveBeenCalled();
     expect([...h.stage.listeners.values(), ...h.documentTarget.listeners.values(), ...h.windowTarget.listeners.values()].every(set => set.size === 0)).toBe(true);
+  });
+
+  it("prevents default and emits contextMenu on secondary click", () => {
+    const h = harness();
+    const preventDefault = vi.fn();
+    h.stage.node.dispatch("contextmenu", { preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(h.handlers.contextMenu).toHaveBeenCalledOnce();
+    h.dispose();
   });
 });

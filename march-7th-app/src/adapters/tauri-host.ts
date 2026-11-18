@@ -20,5 +20,6 @@ export function createTauriHost(): PetHost {
   return {
     sampleCursor: async () => parseCursorSample(await invoke<unknown>("cursor_relative_to_window")),
     startDragging: () => appWindow.startDragging(),
+    showContextMenu: () => invoke<void>("show_pet_context_menu"),
   };
 }

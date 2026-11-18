@@ -3,6 +3,7 @@ pub mod build_info;
 mod characters;
 pub mod data_directory;
 mod data_lock;
+mod debug_console;
 mod desktop;
 pub mod focus;
 mod import_session;
@@ -69,7 +70,12 @@ pub fn run() {
             local_backup::export_local_backup,
             local_import::select_local_backup,
             local_import::confirm_local_backup,
-            local_import::cancel_local_backup
+            local_import::cancel_local_backup,
+            desktop::show_pet_context_menu,
+            debug_console::get_debug_logs,
+            debug_console::clear_debug_logs,
+            debug_console::get_debug_state,
+            debug_console::debug_trigger_pet_action
         ])
         .build(app_context())
         .expect("error while building March 7th");

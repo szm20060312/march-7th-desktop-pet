@@ -51,13 +51,16 @@ struct Shared {
 }
 struct Desktop<R: Runtime> {
     shared: Arc<Shared>,
+    menu: tauri::menu::Menu<R>,
     interaction: CheckMenuItem<R>,
     click_through: CheckMenuItem<R>,
     status: MenuItem<R>,
 }
 
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
-    builder.on_window_event(handle_window_event)
+    builder
+        .on_window_event(handle_window_event)
+        .on_menu_event(handle_menu_event)
 }
 
 pub fn setup<R: Runtime>(
@@ -131,11 +134,7 @@ pub fn setup<R: Runtime>(
         .separator()
         .text("quit", "退出")
         .build()?;
-    TrayIconBuilder::new()
-        .icon(icon)
-        .menu(&menu)
-        .on_menu_event(handle_menu_event)
-        .build(app)?;
+    TrayIconBuilder::new().icon(icon).menu(&menu).build(app)?;
     let mut session = Session::new(placement, topology, availability, writable);
     session.begin_startup(startup, Instant::now());
     let shared = Arc::new(Shared {
@@ -145,6 +144,7 @@ pub fn setup<R: Runtime>(
     });
     app.manage(Desktop {
         shared: shared.clone(),
+        menu,
         interaction,
         click_through,
         status,
@@ -265,6 +265,7 @@ fn active<R: Runtime>(desktop: &Desktop<R>) -> bool {
     desktop.shared.session.lock().unwrap().lifecycle == Lifecycle::Running
 }
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    crate::debug_console::emit(app, "menu", format!("menu `{}`", event.id().as_ref()));
     if crate::reminders::ui::handle_menu_event(app, &event) {
         return;
     }
@@ -760,6 +761,18 @@ fn persist<R: Runtime>(app: &AppHandle<R>, shared: &Shared, store: &mut Option<S
         report_failure("queue-persistence-status", error);
     }
 }
+#[tauri::command]
+pub fn show_pet_context_menu<R: Runtime>(
+    app: AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("invalidWindow".into());
+    }
+    let menu = app.state::<Desktop<R>>().menu.clone();
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     if let RunEvent::ExitRequested { api, code, .. } = event {
         let Some(desktop) = app.try_state::<Desktop<R>>() else {

@@ -35,7 +35,7 @@ function harness() {
   const reportError = vi.fn();
   return { view, host, scheduler, gestures, reportError, delays, frames, unsubscribe,
     setNow: (value: number) => { now = value; },
-    gesture: (name: keyof PetGestureHandlers) => gestureHandlers[name](),
+    gesture: (name: keyof PetGestureHandlers) => gestureHandlers[name]?.(),
     start: () => startPetRuntime({ character: march7th, view, gestures, host, scheduler, reportError }),
   };
 }

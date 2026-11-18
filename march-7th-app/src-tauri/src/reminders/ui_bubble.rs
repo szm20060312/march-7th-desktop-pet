@@ -75,6 +75,11 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
             }
         }
         if let Some(presentation_id) = ended {
+            crate::debug_console::emit(
+                app,
+                "reminder",
+                format!("prompt ended id={presentation_id}"),
+            );
             if let Err(error) = app.emit_to(
                 "main",
                 "reminder-prompt-ended",
@@ -84,6 +89,11 @@ fn refresh_completion<R: Runtime>(app: &AppHandle<R>, completion: Option<u64>) {
             }
         }
         if let Some((presentation_id, items)) = announce {
+            crate::debug_console::emit(
+                app,
+                "reminder",
+                format!("prompt start id={presentation_id} items={items:?}"),
+            );
             if let Err(error) = app.emit_to(
                 "main",
                 "reminder-prompt",

@@ -3,6 +3,7 @@ import { preloadBrowserAtlas } from "./adapters/browser-atlas-preloader";
 import { createDomPetGestures } from "./adapters/dom-pet-gestures";
 import { createDomPetView } from "./adapters/dom-pet-view";
 import { connectCharacterSelection } from "./adapters/tauri-characters";
+import { listenDebugPetAction } from "./adapters/tauri-debug";
 import { connectFocusResponses, connectReminderPromptEnds, connectReminderPrompts, connectReminderResponses, connectTaskResponses, openReminderChoices } from "./adapters/tauri-reminders";
 import { createTauriHost } from "./adapters/tauri-host";
 import { createCharacterPresentationController } from "./application/character-presentation";
@@ -91,8 +92,20 @@ const disconnectTaskResponses = connectTaskResponses({
   respond(status) { presentation?.respond(status === "completed" ? "taskCompleted" : "taskAbandoned"); },
   reportError: () => console.error("Task response connection failed"),
 });
+const disconnectDebugActions = listenDebugPetAction(action => {
+  if (action === "wave") presentation?.respond("click");
+  else if (action === "jump") presentation?.respond("doubleClick");
+  else if (action === "offerWater") presentation?.remind(["water"], 0);
+  else if (action === "endWater") presentation?.endReminder();
+  else if (action === "phrase") presentation?.respond("focusCompleted");
+  else if (action.startsWith("reminderPrompt:")) {
+    const item = action.slice("reminderPrompt:".length) as "water" | "move" | "eyes";
+    presentation?.remind([item], 0);
+  }
+});
 const dispose = () => {
   disposed = true;
+  disconnectDebugActions();
   disconnectTaskResponses();
   disconnectFocusResponses();
   disconnect();
