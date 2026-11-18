@@ -1,0 +1,36 @@
+{
+  "canvas": [
+    1536,
+    2288
+  ],
+  "cell": [
+    192,
+    208
+  ],
+  "changedFrames": [
+    {
+      "row": 4,
+      "frame": 2,
+      "changedPixels": 932
+    },
+    {
+      "row": 4,
+      "frame": 3,
+      "changedPixels": 458
+    },
+    {
+      "row": 8,
+      "frame": 4,
+      "changedPixels": 837
+    },
+    {
+      "row": 8,
+      "frame": 6,
+      "changedPixels": 1662
+    }
+  ],
+  "unchangedCells": 84,
+  "transparentRgbResiduePixels": 0,
+  "originalSha256": "1223cabacfef28dbd40a46387ffff28ecf951460d47bec1defeebbadc2da8622",
+  "repairedSha256": "5f0879f921ac9995427281597b916c4e37b89cdb041ba335b43c0f89f5285ce1"
+}
