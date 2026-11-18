@@ -50,6 +50,7 @@
         <div class="snooze-setting"><label for="snooze-minutes">选择“稍后提醒”后</label><label class="interval-label" for="snooze-minutes"><input id="snooze-minutes" type="number" min="1" max="120" step="1" inputmode="numeric" aria-label="稍后提醒间隔（分钟）" /> 分钟再提醒</label></div>
       </fieldset>
       <section class="pause-row" aria-label="即时控制"><div><strong id="pause-state">正在读取状态</strong><p class="hint">立即生效，与上面的草稿分开。</p></div><button id="pause" type="button" disabled>暂停提醒</button></section>
+      <section class="pause-row" aria-label="安静期控制"><div><strong id="quiet-state">未处于安静期</strong><p class="hint">处于“稍后提醒”安静期时，可提前结束并恢复提醒。</p></div><button id="clear-quiet" type="button" disabled>结束安静期</button></section>
       <p id="settings-status" class="status" role="status" aria-live="polite">正在读取设置…</p>
       <p id="settings-notice" class="notice" role="status" aria-live="polite"></p>
       <section class="backup-row" aria-labelledby="backup-heading">

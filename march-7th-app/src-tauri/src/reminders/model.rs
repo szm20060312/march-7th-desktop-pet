@@ -116,6 +116,7 @@ pub enum Command {
         id: Id,
     },
     SnoozeAll {},
+    ClearQuiet {},
     SetPaused {
         paused: bool,
     },
@@ -338,6 +339,7 @@ impl Engine {
                 self.presentation = None;
                 response = Some(Response::SnoozeAll);
             }
+            Some(Command::ClearQuiet {}) => self.data.quiet = None,
             Some(Command::SetPaused { paused }) => self.data.paused = paused,
             Some(Command::ShowPending {}) => self.present(Mode::Manual, self.pending(), time)?,
             Some(Command::ExtendChoices { presentation_id }) => {

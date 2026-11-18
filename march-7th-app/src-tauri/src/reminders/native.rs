@@ -179,7 +179,7 @@ fn command_allowed(label: &str, command: &Command) -> bool {
     match label {
         "settings" => matches!(
             command,
-            Command::UpdateSettings { .. } | Command::SetPaused { .. }
+            Command::UpdateSettings { .. } | Command::SetPaused { .. } | Command::ClearQuiet {}
         ),
         "reminder" => matches!(
             command,
@@ -218,6 +218,8 @@ mod tests {
             "settings",
             &Command::SetPaused { paused: true }
         ));
+        assert!(command_allowed("settings", &Command::ClearQuiet {}));
+        assert!(!command_allowed("reminder", &Command::ClearQuiet {}));
         assert!(!command_allowed(
             "reminder",
             &Command::SetPaused { paused: true }

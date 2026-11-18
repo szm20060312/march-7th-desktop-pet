@@ -23,6 +23,7 @@ export type ReminderCommand =
   | { type: "updateSettings"; settings: ReminderSettings }
   | { type: "complete"; id: ReminderId }
   | { type: "snoozeAll" }
+  | { type: "clearQuiet" }
   | { type: "setPaused"; paused: boolean }
   | { type: "showPending" }
   | { type: "dismiss"; presentationId: number };

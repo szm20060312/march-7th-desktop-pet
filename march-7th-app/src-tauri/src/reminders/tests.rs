@@ -717,3 +717,25 @@ fn fixround1_manual_dismiss_before_expiry_does_not_cancel_future_snooze() {
     e.step(None, time(10 * MINUTE)).unwrap();
     assert_eq!(e.presentation.as_ref().unwrap().mode, Mode::Automatic);
 }
+#[test]
+fn clear_quiet_ends_snooze_early_and_resumes_pending_presentation() {
+    let mut e = engine();
+    e.step(None, time(MINUTE)).unwrap();
+    assert_eq!(
+        e.presentation.as_ref().unwrap().items,
+        vec![Id::Water, Id::Move, Id::Eyes]
+    );
+    e.step(Some(Command::SnoozeAll {}), time(MINUTE)).unwrap();
+    assert!(e.data.quiet.is_some());
+    assert!(e.presentation.is_none());
+
+    e.step(Some(Command::ClearQuiet {}), time(2 * MINUTE))
+        .unwrap();
+    assert!(e.data.quiet.is_none());
+    assert!(!e.data.snooze_pending);
+    assert_eq!(e.presentation.as_ref().unwrap().mode, Mode::Automatic);
+    assert_eq!(
+        e.presentation.as_ref().unwrap().items,
+        vec![Id::Water, Id::Move, Id::Eyes]
+    );
+}

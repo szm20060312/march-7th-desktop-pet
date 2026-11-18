@@ -6,6 +6,7 @@ export interface SettingsViewState {
   saving: boolean;
   editable: boolean;
   pauseBusy: boolean;
+  quietBusy: boolean;
   notice: string;
 }
 export function settingsValidation(settings: ReminderSettings): string {
@@ -26,9 +27,9 @@ export function createReminderSettingsController(ports: {
   closed?(): void;
 }) {
   let snapshot: ReminderSnapshot | null = null; let draft: ReminderSettings | null = null;
-  let dirty = false; let saving = false; let pauseBusy = false; let notice = ""; let disposed = false; let session = 0;
+  let dirty = false; let saving = false; let pauseBusy = false; let quietBusy = false; let notice = ""; let disposed = false; let session = 0;
   const editable = () => !!snapshot && !snapshot.stopped && !["loading", "readOnly"].includes(snapshot.persistence.status);
-  const render = () => { if (!disposed) ports.render({ snapshot, draft: draft && copySettings(draft), dirty, saving, pauseBusy, notice, editable: editable() && !saving }); };
+  const render = () => { if (!disposed) ports.render({ snapshot, draft: draft && copySettings(draft), dirty, saving, pauseBusy, quietBusy, notice, editable: editable() && !saving }); };
   const receive = (next: ReminderSnapshot) => {
     if (disposed || (snapshot && next.revision < snapshot.revision)) return;
     if (!saving && snapshot && next.revision > snapshot.revision) notice = "";
@@ -36,7 +37,7 @@ export function createReminderSettingsController(ports: {
     if (!dirty && !saving) draft = copySettings(next.settings);
     render();
   };
-  const reset = () => { session++; saving = false; pauseBusy = false; dirty = false; notice = ""; draft = snapshot && copySettings(snapshot.settings); render(); };
+  const reset = () => { session++; saving = false; pauseBusy = false; quietBusy = false; dirty = false; notice = ""; draft = snapshot && copySettings(snapshot.settings); render(); };
   render();
   return {
     receive,
@@ -66,6 +67,13 @@ export function createReminderSettingsController(ports: {
       try { const reply = await ports.command({ type: "setPaused", paused: !snapshot.paused }); if (!disposed && token === session && reply) receive(reply); }
       catch { if (!disposed && token === session) notice = "暂停状态未能更新，请重试。"; }
       finally { if (!disposed && token === session) { pauseBusy = false; render(); } }
+    },
+    async clearQuiet() {
+      if (disposed || !editable() || quietBusy || !snapshot?.quiet) return;
+      const token = session; quietBusy = true; render();
+      try { const reply = await ports.command({ type: "clearQuiet" }); if (!disposed && token === session && reply) receive(reply); }
+      catch { if (!disposed && token === session) notice = "安静期未能结束，请重试。"; }
+      finally { if (!disposed && token === session) { quietBusy = false; render(); } }
     },
     reopen(latest?: ReminderSnapshot) { if (disposed) return; if (latest) receive(latest); reset(); },
     async close() {

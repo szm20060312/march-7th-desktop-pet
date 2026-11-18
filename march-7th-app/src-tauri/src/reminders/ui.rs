@@ -41,13 +41,14 @@ struct State {
     settings_attempts: u16,
     settings_reflow: bool,
     error: Option<&'static str>,
-    menu_state: Option<(bool, bool, String)>,
+    menu_state: Option<(bool, bool, bool, String)>,
 }
 struct Ui<R: Runtime> {
     state: Mutex<State>,
     stopped: Arc<AtomicBool>,
     started: std::time::Instant,
     pause: CheckMenuItem<R>,
+    clear_quiet: MenuItem<R>,
     pending: MenuItem<R>,
     status: MenuItem<R>,
 }
@@ -64,12 +65,26 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::er
         false,
         None::<&str>,
     )?;
+    let clear_quiet = MenuItem::with_id(
+        app,
+        "reminder-clear-quiet",
+        "结束安静期",
+        false,
+        None::<&str>,
+    )?;
     let status = MenuItem::with_id(app, "reminder-status", "提醒：加载中", false, None::<&str>)?;
     let menu = Submenu::with_items(
         app,
         "提醒",
         true,
-        &[&focus_settings, &settings, &pending, &pause, &status],
+        &[
+            &focus_settings,
+            &settings,
+            &pending,
+            &pause,
+            &clear_quiet,
+            &status,
+        ],
     )?;
     let stopped = Arc::new(AtomicBool::new(false));
     app.manage(Ui {
@@ -77,6 +92,7 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::er
         stopped: stopped.clone(),
         started: std::time::Instant::now(),
         pause,
+        clear_quiet,
         pending,
         status,
     });
@@ -170,7 +186,11 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
     let operation = event.id().as_ref();
     if !matches!(
         operation,
-        "focus-settings" | "reminder-settings" | "reminder-pending" | "reminder-pause"
+        "focus-settings"
+            | "reminder-settings"
+            | "reminder-pending"
+            | "reminder-pause"
+            | "reminder-clear-quiet"
     ) {
         return false;
     }
@@ -207,6 +227,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) -> b
             reconcile(app);
         }
         "reminder-pending" => tray_command(app, Command::ShowPending {}),
+        "reminder-clear-quiet" => tray_command(app, Command::ClearQuiet {}),
         "reminder-pause" => {
             if let Ok(snapshot) = native::snapshot(app) {
                 // Native check items auto-toggle BEFORE this event. Restore the
@@ -548,7 +569,8 @@ fn update_menu<R: Runtime>(app: &AppHandle<R>) {
             }
         )
     };
-    let next = (snapshot.paused, mutable, text.clone());
+    let quiet_active = mutable && snapshot.quiet.is_some();
+    let next = (snapshot.paused, mutable, quiet_active, text.clone());
     if ui.state.lock().unwrap().menu_state.as_ref() == Some(&next) {
         return;
     }
@@ -560,6 +582,7 @@ fn update_menu<R: Runtime>(app: &AppHandle<R>) {
             "暂停提醒"
         })?;
         ui.pause.set_enabled(mutable)?;
+        ui.clear_quiet.set_enabled(quiet_active)?;
         ui.pending.set_enabled(enabled)?;
         ui.status.set_text(text)?;
         Ok(())
