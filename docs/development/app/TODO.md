@@ -6,7 +6,7 @@
 
 产品选择与阶段定义见 [PRODUCT-PLAN.md](PRODUCT-PLAN.md)，技术边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。下列旧基线勾选保留原分支证据，本次架构回归单独记录。
 
-远端分支关系：[M1 PR #4](https://github.com/szm20060312/march-7th-desktop-pet/pull/4)、[M2 资源 PR #5](https://github.com/szm20060312/march-7th-desktop-pet/pull/5)和[互动 PR #7](https://github.com/szm20060312/march-7th-desktop-pet/pull/7)已上传并合入各自目标开发分支，**不是合入 `main`**。集成这些能力的[草稿 PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27)仍待合并；`4cb11dd29cfa152571a743833ba7a09ea9e939b4` 的双平台自动检查、原生包和候选配对已通过，实机/试用状态仍按以下未完成项记录。后续文档提交不追认自己的 CI，应查看对应提交的运行结果。
+远端分支关系：[M1 PR #4](https://github.com/szm20060312/march-7th-desktop-pet/pull/4)、[M2 资源 PR #5](https://github.com/szm20060312/march-7th-desktop-pet/pull/5)和[互动 PR #7](https://github.com/szm20060312/march-7th-desktop-pet/pull/7)已上传并合入各自目标开发分支，**不是合入 `main`**。集成这些能力的[草稿 PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27)（`codex/m5-dataset-v2@8beee06`）及三月七喝水／待机／挥手修正[草稿 PR #30](https://github.com/szm20060312/march-7th-desktop-pet/pull/30)（`codex/animation-acceptance-20261011@d7ac707`）仍待合并；`4cb11dd`、`8beee06` 与 `d7ac707` 的双平台自动检查、原生包和候选配对已通过，所有者对 `8beee06` 本地隔离开发构建的 macOS 初步功能记录见 [2026-09-26-macos-8beee06.md](regression/results/2026-09-26-macos-8beee06.md)（非 CI 回归包，不含逐角度、多屏与性能数据），完整同提交双平台实机与试用状态仍按以下未完成项记录。后续文档提交不追认自己的 CI，应查看对应提交的运行结果。
 
 ## 规则
 
@@ -113,7 +113,7 @@
 - [ ] 应用只要求实际使用的动作，不强制补齐 Codex 的全部状态
 - [-] G4：统一动画优先级、单击挥手、双击跳跃、中断与恢复已实现；双平台原生与所有者验收待完成
 - [-] 两个真实内置角色的情境短句、托盘互斥切换及 Rust 选择保存已接入；最终观感/台词及原生验收待完成
-- [-] 试用反馈后增加分类型角色对白和两角色四帧递杯资源；“将军”口吻已确定，本地自动测试及实际尺寸资源检查通过，角色动作/台词与原生呈现仍待所有者验收
+- [-] 试用反馈后增加分类型角色对白和两角色递杯资源；“将军”口吻已确定，三月七 12 帧递杯／提前结束倒序收杯与选定六帧待机、原版四帧挥手局部修补已在 `d7ac707`（PR #30）通过自动检查与双平台原生构建，雷电将军 30 帧高清图集与 5 分钟递水保持候选在 `codex/raiden-frame-rebuild-20261006` 推进，角色动作/台词与原生呈现仍待所有者最终验收
 - [ ] 角色切换不改变提醒／应用状态；完成与稍后反馈在提醒接入时联验
 
 ### Windows / macOS / QA
