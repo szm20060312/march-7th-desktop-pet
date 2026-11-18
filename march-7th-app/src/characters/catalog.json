@@ -19,7 +19,7 @@
         "jump": { "row": 4, "frameCount": 5, "frameIntervalMs": 120 }
       },
       "look": { "firstRow": 9, "directionCount": 16 },
-      "waterOffer": { "src": "/assets/march-7th/water-offer.png", "sourceWidth": 1189, "sourceHeight": 1323, "columns": 2, "rows": 2, "frameCount": 4, "frameIntervalMs": 220 },
+      "waterOffer": { "src": "/assets/march-7th/water-offer.png", "sourceWidth": 768, "sourceHeight": 624, "columns": 4, "rows": 3, "frameCount": 12, "frameIntervalMs": 80 },
       "phrases": {
         "click": ["咱在呢！", "今天也一起加油吧。"],
         "doubleClick": ["嘿，精神满满！", "准备好出发啦！"],

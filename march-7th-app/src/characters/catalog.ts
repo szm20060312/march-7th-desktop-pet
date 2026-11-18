@@ -75,7 +75,10 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
   if (offerSrc !== `/assets/${id}/water-offer.png`) throw new Error(`${path}.waterOffer path must be a local built-in asset`);
   const sourceWidth = positiveInteger(offerData.sourceWidth, `${path}.waterOffer.sourceWidth`);
   const sourceHeight = positiveInteger(offerData.sourceHeight, `${path}.waterOffer.sourceHeight`);
-  if (offerData.columns !== 2 || offerData.rows !== 2 || offerData.frameCount !== 4) throw new Error(`${path}.waterOffer must be a complete 2x2 action`);
+  const offerColumns = positiveInteger(offerData.columns, `${path}.waterOffer.columns`);
+  const offerRows = positiveInteger(offerData.rows, `${path}.waterOffer.rows`);
+  const offerFrames = positiveInteger(offerData.frameCount, `${path}.waterOffer.frameCount`);
+  if (!Number.isSafeInteger(offerColumns * offerRows) || offerFrames > offerColumns * offerRows) throw new Error(`${path}.waterOffer.frameCount exceeds the grid`);
   const offerInterval = positiveInteger(offerData.frameIntervalMs, `${path}.waterOffer.frameIntervalMs`);
 
   const phraseData = object(record.phrases, `${path}.phrases`);
@@ -115,7 +118,7 @@ function parseCharacter(value: unknown, index: number): CharacterDefinition {
       jump: parsedClips.jump,
     },
     look: { firstRow, directionCount },
-    waterOffer: { src: offerSrc, sourceWidth, sourceHeight, columns: 2, rows: 2, frameCount: 4, frameIntervalMs: offerInterval },
+    waterOffer: { src: offerSrc, sourceWidth, sourceHeight, columns: offerColumns, rows: offerRows, frameCount: offerFrames, frameIntervalMs: offerInterval },
     phrases,
     reminderPrompts,
   };

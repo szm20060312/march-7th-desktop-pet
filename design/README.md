@@ -4,6 +4,7 @@
 
 - `icons/app-icon-master.png`：当前图标主稿，1024 × 1024。
 - `icons/drafts/`：历史设计草稿，仅用于追溯，不参与构建。
+- `references/march-7th-q-reference.png`：三月七 Q 版角色视觉参考图，仅用于设计对照，不参与构建。
 - `../march-7th-app/src-tauri/icons/`：由 Tauri 生成并直接用于平台打包的图标文件。
 
 从主稿重新生成桌面图标：
@@ -19,6 +20,7 @@ pnpm tauri icon ../design/icons/app-icon-master.png
 
 - `icons/app-icon-master.png`: current 1024 × 1024 icon master.
 - `icons/drafts/`: historical drafts; they are not used by the build.
+- `references/march-7th-q-reference.png`: March 7th chibi visual reference; not consumed by the build.
 - `../march-7th-app/src-tauri/icons/`: generated platform assets consumed by Tauri.
 
 The project currently targets macOS Apple Silicon and Windows x64 only, so generated Android/iOS icon directories are ignored by Git.

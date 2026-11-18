@@ -49,8 +49,10 @@ function samePackagedProgram(built, packaged, target) {
   const before = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK");
   const after = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_NSS");
   const offset = built.indexOf(before);
-  if (offset < 0 || offset !== packaged.indexOf(after)
-    || built.lastIndexOf(before) !== offset || packaged.lastIndexOf(after) !== offset) return false;
+  // Existing NSS match-arm literals must remain untouched. Only the unique
+  // UNK marker may change, and the restored program must match every byte.
+  if (offset < 0 || built.lastIndexOf(before) !== offset
+    || !packaged.subarray(offset, offset + after.length).equals(after)) return false;
   const restored = Buffer.from(packaged);
   before.copy(restored, offset);
   return restored.equals(built);

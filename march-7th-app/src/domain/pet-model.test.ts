@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { march7th } from "../characters/march-7th";
 import { PetModel } from "./pet-model";
 import { directionFrame } from "./animation";
+import { characterCatalog } from "../characters/catalog";
 
 const center = { x: 0, y: 0 };
 const sample = (windowX: number, windowY = 0) => ({ x: 100, y: 0, windowX, windowY });
@@ -46,8 +47,8 @@ describe("PetModel", () => {
     expect(directionFrame({ x: -100, y: 0 }, center, 20, alternate)).toEqual({ row: 7, column: 2 });
   });
   it("maps every configured gaze direction, including wraparound", () => {
-    for (let index = 0; index < 16; index++) {
-      const angle = index * Math.PI / 8;
+    for (let index = 0; index < march7th.look.directionCount; index++) {
+      const angle = index * Math.PI * 2 / march7th.look.directionCount;
       const point = { x: Math.sin(angle) * 100, y: -Math.cos(angle) * 100 };
       expect(directionFrame(point, center, 20, march7th)).toEqual({ row: 9 + Math.floor(index / 8), column: index % 8 });
     }
@@ -62,7 +63,7 @@ describe("PetModel", () => {
     expect(pet.frameAt(820, center).row).toBe(0);
   });
   it("offers water through four dedicated frames and holds the cup until the reminder ends", () => {
-    const pet = new PetModel(march7th, 0);
+    const pet = new PetModel(characterCatalog.characters[1], 0);
     expect(pet.respond("offerWater", 100)).toBe(true);
     expect(pet.frameAt(100, center)).toEqual({ asset: "waterOffer", row: 0, column: 0 });
     expect(pet.frameAt(320, center)).toEqual({ asset: "waterOffer", row: 0, column: 1 });

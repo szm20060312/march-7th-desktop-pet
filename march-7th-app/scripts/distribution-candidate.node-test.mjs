@@ -128,6 +128,29 @@ test("accepts only Tauri's NSIS bundle marker rewrite in the packaged Windows pr
   assert.equal(existsSync(changed.outputDirectory), false);
 });
 
+test("preserves existing NSIS type literals while accepting only the unique unknown marker rewrite", t => {
+  for (const literalFirst of [true, false]) {
+    const options = fixture(t, "x86_64-pc-windows-msvc");
+    const literal = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_NSS");
+    const unknown = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK");
+    const built = Buffer.concat([nativeBytes(options.target), ...(literalFirst ? [literal, unknown] : [unknown, literal])]);
+    const offset = built.indexOf(unknown);
+    const packaged = Buffer.from(built);
+    literal.copy(packaged, offset);
+    writeFileSync(options.builtExecutablePath, built);
+    writeFileSync(options.packagedExecutablePath, packaged);
+    assert.equal(prepareDistribution(options).packagedExecutable.sha256, hash(packaged));
+
+    const changed = fixture(t, "x86_64-pc-windows-msvc");
+    const tampered = Buffer.from(packaged);
+    tampered[built.indexOf(literal)] ^= 1;
+    writeFileSync(changed.builtExecutablePath, built);
+    writeFileSync(changed.packagedExecutablePath, tampered);
+    assert.throws(() => prepareDistribution(changed), /differs/);
+    assert.equal(existsSync(changed.outputDirectory), false);
+  }
+});
+
 test("packet verification detects changed bytes and candidate pairs require one full commit", t => {
   const win = fixture(t, "x86_64-pc-windows-msvc");
   const mac = fixture(t, "aarch64-apple-darwin");

@@ -27,7 +27,7 @@ export type CharacterDefinition = Readonly<{
     jump?: AnimationClip;
   }>;
   look: Readonly<{ firstRow: number; directionCount: number }>;
-  waterOffer: Readonly<{ src: string; sourceWidth: number; sourceHeight: number; columns: 2; rows: 2; frameCount: 4; frameIntervalMs: number }>;
+  waterOffer: Readonly<{ src: string; sourceWidth: number; sourceHeight: number; columns: number; rows: number; frameCount: number; frameIntervalMs: number }>;
   phrases: Readonly<Partial<Record<ResponseContext, readonly string[]>>>;
   reminderPrompts: Readonly<Record<ReminderTopic, readonly string[]>>;
 }>;

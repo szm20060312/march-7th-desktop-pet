@@ -16,6 +16,7 @@ export function createDomPetView(sprite: HTMLElement, offerSprite: HTMLElement, 
   return {
     configure(definition) {
       character = definition;
+      stage.dataset.characterId = character.id;
       lastFrame = "";
       lastAsset = "main";
       const { atlas } = character;
