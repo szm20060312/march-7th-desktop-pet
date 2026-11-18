@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "reminder-events",
+  "description": "Reminder pages subscribe to authoritative snapshots; no filesystem or shell access",
+  "windows": ["settings", "reminder"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

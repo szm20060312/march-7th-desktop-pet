@@ -10,6 +10,7 @@ src-tauri/target/
 coverage/
 .obsidian/
 .pnpm-store/
+/regression-output/
 
 # Local coordination exports only; not a confidentiality or history-cleanup mechanism.
 /.local-notes/

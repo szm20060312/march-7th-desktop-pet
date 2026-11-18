@@ -1,0 +1,3 @@
+import { parseReminderSnapshot } from "../src/adapters/reminder-dto";
+import type { ReminderSnapshot } from "../src/domain/reminder";
+export const fresh = (revision = 1): ReminderSnapshot => parseReminderSnapshot({ revision, settings: { items: ["water", "move", "eyes"].map(id => ({ id, enabled: false, intervalMinutes: 60 })), activeHours: { kind: "daily", start: 540, end: 1320 }, snoozeMinutes: 10 }, progress: ["water", "move", "eyes"].map(id => ({ id, pending: false, autoHandled: false, nextDueAt: null })), paused: false, quiet: null, snoozePending: false, presentation: null, persistence: { status: "saved", code: null }, runtimeError: null, stopped: false });

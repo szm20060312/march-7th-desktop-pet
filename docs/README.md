@@ -15,6 +15,9 @@
 - [架构与扩展约束](development/app/ARCHITECTURE.md)
 - [路线图](development/app/ROADMAP.md)
 - [架构整理范围](development/app/IMPLEMENTATION-ARCHITECTURE.md)
+- [M5 本地技术候选、证据与验收缺口](development/app/M5-TECHNICAL-CANDIDATE.md)
+- [四项数据集与旧版备份迁移](development/app/M5-DATASET-V2.md)
+- [当前一件事的范围与隐私](M5-CURRENT-TASK.md)
 
 目标不等于已经实现的功能；读取规范时同时核对所处的分支、提交和相关 PR。
 
@@ -22,6 +25,14 @@
 
 - [跨平台验证指南与记录格式](development/app/PLATFORM-VALIDATION.md)
 - [架构验证记录](development/app/ARCHITECTURE-VALIDATION.md)
+- [M0 测试包说明](development/app/regression/README.md)
+- [双平台回归清单](development/app/regression/CHECKLIST.md)
+- [回归结果模板](development/app/regression/RESULT-TEMPLATE.md)
+- [M0 实际构建与产物校验记录](development/app/M0-BUILD-REPORT.md)
+- [双角色实现与同提交测试包记录](development/app/G4-BUILD-REPORT.md)
+- [提醒后端实现与同提交自动验证记录](development/app/G5-BUILD-REPORT.md)
+- [提醒界面与双平台测试包记录](development/app/G6-BUILD-REPORT.md)
+- [公开分发准备与未签名安装候选](development/app/DISTRIBUTION-READINESS.md)
 - [v0.2.0 阶段报告](development/app/STAGE-0.2.0.md)
 - [项目变更记录](../CHANGELOG.md)
 
