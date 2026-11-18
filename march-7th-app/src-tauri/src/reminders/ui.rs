@@ -54,7 +54,7 @@ struct Ui<R: Runtime> {
 }
 
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::error::Error>> {
-    let focus_settings = MenuItem::with_id(app, "focus-settings", "当前专注…", true, None::<&str>)?;
+    let focus_settings = MenuItem::with_id(app, "focus-settings", "当前专注", true, None::<&str>)?;
     let pending = MenuItem::with_id(app, "reminder-pending", "查看待处理", false, None::<&str>)?;
     let pause = CheckMenuItem::with_id(
         app,
