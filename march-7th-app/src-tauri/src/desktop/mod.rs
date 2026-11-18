@@ -132,6 +132,8 @@ pub fn setup<R: Runtime>(
         .item(characters)
         .item(reminders)
         .separator()
+        .text("reminder-settings", "设置…")
+        .separator()
         .text("quit", "退出")
         .build()?;
     TrayIconBuilder::new().icon(icon).menu(&menu).build(app)?;

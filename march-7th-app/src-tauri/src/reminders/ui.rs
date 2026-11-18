@@ -54,7 +54,6 @@ struct Ui<R: Runtime> {
 }
 
 pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::error::Error>> {
-    let settings = MenuItem::with_id(app, "reminder-settings", "提醒设置…", true, None::<&str>)?;
     let focus_settings = MenuItem::with_id(app, "focus-settings", "当前专注…", true, None::<&str>)?;
     let pending = MenuItem::with_id(app, "reminder-pending", "查看待处理", false, None::<&str>)?;
     let pause = CheckMenuItem::with_id(
@@ -77,14 +76,7 @@ pub fn setup<R: Runtime>(app: &mut App<R>) -> Result<Submenu<R>, Box<dyn std::er
         app,
         "提醒",
         true,
-        &[
-            &focus_settings,
-            &settings,
-            &pending,
-            &pause,
-            &clear_quiet,
-            &status,
-        ],
+        &[&focus_settings, &pending, &pause, &clear_quiet, &status],
     )?;
     let stopped = Arc::new(AtomicBool::new(false));
     app.manage(Ui {
