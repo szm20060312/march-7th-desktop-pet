@@ -92,15 +92,16 @@ const disconnectTaskResponses = connectTaskResponses({
   respond(status) { presentation?.respond(status === "completed" ? "taskCompleted" : "taskAbandoned"); },
   reportError: () => console.error("Task response connection failed"),
 });
+let debugPromptSeq = 0;
 const disconnectDebugActions = listenDebugPetAction(action => {
   if (action === "wave") presentation?.respond("click");
   else if (action === "jump") presentation?.respond("doubleClick");
-  else if (action === "offerWater") presentation?.remind(["water"], 0);
+  else if (action === "offerWater") presentation?.remind(["water"], ++debugPromptSeq);
   else if (action === "endWater") presentation?.endReminder();
   else if (action === "phrase") presentation?.respond("focusCompleted");
   else if (action.startsWith("reminderPrompt:")) {
     const item = action.slice("reminderPrompt:".length) as "water" | "move" | "eyes";
-    presentation?.remind([item], 0);
+    presentation?.remind([item], ++debugPromptSeq);
   }
 });
 const dispose = () => {
