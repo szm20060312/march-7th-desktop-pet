@@ -25,6 +25,7 @@ pub struct Character {
 pub struct ReminderPresentation {
     #[serde(rename = "deferUntilReady")]
     _defer_until_ready: bool,
+    #[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
     pub water_during_focus: bool,
     #[serde(default)]
     pub water_hold_ms: Option<i64>,
@@ -58,11 +59,13 @@ impl Catalog {
     fn contains(&self, id: &str) -> bool {
         self.characters.iter().any(|c| c.id == id)
     }
+    #[cfg(any(target_os = "windows", test))]
     fn allows_water_during_focus(&self, id: &str) -> bool {
         self.characters
             .iter()
             .any(|c| c.id == id && c.reminder_presentation.water_during_focus)
     }
+    #[cfg(any(target_os = "windows", test))]
     fn water_hold_ms(&self, id: &str) -> i64 {
         self.characters
             .iter()
