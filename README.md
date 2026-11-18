@@ -19,15 +19,15 @@
 
 ### 项目简介
 
-长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。[草稿 PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27) 已上传双角色、本地提醒、单会话专注和“当前一件事”的技术候选；功能提交 `4cb11dd` 的双平台自动与原生构建已通过，真实桌面体验及用户反馈仍待验收。该 PR 尚未合入 `main`，不是正式发布。
+长期方向已确定为**可更换角色的桌面陪伴工具**，先面向自己和朋友，以日常提醒作为第一个实用场景。[PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27)（HEAD `fc7713c`）已合入 `main`，集成双角色切换、本地提醒、单会话专注与“当前专注”、本地备份导出/导入、宠物右键菜单、顶级“设置”入口及卡片式设置页。该提交已通过双平台 CI 与 macOS / Windows 实机验收；**合入 `main` 仅代表主干阶段集成完成，不代表公开发布（`M5-C`）**。
 
 开发前请读：[长期计划](docs/development/app/PRODUCT-PLAN.md) · [架构说明](docs/development/app/ARCHITECTURE.md) · [贡献约定](CONTRIBUTING.md)。
 
-本候选已统一配置目录并协调同目录的可写实例：第二个采用新协议的实例会正常结束；目录或锁不可用时保留临时角色选择、关闭且只读的提醒和位置不可保存提示。升级前先退出旧版；保留的 `instance.lock` 不能用来判断实例仍在运行，也不要删除它来解锁。设置页已接入本地备份导出和确认下次启动导入；双平台真实文件对话框、迁移和 GUI 验收仍待完成。详见 [本地目录与实例协调](docs/development/app/G7-DATA-DIRECTORY.md)和[导入入口](docs/development/app/G7-LOCAL-BACKUP-IMPORT.md)。
+应用已统一配置目录并协调同目录的可写实例：第二个采用新协议的实例会正常结束；目录或锁不可用时保留临时角色选择、关闭且只读的提醒和位置不可保存提示。升级前先退出旧版；保留的 `instance.lock` 不能用来判断实例仍在运行，也不要删除它来解锁。设置页已接入本地备份导出和确认下次启动导入；完整安装/升级/回退验证仍待 P3 实测。详见 [本地目录与实例协调](docs/development/app/G7-DATA-DIRECTORY.md)和[导入入口](docs/development/app/G7-LOCAL-BACKUP-IMPORT.md)。
 
 March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用了经过完整 QA 的 Codex v2 动画图集，并逐步将待机、注视、移动和其他角色动作迁移到 Tauri 2。
 
-当前稳定版本为 **v0.2.0**。下方功能与平台实机记录属于该历史基线；本分支另已实现 G1/G2 托盘控制、点击穿透和位置持久化，仍待当前提交的实机验收，不能沿用历史通过结论。实现与验证边界见 [G2 记录](docs/development/app/G2-PLACEMENT.md)。
+**v0.2.0** 为早期历史基线；当前 `main` 已包含 G1–G7 与 M1–M5 阶段功能（托盘与宠物右键菜单、点击穿透、位置持久化、双角色互动、本地提醒与专注管理）。实现与验证边界见 [G2 记录](docs/development/app/G2-PLACEMENT.md) 与 [M5 技术候选与缺口](docs/development/app/M5-TECHNICAL-CANDIDATE.md)。
 
 ### v0.2.0 历史基线功能
 
@@ -40,19 +40,19 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
 - 停止移动约 160 ms 后恢复鼠标注视
 - 可拖动窗口
 
-### 本分支的本地提醒（实机待验收）
+### 本地提醒与安静期控制
 
-首次启动喝水、起身活动、休息眼睛全部关闭；从系统托盘的“提醒 → 提醒设置…”查看间隔和活动时段，确认并保存后才启用。默认分钟数只是可调整偏好，不是健康建议。设置窗关闭只隐藏窗口，未保存草稿在下次打开时丢弃。
+首次启动喝水、起身活动、休息眼睛全部关闭；从系统托盘或宠物右键菜单的“设置”打开卡片式设置页，查看间隔和活动时段，确认并保存后才启用（连续点击设置页版本号 8 次可开启隐藏的开发者调试控制台）。默认分钟数只是可调整偏好，不是健康建议。设置窗关闭只隐藏窗口，未保存草稿在下次打开时丢弃。
 
-提醒气泡有“完成”“全部稍后”“收起”；收起及约 10 秒无回应只结束这次自动展示，事项仍待处理，可从“提醒 → 查看待处理”恢复，空集合也能查看。从托盘“暂停提醒／恢复提醒”控制自动提示；隐藏角色或开启角色穿透不会暂停提醒，气泡独立接收鼠标。两角色共用同一套提醒规则，切换角色不重计时。
+提醒气泡有“完成”“全部稍后”“收起”；收起及约 10 秒无回应只结束这次自动展示，事项仍待处理，可从“提醒 → 查看待处理”恢复，空集合也能查看。从托盘/右键菜单或设置页可操作“暂停提醒／恢复提醒”以及“结束安静期”；隐藏角色或开启角色穿透不会暂停提醒，气泡独立接收鼠标。两角色共用同一套提醒规则，切换角色不重计时。
 
-试用反馈后的技术候选让自动提醒由当前角色先做动作并说一句话，贴在角色旁的透明对白显示角色形象及“完成／稍后”操作。三月七偏活泼亲近，雷电将军采用克制正式的将军口吻；台词与原生互动手感仍须所有者验收。手动查看待处理不会重新触发到期动作。
+自动提醒由当前角色先做动作并说一句话，贴在角色旁的透明对白显示角色形象及“完成／稍后”操作。三月七偏活泼亲近，雷电将军采用克制正式的将军口吻；手动查看待处理不会重新触发到期动作。
 
-全部数据保存在本机，无账号、云同步或另一套系统通知；保存失败、只读保护和界面失败会如实提示。关闭设置或气泡不退出应用；正常结束使用托盘“退出”。本地代码、自动测试、浏览器模拟、同提交双平台构建和真实桌面体验是不同证据，当前不宣称 M3 或完整日用首版完成。详见 [G6 记录](docs/development/app/G6-REMINDERS.md) 和 [实机清单](docs/development/app/regression/CHECKLIST.md)。
+全部数据保存在本机，无账号、云同步或另一套系统通知；保存失败、只读保护和界面失败会如实提示。关闭设置或气泡不退出应用；正常结束使用托盘/右键菜单“退出”。详见 [G6 记录](docs/development/app/G6-REMINDERS.md) 和 [实机清单](docs/development/app/regression/CHECKLIST.md)。
 
-### 专注与当前一件事（已上传技术候选，实机待验收）
+### 专注与当前专注
 
-现有设置窗可开始、暂停、继续或结束一场专注；过程中日常提醒仍保持待处理，但不主动弹出。专注自然完成只在允许时借同一个气泡提示一次，结果仍可从固定入口查看。开始时可选填一个当前任务名，明确标记完成或放弃；任务结果不自动结束计时，计时到时也不代替你完成任务。旧本地配置和备份有版本迁移，导入预览只显示任务状态，不显示名称。`4cb11dd` 的 Windows NSIS 与 Mac DMG 未签名安装候选已实际生成并静态核对，真实安装、升级、回退以及素材/签名决定仍待后续。详见 [M5 技术候选与缺口](docs/development/app/M5-TECHNICAL-CANDIDATE.md)。
+设置页与托盘/右键菜单支持开始、暂停、继续或结束一场专注；过程中日常提醒仍保持待处理，但不主动弹出。专注自然完成只在允许时借同一个气泡提示一次，结果仍可从固定入口查看。开始时可选填当前任务名，明确标记完成或放弃；任务结果不自动结束计时，计时到时也不代替你完成任务。旧本地配置和备份有版本迁移，导入预览只显示任务状态，不显示名称。CI 已生成 Windows NSIS 与 Mac DMG 未签名安装候选，正式安装、升级、回退及两周试用仍待后续验证。详见 [M5 技术候选与缺口](docs/development/app/M5-TECHNICAL-CANDIDATE.md)。
 
 ### 动画预览
 
@@ -69,12 +69,12 @@ March 7th 是一个面向 macOS 与 Windows 的独立桌宠应用。项目复用
   </tr>
 </table>
 
-### 平台支持（历史基线实机记录）
+### 平台支持
 
 | 平台 | 状态 |
 |---|---|
-| macOS Apple Silicon | 已开发并实机验证 |
-| Windows 10/11 x64 | 已完成单显示器实机基线验证（100% / 150% / 200% DPI） |
+| macOS Apple Silicon | 已通过 CI 构建及 `fc7713c` 实机验收 |
+| Windows 10/11 x64 | 已通过 CI 构建及 `fc7713c` 实机验收（含单/混合 DPI 基线） |
 
 ### 从源码运行
 
@@ -124,12 +124,11 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### 路线图
 
-- 点击穿透与交互模式切换
-- 单击挥手、双击跳跃
-- 托盘菜单与退出入口
-- 窗口位置持久化
-- Windows 实机、混合 DPI 和安装包验证
-- macOS 签名与公证
+- [x] 点击穿透、托盘与宠物右键菜单、窗口位置持久化
+- [x] 双角色切换、本地提醒、专注计时与“当前专注”主干集成（PR #27）
+- [ ] 未签名 NSIS / DMG 安装、升级、回退与两周朋友试用验证（P3）
+- [ ] `codex/raiden-frame-rebuild-20261006` 与未回应自动收起重调度策略等后续独立 PR
+- [ ] macOS 签名公证、素材范围确认与公开发布决策（M5-C）
 
 ### Codex 内嵌版本
 
@@ -141,11 +140,11 @@ pnpm tauri build --target aarch64-apple-darwin --bundles app
 
 ### Overview
 
-The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. This development branch also contains local technical candidates for one focus session and one optional current task. Current-commit Windows/macOS hands-on acceptance and user feedback remain pending. See the [product plan](docs/development/app/PRODUCT-PLAN.md), [M5 candidate and evidence gaps](docs/development/app/M5-TECHNICAL-CANDIDATE.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
+The long-term goal is a switchable-character desktop companion with gentle daily reminders, initially for the owner and friends. [PR #27](https://github.com/szm20060312/march-7th-desktop-pet/pull/27) (`fc7713c`) has been merged into `main`, integrating dual-character switching, local reminders with quiet-period controls, a single focus session with an optional current task, local backup export/import, a pet right-click context menu, and a card-based Settings window. Both CI and macOS/Windows hands-on verification passed for `fc7713c`; merging into `main` is an internal milestone integration and **not** a public release (`M5-C`). See the [product plan](docs/development/app/PRODUCT-PLAN.md), [M5 candidate and evidence gaps](docs/development/app/M5-TECHNICAL-CANDIDATE.md), [architecture](docs/development/app/ARCHITECTURE.md) and [contributing guide](CONTRIBUTING.md).
 
 March 7th is a standalone animated desktop companion for macOS and Windows. It reuses the fully validated Codex v2 sprite atlas and progressively ports idle, gaze, movement, and character interactions to Tauri 2.
 
-The current stable version is **v0.2.0**. The features and real-device platform results below describe that historical baseline. This branch also implements G1/G2 tray controls, click-through and placement persistence; human acceptance for the current commit is still pending. See the [G2 record](docs/development/app/G2-PLACEMENT.md) for implementation and evidence boundaries.
+**v0.2.0** was the earlier baseline; `main` now includes G1–G7 and M1–M5 milestone capabilities (tray & context menu controls, click-through, placement persistence, dual characters, local reminders, and focus/current-task tracking). See the [G2 record](docs/development/app/G2-PLACEMENT.md) for implementation and evidence boundaries.
 
 ### v0.2.0 Baseline Features
 
@@ -173,12 +172,12 @@ The current stable version is **v0.2.0**. The features and real-device platform 
   </tr>
 </table>
 
-### Platform Support (Historical Baseline)
+### Platform Support
 
 | Platform | Status |
 |---|---|
-| macOS Apple Silicon | Implemented and tested on real hardware |
-| Windows 10/11 x64 | Single-display real-device baseline validated at 100% / 150% / 200% DPI |
+| macOS Apple Silicon | CI-built and hands-on verified on `fc7713c` |
+| Windows 10/11 x64 | CI-built and hands-on verified on `fc7713c` (including DPI baseline) |
 
 ### Run from Source
 
@@ -228,10 +227,11 @@ Public documentation must be sufficient to contribute without access to the team
 
 ### Roadmap
 
-- Same-commit Windows/macOS hands-on regression for the current candidate
-- Focus, reminder and current-task usefulness during a small friends trial
-- Clean installation, upgrade, rollback and privacy review
-- Asset-rights, signing/notarization and maintenance decisions before any public release
+- [x] Click-through, tray & pet context menus, and window placement persistence
+- [x] Dual-character switching, local reminders, focus session, and current-task integration on `main` (PR #27)
+- [ ] Unsigned NSIS / DMG clean installation, upgrade, rollback, and a two-week friends trial (P3)
+- [ ] Follow-up PRs for `codex/raiden-frame-rebuild-20261006` and pending-reminder reschedule policy
+- [ ] Asset-rights, macOS signing/notarization, and maintenance decisions before any public release (`M5-C`)
 
 ### Archived Codex Version
 
